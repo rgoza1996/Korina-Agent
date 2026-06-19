@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.env
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+
+# Audio models / weights (too large for git)
+*.bin
+*.onnx
+*.gguf
+*.pt
+*.pth
+*.safetensors
+
+# Kokoro voice models
+voices/
+models/
+
+# Node (if any)
+node_modules/
+
+# Temporary test files
+tmp_*
+*.tmp

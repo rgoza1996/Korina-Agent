@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Korina Voice Lab — Kokoro + Whisper Turbo + LM Studio</title>
+  <style>
+    :root { --bg:#0d0f14; --card:#171a22; --card2:#10131a; --line:#2a3040; --text:#edf1ff; --muted:#95a0b8; --accent:#8b7cff; --good:#4ade80; --warn:#fbbf24; --bad:#fb7185; }
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,#22244a 0,#0d0f14 38rem);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,Segoe UI,sans-serif;padding:28px 14px;display:flex;justify-content:center}
+    main{width:min(920px,100%);display:grid;gap:16px} h1{font-size:28px;margin:0;text-align:center;letter-spacing:-.03em}.sub{text-align:center;color:var(--muted);margin-top:-8px}.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 20px 60px #0006} label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px} textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:12px;background:#080a0f;color:var(--text);font:15px/1.45 inherit;padding:12px;resize:vertical} textarea:focus,select:focus{outline:none;border-color:var(--accent)} .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.grid{grid-template-columns:1fr}} select,input[type=range]{width:100%;background:#080a0f;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}@media(max-width:700px){.btns{grid-template-columns:1fr}}button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;color:white;background:var(--accent);cursor:pointer}button.secondary{background:#2b3142}button.danger{background:#8f2638}button.live{background:#138a54}button.live.on{background:#b45309}button:disabled{opacity:.45;cursor:not-allowed}.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#090b11}.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.dot.good{background:var(--good);box-shadow:0 0 10px var(--good)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}.tabs{display:flex;background:#080a0f;border:1px solid var(--line);border-radius:12px;overflow:hidden}.tab{flex:1;text-align:center;padding:10px;color:var(--muted);font-weight:800;font-size:13px;cursor:pointer}.tab.active{background:var(--accent);color:white}.meter{height:6px;background:#080a0f;border:1px solid var(--line);border-radius:999px;overflow:hidden}.meter>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#55d6ff);transition:width .12s}.status{min-height:22px;text-align:center;color:var(--muted);font-size:14px}.status.good{color:var(--good)}.status.bad{color:var(--bad)}.status.warn{color:var(--warn)}audio{width:100%;margin-top:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.wave{height:54px;border:1px solid var(--line);border-radius:12px;background:#080a0f;display:flex;align-items:end;gap:2px;padding:8px;overflow:hidden}.bar{width:3px;min-height:2px;background:var(--accent);opacity:.9;border-radius:2px}.log{max-height:190px;overflow:auto;border:1px solid var(--line);background:#080a0f;border-radius:12px;padding:10px;font-size:13px;line-height:1.35}.msg{margin:0 0 8px}.msg b{color:var(--accent)}
+  .modalBackdrop{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBackdrop.open{display:flex}.modal{width:min(760px,100%);max-height:88vh;overflow:auto;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 30px 90px #000}.modal h2{margin:0 0 12px}.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.settingsBtn{background:#2b3142}
+  </style>
+</head>
+<body>
+<main>
+  <div><h1>Korina Voice Lab</h1><p class="sub">Auto-VAD + queued clause chunks → faster-whisper → LM Studio → Kokoro SSE TTS</p></div>
+  <div class="row between">
+    <span class="pill"><span id="pageDot" class="dot"></span><span id="pageHealth">page server…</span></span>
+    <span class="pill"><span id="ttsDot" class="dot"></span><span id="ttsHealth">kokoro…</span></span>
+    <span class="pill mono" id="hostInfo"></span>
+    <button id="settingsBtn" class="secondary settingsBtn">⚙ Settings</button>
+  </div>
+
+
+  <div id="settingsModal" class="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <div class="modal">
+      <div class="row between"><h2 id="settingsTitle">Korina settings</h2><button id="closeSettingsBtn" class="secondary">Close</button></div>
+      <div class="grid">
+        <div><label for="sttBackend">Speech-to-text backend</label><select id="sttBackend"><option value="whisper" selected>faster-whisper</option><option value="llm">LM Studio multimodal/audio LLM — experimental</option></select></div>
+        <div><label for="lmModel">LM Studio model</label><select id="lmModel"><option value="qwen3.5-2b-uncensored-hauhaucs-aggressive">qwen3.5-2b-uncensored-hauhaucs-aggressive</option></select></div>
+        <div><label for="sttDevice">Whisper device</label><select id="sttDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
+        <div><label for="sttModel">Whisper model</label><select id="sttModel"><option value="tiny.en">tiny.en — fastest CPU</option><option value="base.en" selected>base.en — CPU balanced</option><option value="small.en">small.en — better, slower</option><option value="turbo">turbo — quality, slow CPU</option><option value="distil-large-v3">distil-large-v3 — faster large English</option></select></div>
+        <div><label for="ttsDevice">Text-to-speech device</label><select id="ttsDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
+        <div><label for="endpointMode">Endpointing mode</label><select id="endpointMode"><option value="reading" selected>Reading/dictation — wait longer</option><option value="conversation">Conversation — quicker turns</option></select></div>
+        <div><label for="finalSttMode">End-of-speech finalization</label><select id="finalSttMode"><option value="chunks" selected>Use live chunks — no full paragraph retranscribe</option><option value="full">Full utterance final pass</option></select></div>
+      </div>
+      <p class="small mono" id="settingsInfo">Model list loads from LM Studio /v1/models via /api/models.</p>
+      <div class="actions"><button id="refreshModelsBtn" class="secondary">Refresh models</button><button id="saveSettingsBtn">Done</button></div>
+    </div>
+  </div>
+
+  <section class="card">
+    <label>1. Record / transcribe</label>
+    <div class="btns">
+      <button id="recBtn">● Start recording</button>
+      <button id="stopRecBtn" class="danger" disabled>■ Stop + transcribe</button>
+      <button id="liveBtn" class="live">Live Conversation</button>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div>
+        <label for="silenceMs">End-of-speech silence <span id="silenceDisplay">3200ms</span></label>
+        <input id="silenceMs" type="range" min="300" max="8000" step="100" value="3200">
+      </div>
+      <div>
+        <label for="ackEnabled">Ack phrases</label>
+        <select id="ackEnabled"><option value="on" selected>On — play random ack while thinking</option><option value="off">Off</option></select>
+      </div>
+    </div>
+    <div class="wave" id="wave"></div>
+    <p class="status" id="sttStatus">Ready. Reading mode waits 3.2s of silence before Korina responds, so short pauses inside a sentence won't cut you off.</p>
+  </section>
+
+  <section class="card">
+    <label for="transcript">2. Live transcription</label>
+    <textarea id="transcript" placeholder="Live partials and final STT transcript appear here."></textarea>
+    <p class="small mono" id="transcriptInfo">Queued live chunks append here while you speak. The queue drains in order instead of dropping windows.</p>
+  </section>
+
+  <section class="card">
+    <label for="text">3. Reply / text to speak</label>
+    <textarea id="text" placeholder="Korina's latest reply or text to speak appears here.">Hello, this is Kokoro running through the Roggoz FastAPI streaming server.</textarea>
+    <div class="grid" style="margin-top:12px">
+      <div><label for="voice">Voice</label><select id="voice"><option selected>af_heart</option><option>af_bella</option><option>af_nicole</option><option>af_sarah</option><option>af_sky</option><option>am_adam</option><option>am_michael</option><option>bf_emma</option><option>bf_george</option></select></div>
+      <div><label for="speed">Speed <span id="speedDisplay">1.0×</span></label><input id="speed" type="range" min="0.5" max="2" step="0.1" value="1"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <label>4. Speak with Kokoro</label>
+    <div class="tabs"><div class="tab active" data-mode="sse">SSE streaming</div><div class="tab" data-mode="buf">Buffered WAV</div></div>
+    <div class="btns" style="margin-top:12px"><button id="playBtn">▶ Speak text</button><button id="stopBtn" class="danger" disabled>■ Stop</button><button id="askBtn" class="secondary">Ask LM + Speak</button></div>
+    <div class="meter" style="margin-top:12px"><div id="progress"></div></div>
+    <p class="status" id="ttsStatus">SSE mode uses Web Audio scheduling; chunks are chained sequentially.</p>
+    <p class="small mono" id="chunkInfo"></p>
+    <audio id="audio" controls></audio>
+  </section>
+
+  <section class="card"><label>Conversation</label><div class="log" id="log"></div></section>
+</main>
+<script>
+const TTS = `${location.protocol}//${location.hostname}:8880`;
+let mode='sse', controller=null, audioCtx=null, gain=null, nextPlayTime=0;
+let activeSources=[], ttsSpeaking=false, currentKorinaText='', currentTtsStartedAt=0, currentTtsEstimatedEnd=0, interruptContext='';
+let mediaRecorder=null, recChunks=[], analyser=null, raf=null, stream=null, meterAudioCtx=null;
+let bargeRecorder=null, bargeChunks=[], bargeLoopId=null, bargeSpeechStart=0, bargeSilenceStart=0, handlingBarge=false;
+let live=false, liveBusy=false, liveSilenceStart=0, liveSpeechStart=0, liveLastVoice=0, liveLoopId=null, history=[];
+let partialTimer=null, partialInFlight=false, partialSeq=0, partialController=null, latestPartialText='', latestPartialAt=0;
+let partialRecorder=null, partialChunks=[], partialWindowMs=1800, partialWindowIndex=0, partialQueue=[], partialQueueProcessing=false;
+let ackFiles=[], ackBuffers=[], ackSource=null, ackPlayingUntil=0;
+const SPEECH_THRESHOLD=0.035, SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=450;
+let endSilenceMs=3200;
+const $=id=>document.getElementById(id);
+$('hostInfo').textContent=`${location.hostname}:8001 → LM Studio localhost:1234 on roggoz → ${location.hostname}:8880`;
+function status(el,msg,cls=''){el.textContent=msg;el.className='status '+cls}
+function sttDevice(){return $('sttDevice')?.value||'cpu'}
+function ttsDevice(){return $('ttsDevice')?.value||'cpu'}
+function sttModel(){return $('sttModel')?.value||'base.en'}
+function sttBackend(){return $('sttBackend')?.value||'whisper'}
+function lmModel(){return $('lmModel')?.value||'qwen3.5-2b-uncensored-hauhaucs-aggressive'}
+function finalSttMode(){return $('finalSttMode')?.value||'chunks'}
+function endpointMode(){return $('endpointMode')?.value||'reading'}
+function setDot(id,state){$(id).className='dot '+state}
+function log(role,text){ const p=document.createElement('p'); p.className='msg'; p.innerHTML=`<b>${role}:</b> ${String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}`; $('log').appendChild(p); $('log').scrollTop=$('log').scrollHeight; }
+async function health(){
+  try{let j=await (await fetch('/api/health')).json(); setDot('pageDot',j.whisper_loaded?'good':'warn'); $('pageHealth').textContent=`${j.whisper_backend||'Whisper'} ${j.whisper_loaded?'loaded':'lazy'} · selected STT ${sttBackend()} ${sttDevice()}/${sttModel()} · LM ${lmModel()} · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available?'yes':'no'} · ${j.lmstudio_model}`;}catch(e){setDot('pageDot','bad');$('pageHealth').textContent='page server offline'}
+  try{let j=await (await fetch(`${TTS}/health`)).json(); setDot('ttsDot',j.loaded?'good':'warn'); $('ttsHealth').textContent=`Kokoro ${j.loaded?'ready':'lazy'} · selected TTS ${ttsDevice()} · last ${j.device||'none'} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('ttsDot','bad');$('ttsHealth').textContent='Kokoro offline'}
+}
+health(); setInterval(health,10000);
+
+async function loadModelOptions(){
+  try{
+    const j=await (await fetch('/api/models')).json();
+    if(Array.isArray(j.whisper_models) && j.whisper_models.length){
+      const current=sttModel(); $('sttModel').innerHTML='';
+      for(const m of j.whisper_models){ const o=document.createElement('option'); o.value=m; o.textContent=m; $('sttModel').appendChild(o); }
+      $('sttModel').value=j.whisper_models.includes(current)?current:(j.whisper_models.includes('base.en')?'base.en':j.whisper_models[0]);
+    }
+    if(Array.isArray(j.lmstudio_models) && j.lmstudio_models.length){
+      const current=lmModel(); $('lmModel').innerHTML='';
+      for(const m of j.lmstudio_models){ const o=document.createElement('option'); o.value=m; o.textContent=m; $('lmModel').appendChild(o); }
+      $('lmModel').value=j.lmstudio_models.includes(current)?current:(j.lmstudio_models.find(m=>m.includes('gemma-4-12b-it-qat'))||j.lmstudio_default||j.lmstudio_models[0]);
+    }
+    $('settingsInfo').textContent=`Loaded ${(j.lmstudio_models||[]).length} LM Studio models. ${j.lmstudio_error?('Error: '+j.lmstudio_error):''}`;
+  }catch(e){ $('settingsInfo').textContent='Model list load failed: '+e.message; }
+}
+$('settingsBtn').onclick=()=>{ $('settingsModal').classList.add('open'); loadModelOptions(); };
+$('closeSettingsBtn').onclick=()=>$('settingsModal').classList.remove('open');
+$('saveSettingsBtn').onclick=()=>$('settingsModal').classList.remove('open');
+$('refreshModelsBtn').onclick=()=>loadModelOptions();
+$('settingsModal').onclick=e=>{ if(e.target===$('settingsModal')) $('settingsModal').classList.remove('open'); };
+loadModelOptions();
+
+async function loadAcks(){
+  try{
+    const j=await (await fetch('/api/acks')).json();
+    ackFiles=(j.acks||[]).map(a=>a.url);
+    if(ackFiles.length) $('sttStatus').textContent=`Ready. ${ackFiles.length} ack phrases listed. Reading mode waits ${endSilenceMs}ms before ending a turn.`;
+  }catch(e){ console.warn('ack load failed', e); }
+}
+loadAcks();
+$('speed').oninput=()=> $('speedDisplay').textContent=parseFloat($('speed').value).toFixed(1)+'×';
+$('silenceMs').oninput=()=>{ endSilenceMs=parseInt($('silenceMs').value,10); $('silenceDisplay').textContent=endSilenceMs+'ms'; };
+$('endpointMode').onchange=()=>{ endSilenceMs=endpointMode()==='reading'?3200:950; $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; status($('sttStatus'),`Endpointing mode: ${endpointMode()} (${endSilenceMs}ms silence before Korina responds).`, 'warn'); };
+$('sttDevice').onchange=()=>{ status($('sttStatus'),`STT device set to ${sttDevice()}. Next transcription will use it. First use may load a second model.`, 'warn'); health(); };
+$('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttModel()}. First use downloads/loads that model.`, 'warn'); health(); };
+$('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?'LLM audio STT selected. LM Studio /v1/chat currently accepts text/images on many builds; audio may fail unless the selected model/server supports input_audio.':'faster-whisper STT selected.'; status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; };
+$('lmModel').onchange=()=>{ status($('sttStatus'),`LM Studio model set to ${lmModel()}.`, 'warn'); };
+$('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); };
+$('finalSttMode').onchange=()=>{ status($('sttStatus'),`Finalization mode: ${finalSttMode()==='chunks'?'live chunks only':'full utterance final pass'}.`, 'warn'); };
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.mode;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));});
+
+function ensureAudio(){ if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)(); gain=audioCtx.createGain(); gain.connect(audioCtx.destination);} if(audioCtx.state==='suspended') audioCtx.resume(); }
+async function preloadAckBuffers(){
+  ensureAudio();
+  if(ackBuffers.length || !ackFiles.length) return;
+  const decoded=[];
+  for(const url of ackFiles){
+    try{
+      const ab=await (await fetch(url)).arrayBuffer();
+      const buf=await audioCtx.decodeAudioData(ab.slice(0));
+      decoded.push({url, buffer:buf});
+    }catch(e){ console.warn('ack decode failed', url, e); }
+  }
+  ackBuffers=decoded;
+  if(ackBuffers.length) status($('sttStatus'),`Live mode ready. ${ackBuffers.length} ack phrases preloaded in memory.`,'good');
+}
+async function waitForScheduledAudio(){ if(!audioCtx)return; const ms=Math.max(0,(nextPlayTime-audioCtx.currentTime)*1000)+150; if(ms>0) await new Promise(r=>setTimeout(r,ms)); }
+function stopTtsNow(){
+  if(controller) { try{controller.abort();}catch{} controller=null; }
+  for(const s of activeSources){ try{s.stop();}catch{} }
+  activeSources=[];
+  nextPlayTime=0;
+  ackPlayingUntil=0;
+  ttsSpeaking=false;
+}
+function interruptedSpeechContext(){
+  if(!audioCtx || !currentKorinaText) return '';
+  const elapsed=Math.max(0,audioCtx.currentTime-currentTtsStartedAt);
+  const total=Math.max(0.1,currentTtsEstimatedEnd-currentTtsStartedAt);
+  const ratio=Math.max(0,Math.min(1,elapsed/total));
+  const idx=Math.max(0,Math.min(currentKorinaText.length,Math.round(currentKorinaText.length*ratio)));
+  const before=currentKorinaText.slice(0,idx).trim();
+  const after=currentKorinaText.slice(idx).trim();
+  return `The user interrupted Korina about ${(ratio*100).toFixed(0)}% through her previous spoken reply. Already spoken approximately: "${before}". Not yet spoken approximately: "${after}".`;
+}
+async function schedulePcm(b64,sr=24000){ ensureAudio(); const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i); const i16=new Int16Array(u8.buffer); const f32=new Float32Array(i16.length); for(let i=0;i<i16.length;i++)f32[i]=Math.max(-1,Math.min(1,i16[i]/32768)); const buf=audioCtx.createBuffer(1,f32.length,sr); buf.copyToChannel(f32,0); const src=audioCtx.createBufferSource(); src.buffer=buf; src.connect(gain); const when=Math.max(audioCtx.currentTime,nextPlayTime,ackPlayingUntil); src.start(when); activeSources.push(src); src.onended=()=>{activeSources=activeSources.filter(x=>x!==src);}; nextPlayTime=when+f32.length/sr; currentTtsEstimatedEnd=Math.max(currentTtsEstimatedEnd,nextPlayTime); }
+async function speakSSE(text){ controller=new AbortController(); nextPlayTime=0; let chunks=0,samples=0,start=performance.now(),buf=''; status($('ttsStatus'),'Streaming Kokoro chunks…','warn'); $('progress').style.width='5%'; const r=await fetch(`${TTS}/stream/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const reader=r.body.getReader(), dec=new TextDecoder(); while(true){const {done,value}=await reader.read(); if(done)break; buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf=lines.pop(); for(const line of lines){ if(!line.startsWith('data: '))continue; const ev=JSON.parse(line.slice(6)); await schedulePcm(ev.audio,ev.sample_rate||24000); chunks++; samples+=ev.samples||0; const elapsed=(performance.now()-start)/1000; $('progress').style.width=Math.min(99,10+chunks*12)+'%'; $('chunkInfo').textContent=`${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`; }} $('progress').style.width='100%'; status($('ttsStatus'),`Done · ${chunks} chunks`,'good'); }
+async function speakBuffered(text){ controller=new AbortController(); status($('ttsStatus'),'Synthesizing full WAV…','warn'); $('progress').style.width='10%'; const r=await fetch(`${TTS}/v1/audio/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const blob=await r.blob(); $('audio').src=URL.createObjectURL(blob); $('audio').play().catch(()=>{}); $('progress').style.width='100%'; status($('ttsStatus'),'Done · buffered WAV ready','good'); }
+async function speakText(text, wait=false){ if(!text.trim())return; $('playBtn').disabled=true; $('stopBtn').disabled=false; $('chunkInfo').textContent=''; ensureAudio(); currentKorinaText=text; currentTtsStartedAt=audioCtx.currentTime; currentTtsEstimatedEnd=currentTtsStartedAt; activeSources=[]; ttsSpeaking=true; if(live) startBargeInCapture(); try{ if(mode==='sse') await speakSSE(text); else await speakBuffered(text); if(wait && mode==='sse') await waitForScheduledAudio(); }catch(e){ if(e.name==='AbortError'){ status($('ttsStatus'),'Interrupted'); return; } else { status($('ttsStatus'),'Error: '+e.message,'bad'); throw e; } } finally{ if(!handlingBarge){ ttsSpeaking=false; if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); } $('playBtn').disabled=false;$('stopBtn').disabled=true;controller=null;} }
+async function askLM(message){ status($('sttStatus'),'Sending transcript to LM Studio…','warn'); const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history,max_tokens:180,temperature:0.7,model:lmModel()})}); const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||''; }
+async function askAndSpeak(message, context=''){ log('You',message); history.push({role:'user',content:message}); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-12); status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); }
+function playRandomAck(){
+  if($('ackEnabled').value!=='on' || !ackBuffers.length) return;
+  try{
+    ensureAudio();
+    if(ackSource){ try{ ackSource.stop(); }catch{} }
+    const pick=ackBuffers[Math.floor(Math.random()*ackBuffers.length)];
+    const src=audioCtx.createBufferSource();
+    src.buffer=pick.buffer;
+    src.connect(gain);
+    const when=audioCtx.currentTime + 0.005; // schedule almost immediately, but avoid race with current quantum
+    src.start(when);
+    ackSource=src;
+    ackPlayingUntil=when + pick.buffer.duration + 0.05;
+    $('chunkInfo').textContent=`Ack immediately: ${pick.url.split('/').pop()} · ${pick.buffer.duration.toFixed(2)}s`;
+  }catch(e){ console.warn('ack playback failed', e); }
+}
+$('playBtn').onclick=()=>speakText($('text').value,false).catch(()=>{});
+$('askBtn').onclick=()=>askAndSpeak($('text').value.trim()).catch(e=>status($('sttStatus'),'LM/TTS error: '+e.message,'bad'));
+$('stopBtn').onclick=()=>{ stopTtsNow(); if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); if(ackSource){try{ackSource.stop();}catch{} ackSource=null;} if(audioCtx){try{audioCtx.close()}catch{} audioCtx=null; ackBuffers=[];} $('audio').pause(); status($('ttsStatus'),'Stopped'); };
+
+function drawWave(){ if(!analyser)return; const data=new Uint8Array(analyser.frequencyBinCount); analyser.getByteTimeDomainData(data); const wave=$('wave'); wave.innerHTML=''; for(let i=0;i<80;i++){ const v=Math.abs(data[Math.floor(i*data.length/80)]-128)/128; const b=document.createElement('div'); b.className='bar'; b.style.height=(4+v*44)+'px'; wave.appendChild(b);} raf=requestAnimationFrame(drawWave); }
+function rmsLevel(){ if(!analyser)return 0; const data=new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(data); let sum=0; for(const x of data){ const v=(x-128)/128; sum+=v*v; } return Math.sqrt(sum/data.length); }
+async function setupMic(){ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}); meterAudioCtx=new AudioContext(); const src=meterAudioCtx.createMediaStreamSource(stream); analyser=meterAudioCtx.createAnalyser(); analyser.fftSize=512; src.connect(analyser); drawWave(); }
+function makeRecorder(onstop,timeslice=0){ recChunks=[]; const mime=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm'; mediaRecorder=new MediaRecorder(stream,{mimeType:mime}); mediaRecorder.ondataavailable=e=>{if(e.data.size)recChunks.push(e.data)}; mediaRecorder.onstop=onstop; mediaRecorder.start(timeslice||undefined); }
+async function transcribeBlob(blob){
+  const fd=new FormData();
+  fd.append('audio',blob,'recording.webm');
+  const r=await fetch(`/api/transcribe/stream?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(lmModel())}`,{method:'POST',body:fd});
+  if(!r.ok){
+    const j=await r.json().catch(async()=>({detail:await r.text()}));
+    throw new Error(j.detail||JSON.stringify(j));
+  }
+  const reader=r.body.getReader(), dec=new TextDecoder();
+  let buf='', final=null, pieces=[];
+  while(true){
+    const {done,value}=await reader.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    const events=buf.split('\n\n');
+    buf=events.pop();
+    for(const raw of events){
+      let ev='message', data='';
+      for(const line of raw.split('\n')){
+        if(line.startsWith('event: ')) ev=line.slice(7);
+        else if(line.startsWith('data: ')) data+=line.slice(6);
+      }
+      if(!data) continue;
+      const payload=JSON.parse(data);
+      if(ev==='status') status($('sttStatus'),`STT: ${payload.message}…`,'warn');
+      else if(ev==='segment'){
+        if(payload.text) pieces.push(payload.text);
+        $('transcript').value=pieces.join(' ').trim();
+        status($('sttStatus'),`Streaming STT segment ${payload.index}: ${payload.text}`,'warn'); $('transcriptInfo').textContent='Receiving final STT segments…';
+      } else if(ev==='done'){
+        final=payload;
+      } else if(ev==='error'){
+        throw new Error(payload.detail||'streaming transcription failed');
+      }
+    }
+  }
+  if(!final) throw new Error('streaming transcription ended without final result');
+  return final;
+}
+
+async function transcribePartialBlob(blob, seq, meta={}){
+  const fd=new FormData();
+  fd.append('audio',blob,'partial.webm');
+  const ctl=new AbortController();
+  partialController=ctl;
+  const r=await fetch(`/api/transcribe/partial?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(lmModel())}`,{method:'POST',body:fd,signal:ctl.signal});
+  const j=await r.json();
+  if(!r.ok) throw new Error(j.detail||JSON.stringify(j));
+  if(seq!==partialSeq) return j;
+  const text=(j.text||'').trim();
+  if(text){
+    // This is intentionally a separately-recorded bounded WebM window, not a growing whole-utterance snapshot.
+    // Do not slice middle MediaRecorder chunks; those may not be independently decodable.
+    latestPartialText = (latestPartialText ? `${latestPartialText} ${text}` : text).replace(/\s+/g,' ').trim();
+    latestPartialAt=performance.now();
+    $('transcript').value=latestPartialText + ' …';
+    $('transcript').scrollTop=$('transcript').scrollHeight;
+    status($('sttStatus'),`Queued partial window ${meta.startChunk} · ${j.duration.toFixed(1)}s audio → ${j.seconds.toFixed(2)}s STT: ${text}`,'warn'); $('transcriptInfo').textContent=`Queued WebM partial window ${meta.startChunk} · ${j.seconds.toFixed(2)}s CPU STT`; 
+  }
+  return j;
+}
+function startPartialTranscriptionLoop(){
+  stopPartialTranscriptionLoop(false);
+  partialSeq++;
+  partialWindowIndex=0;
+  latestPartialText=''; latestPartialAt=0;
+  startPartialWindowRecorder();
+}
+function startPartialWindowRecorder(){
+  if(!live || liveBusy || !stream) return;
+  try{
+    if(partialRecorder && partialRecorder.state!=='inactive') return;
+    partialChunks=[];
+    const mime=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
+    const windowId=++partialWindowIndex;
+    const seq=partialSeq;
+    partialRecorder=new MediaRecorder(stream,{mimeType:mime});
+    partialRecorder.ondataavailable=e=>{ if(e.data.size) partialChunks.push(e.data); };
+    partialRecorder.onstop=()=>{
+      const chunks=partialChunks;
+      partialChunks=[];
+      // Restart first so capture continues while faster-whisper drains the queue.
+      if(live && !liveBusy && seq===partialSeq) setTimeout(startPartialWindowRecorder,0);
+      if(!live || seq!==partialSeq || !liveSpeechStart || chunks.length<2) return;
+      const blob=new Blob(chunks,{type:chunks[0]?.type||mime});
+      if(blob.size<2500) return;
+      partialQueue.push({blob, seq, windowId});
+      $('transcriptInfo').textContent=`Queued partial window ${windowId}; queue depth ${partialQueue.length}.`;
+      processPartialQueue();
+    };
+    partialRecorder.start(500);
+    partialTimer=setTimeout(()=>{
+      if(partialRecorder && partialRecorder.state!=='inactive') partialRecorder.stop();
+    },partialWindowMs);
+  }catch(e){ console.warn('partial recorder failed', e); }
+}
+async function processPartialQueue(){
+  if(partialQueueProcessing) return;
+  partialQueueProcessing=true;
+  partialInFlight=true;
+  try{
+    while(partialQueue.length){
+      const item=partialQueue.shift();
+      if(item.seq!==partialSeq) continue;
+      $('transcriptInfo').textContent=`Transcribing queued window ${item.windowId}; ${partialQueue.length} waiting.`;
+      try{ await transcribePartialBlob(item.blob,item.seq,{startChunk:item.windowId,endChunk:item.windowId}); }
+      catch(e){ if(e.name!=='AbortError') console.warn('partial STT failed', e); }
+    }
+  } finally {
+    partialInFlight=false;
+    partialQueueProcessing=false;
+  }
+}
+async function waitForPartialQueueIdle(){
+  while(partialQueueProcessing || partialQueue.length){
+    await new Promise(r=>setTimeout(r,150));
+  }
+}
+function stopPartialTranscriptionLoop(abort=true){
+  if(partialTimer) clearTimeout(partialTimer);
+  partialTimer=null;
+  if(abort) partialSeq++;
+  if(partialRecorder && partialRecorder.state!=='inactive'){ try{partialRecorder.stop();}catch{} }
+  partialRecorder=null;
+  partialChunks=[];
+  if(abort){ partialQueue=[]; }
+  if(abort && partialController){ try{partialController.abort();}catch{} }
+  partialController=null;
+  if(abort){ partialInFlight=false; partialQueueProcessing=false; }
+}
+
+function startBargeInCapture(){
+  if(!live || !stream || !ttsSpeaking || handlingBarge) return;
+  try{
+    if(bargeRecorder && bargeRecorder.state!=='inactive') return;
+    bargeChunks=[]; bargeSpeechStart=0; bargeSilenceStart=0;
+    const mime=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm';
+    bargeRecorder=new MediaRecorder(stream,{mimeType:mime});
+    bargeRecorder.ondataavailable=e=>{if(e.data.size)bargeChunks.push(e.data)};
+    bargeRecorder.onstop=handleBargeRecording;
+    bargeRecorder.start();
+    monitorBargeIn();
+  }catch(e){ console.warn('barge recorder failed', e); }
+}
+function monitorBargeIn(){
+  if(!live || !ttsSpeaking || handlingBarge) return;
+  const level=rmsLevel(); const now=performance.now();
+  if(level>SPEECH_THRESHOLD){
+    if(!bargeSpeechStart) bargeSpeechStart=now;
+    if(now-bargeSpeechStart>220){
+      handlingBarge=true;
+      interruptContext=interruptedSpeechContext();
+      status($('sttStatus'),'User interruption detected. Korina stopped; listening to interruption…','warn');
+      stopTtsNow();
+      bargeSilenceStart=0;
+      monitorBargeSpeechEnd();
+      return;
+    }
+  } else if(level<SILENCE_THRESHOLD) {
+    bargeSpeechStart=0;
+  }
+  bargeLoopId=requestAnimationFrame(monitorBargeIn);
+}
+function monitorBargeSpeechEnd(){
+  if(!live || !handlingBarge) return;
+  const level=rmsLevel(); const now=performance.now();
+  if(level>SPEECH_THRESHOLD){ bargeSilenceStart=0; }
+  else if(level<SILENCE_THRESHOLD){
+    if(!bargeSilenceStart) bargeSilenceStart=now;
+    if(now-bargeSilenceStart>endSilenceMs){
+      status($('sttStatus'),'Interruption finished. Transcribing…','warn');
+      if(bargeRecorder && bargeRecorder.state!=='inactive') bargeRecorder.stop();
+      return;
+    }
+  }
+  bargeLoopId=requestAnimationFrame(monitorBargeSpeechEnd);
+}
+async function handleBargeRecording(){
+  if(!handlingBarge) return;
+  let secondBargeStarted=false;
+  try{
+    const blob=new Blob(bargeChunks,{type:bargeChunks[0]?.type||'audio/webm'});
+    if(blob.size<2500){ handlingBarge=false; interruptContext=''; bargeChunks=[]; status($('sttStatus'),'Interruption was too short. Listening…','warn'); return; }
+    const j=await transcribeBlob(blob);
+    const text=(j.text||'').trim();
+    if(!text){ handlingBarge=false; interruptContext=''; bargeChunks=[]; status($('sttStatus'),'No interruption transcript. Listening…','warn'); return; }
+    const ctx=interruptContext;
+    $('transcript').value += (String($('transcript').value).trim() ? '\n' : '') + text;
+    $('transcript').scrollTop=$('transcript').scrollHeight;
+    log('Interruption point', ctx);
+
+    // Critical: clear the current barge state BEFORE Korina speaks the
+    // after-interrupt reply, otherwise that reply cannot itself be interrupted.
+    handlingBarge=false;
+    interruptContext='';
+    bargeChunks=[];
+    bargeSpeechStart=0;
+    bargeSilenceStart=0;
+
+    await askAndSpeak(text, ctx);
+    secondBargeStarted=handlingBarge;
+  }catch(e){ status($('sttStatus'),'Interruption error: '+e.message,'bad'); }
+  finally{
+    // If another interruption started while Korina was answering this one,
+    // do not clobber its state or restart the normal live loop underneath it.
+    if(handlingBarge || secondBargeStarted) return;
+    ttsSpeaking=false;
+    if(live){ liveBusy=false; status($('sttStatus'),`Live mode armed (${endpointMode()}, ${endSilenceMs}ms endpoint). Start speaking…`,'warn'); startLiveRecorder(); liveMonitor(); }
+  }
+}
+$('recBtn').onclick=async()=>{ try{ await setupMic(); makeRecorder(async()=>{ try{ if(raf)cancelAnimationFrame(raf); if(stream)stream.getTracks().forEach(t=>t.stop()); status($('sttStatus'),'Uploading to faster-whisper streaming STT…','warn'); const blob=new Blob(recChunks,{type:recChunks[0]?.type||'audio/webm'}); const j=await transcribeBlob(blob); $('transcript').value=j.text||''; status($('sttStatus'),`Transcribed in ${j.seconds.toFixed(2)}s · ${j.model}`,'good'); $('transcriptInfo').textContent='Manual recording transcribed.'; }catch(e){status($('sttStatus'),'Transcribe error: '+e.message,'bad');} finally{$('recBtn').disabled=false;$('stopRecBtn').disabled=true;} }); $('recBtn').disabled=true; $('stopRecBtn').disabled=false; status($('sttStatus'),'Recording…','warn'); }catch(e){status($('sttStatus'),'Mic error: '+e.message,'bad');}};
+$('stopRecBtn').onclick=()=>{ if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); };
+
+async function startLive(){ live=true; liveBusy=false; $('liveBtn').classList.add('on'); $('liveBtn').textContent='Stop Live Conversation'; $('recBtn').disabled=true; $('stopRecBtn').disabled=true; status($('sttStatus'),'Preloading ack phrases + arming mic…','warn'); await setupMic(); await preloadAckBuffers(); status($('sttStatus'),`Live mode armed (${endpointMode()}, ${endSilenceMs}ms endpoint). Start speaking…`,'warn'); startLiveRecorder(); liveMonitor(); }
+function stopLive(){ live=false; liveBusy=false; stopPartialTranscriptionLoop(true); $('liveBtn').classList.remove('on'); $('liveBtn').textContent='Live Conversation'; $('recBtn').disabled=false; $('stopRecBtn').disabled=true; if(liveLoopId)cancelAnimationFrame(liveLoopId); if(bargeLoopId)cancelAnimationFrame(bargeLoopId); liveLoopId=null; bargeLoopId=null; if(mediaRecorder && mediaRecorder.state!=='inactive')mediaRecorder.stop(); if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); if(stream)stream.getTracks().forEach(t=>t.stop()); if(raf)cancelAnimationFrame(raf); stopTtsNow(); if(ackSource){try{ackSource.stop();}catch{} ackSource=null;} ackPlayingUntil=0; handlingBarge=false; status($('sttStatus'),'Live mode stopped.'); }
+function startLiveRecorder(){ if(!live || !stream)return; liveSpeechStart=0; liveSilenceStart=0; liveLastVoice=0; partialWindowIndex=0; latestPartialText=''; makeRecorder(async()=>{ if(!live)return; await handleLiveTurn(); },500); startPartialTranscriptionLoop(); }
+function liveMonitor(){ if(!live || liveBusy)return; const level=rmsLevel(); const now=performance.now(); if(level>SPEECH_THRESHOLD){ if(!liveSpeechStart) liveSpeechStart=now; liveLastVoice=now; liveSilenceStart=0; status($('sttStatus'),`Listening… voice detected (${level.toFixed(3)})`,'warn'); }
+  else if(liveSpeechStart && level<SILENCE_THRESHOLD){ if(!liveSilenceStart) liveSilenceStart=now; const speechMs=liveLastVoice-liveSpeechStart; const silenceMs=now-liveSilenceStart; if(speechMs>MIN_SPEECH_MS && silenceMs>endSilenceMs){ liveBusy=true; status($('sttStatus'),`End of speech detected after ${endSilenceMs}ms silence (${endpointMode()}). Draining STT queue…`,'warn'); stopPartialTranscriptionLoop(false); playRandomAck(); if(mediaRecorder && mediaRecorder.state!=='inactive')mediaRecorder.stop(); return; }}
+  liveLoopId=requestAnimationFrame(liveMonitor);
+}
+async function handleLiveTurn(){ stopPartialTranscriptionLoop(false); try{
+  const blob=new Blob(recChunks,{type:recChunks[0]?.type||'audio/webm'});
+  if(blob.size<2500){ status($('sttStatus'),'Ignored tiny/no-speech clip. Listening…','warn'); liveBusy=false; startLiveRecorder(); liveMonitor(); return; }
+  await waitForPartialQueueIdle();
+  let text='';
+  if(finalSttMode()==='chunks' && latestPartialText.trim()){
+    text=latestPartialText.trim();
+    $('transcriptInfo').textContent='Using queued live chunks after draining queue; skipped full paragraph retranscription.';
+    status($('sttStatus'),`Using queued live chunk transcript (${text.length} chars); no full-utterance STT pass.`,'good');
+  } else {
+    const j=await transcribeBlob(blob);
+    text=(j.text||'').trim();
+    if(text){
+      const existing=String($('transcript').value).trim();
+      if(!existing || !existing.includes(text.slice(0,Math.min(40,text.length)))){ $('transcript').value += (existing ? '\n' : '') + text; }
+      $('transcript').scrollTop=$('transcript').scrollHeight;
+      status($('sttStatus'),`Final full-turn transcript ready (${text.length} chars); displayed partial chunks remain above.`,'good');
+      $('transcriptInfo').textContent='Final full-turn transcript is used for LM; live chunk history is preserved above.';
+    }
+  }
+  if(!text){ status($('sttStatus'),'No transcript. Listening…','warn'); liveBusy=false; startLiveRecorder(); liveMonitor(); return; }
+  await askAndSpeak(text);
+}catch(e){status($('sttStatus'),'Live loop error: '+e.message,'bad');}
+  finally{ if(live && !handlingBarge){ liveBusy=false; status($('sttStatus'),`Live mode armed (${endpointMode()}, ${endSilenceMs}ms endpoint). Start speaking…`,'warn'); startLiveRecorder(); liveMonitor(); }}
+}
+$('liveBtn').onclick=()=> live ? stopLive() : startLive().catch(e=>{stopLive(); status($('sttStatus'),'Live mode error: '+e.message,'bad');});
+</script>
+</body>
+</html>
