@@ -28,6 +28,7 @@ APP_DIR = Path('/home/roggoz/Korina')
 INDEX_PATH = APP_DIR / 'index.html'
 ACK_DIR = APP_DIR / 'Ack'
 ACK_PHRASES_PATH = ACK_DIR / 'ack_phrases.json'
+CONFIG_PATH = APP_DIR / 'config.json'
 KOKORO_URL = os.environ.get('KOKORO_URL', 'http://127.0.0.1:8880')
 ACK_DEFAULT_VOICE = os.environ.get('ACK_DEFAULT_VOICE', 'af_heart')
 WHISPER_MODEL_ID = os.environ.get('WHISPER_MODEL_ID', 'turbo')
@@ -58,6 +59,56 @@ _asr_infer_lock = threading.Lock()
 _asr_device: Optional[str] = None
 _asr_compute_type: Optional[str] = None
 
+
+
+DEFAULT_CONFIG = {
+    'voice': ACK_DEFAULT_VOICE,
+    'speed': 1.0,
+    'mode': 'sse',
+    'ack_enabled': 'on',
+    'stt_backend': 'whisper',
+    'stt_device': 'cpu',
+    'stt_model': 'base.en',
+    'lm_model': LMSTUDIO_MODEL,
+    'tts_device': 'cpu',
+    'endpoint_mode': 'reading',
+    'silence_ms': 3200,
+    'final_stt_mode': 'chunks',
+    'idle_ack_initial_ms': 5000,
+    'idle_ack_step_ms': 5000,
+}
+
+CONFIG_KEYS = set(DEFAULT_CONFIG.keys())
+
+
+def load_config() -> dict:
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    if not CONFIG_PATH.exists():
+        save_config(DEFAULT_CONFIG)
+        return dict(DEFAULT_CONFIG)
+    try:
+        data = json.loads(CONFIG_PATH.read_text())
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        data = {}
+    merged = dict(DEFAULT_CONFIG)
+    for key, value in data.items():
+        if key in CONFIG_KEYS:
+            merged[key] = value
+    return merged
+
+
+def save_config(config: dict) -> dict:
+    APP_DIR.mkdir(parents=True, exist_ok=True)
+    merged = dict(DEFAULT_CONFIG)
+    for key, value in (config or {}).items():
+        if key in CONFIG_KEYS:
+            merged[key] = value
+    tmp = CONFIG_PATH.with_suffix('.tmp.json')
+    tmp.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
+    tmp.replace(CONFIG_PATH)
+    return merged
 
 
 _ack_queue: list[tuple[str, str, str]] = []
@@ -525,7 +576,7 @@ def lmstudio_chat(req: ChatRequest) -> str:
 @app.on_event('startup')
 def startup_generate_default_acks():
     ACK_DIR.mkdir(parents=True, exist_ok=True)
-    enqueue_missing_acks(ACK_DEFAULT_VOICE)
+    enqueue_missing_acks(str(load_config().get('voice') or ACK_DEFAULT_VOICE))
 
 
 @app.get('/')
@@ -558,6 +609,21 @@ def health():
         'ack_count': len(ack_files_for(_ack_current_voice)),
         'ack_status': ack_status(_ack_current_voice),
     }
+
+
+@app.get('/api/config')
+def get_config():
+    return load_config()
+
+
+@app.post('/api/config')
+def update_config(payload: dict):
+    current = load_config()
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if key in CONFIG_KEYS:
+                current[key] = value
+    return save_config(current)
 
 
 @app.get('/api/models')

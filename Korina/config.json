@@ -1,0 +1,16 @@
+{
+  "ack_enabled": "on",
+  "endpoint_mode": "reading",
+  "final_stt_mode": "chunks",
+  "idle_ack_initial_ms": 5000,
+  "idle_ack_step_ms": 5000,
+  "lm_model": "qwen3.5-2b-uncensored-hauhaucs-aggressive",
+  "mode": "sse",
+  "silence_ms": 3200,
+  "speed": 1.0,
+  "stt_backend": "whisper",
+  "stt_device": "cpu",
+  "stt_model": "base.en",
+  "tts_device": "cpu",
+  "voice": "af_heart"
+}

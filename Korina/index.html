@@ -97,7 +97,8 @@ let live=false, liveBusy=false, liveSilenceStart=0, liveSpeechStart=0, liveLastV
 let vadNoiseFloor=0.012, vadNoiseSamples=[], vadCalibratingUntil=0, vadSpeechFrames=0, vadSilenceFrames=0, vadSpeechThreshold=0.035, vadSilenceThreshold=0.022;
 let partialTimer=null, partialInFlight=false, partialSeq=0, partialController=null, latestPartialText='', latestPartialAt=0;
 let partialRecorder=null, partialChunks=[], partialWindowMs=1800, partialWindowIndex=0, partialQueue=[], partialQueueProcessing=false;
-let ackFiles=[], ackBuffers=[], ackBuffersByTag={}, ackSource=null, ackPlayingUntil=0, liveArmedAt=0, lastIdleAckAt=0;
+let ackFiles=[], ackBuffers=[], ackBuffersByTag={}, ackSource=null, ackPlayingUntil=0, lastActivityAt=performance.now(), idleAckCount=0, saveConfigTimer=null;
+let appConfig={idle_ack_initial_ms:5000,idle_ack_step_ms:5000};
 const VAD_BASE_SPEECH_THRESHOLD=0.035, VAD_BASE_SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=1200, VAD_SPEECH_FRAMES=8, VAD_SILENCE_FRAMES=10;
 let endSilenceMs=3200;
 const $=id=>document.getElementById(id);
@@ -112,11 +113,68 @@ function finalSttMode(){return $('finalSttMode')?.value||'chunks'}
 function endpointMode(){return $('endpointMode')?.value||'reading'}
 function setDot(id,state){$(id).className='dot '+state}
 function log(role,text){ const p=document.createElement('p'); p.className='msg'; p.innerHTML=`<b>${role}:</b> ${String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}`; $('log').appendChild(p); $('log').scrollTop=$('log').scrollHeight; }
+
+function collectConfig(){
+  return {
+    voice:$('voice')?.value||'af_heart',
+    speed:parseFloat($('speed')?.value||'1'),
+    mode,
+    ack_enabled:$('ackEnabled')?.value||'on',
+    stt_backend:sttBackend(),
+    stt_device:sttDevice(),
+    stt_model:sttModel(),
+    lm_model:lmModel(),
+    tts_device:ttsDevice(),
+    endpoint_mode:endpointMode(),
+    silence_ms:endSilenceMs,
+    final_stt_mode:finalSttMode(),
+    idle_ack_initial_ms:appConfig.idle_ack_initial_ms||5000,
+    idle_ack_step_ms:appConfig.idle_ack_step_ms||5000,
+  };
+}
+function applyConfig(c={}){
+  appConfig={...appConfig,...c};
+  if(c.voice && $('voice')) $('voice').value=c.voice;
+  if(c.speed && $('speed')){ $('speed').value=c.speed; $('speedDisplay').textContent=parseFloat(c.speed).toFixed(1)+'×'; }
+  if(c.ack_enabled && $('ackEnabled')) $('ackEnabled').value=c.ack_enabled;
+  if(c.stt_backend && $('sttBackend')) $('sttBackend').value=c.stt_backend;
+  if(c.stt_device && $('sttDevice')) $('sttDevice').value=c.stt_device;
+  if(c.stt_model && $('sttModel')) $('sttModel').value=c.stt_model;
+  if(c.lm_model && $('lmModel')) $('lmModel').value=c.lm_model;
+  if(c.tts_device && $('ttsDevice')) $('ttsDevice').value=c.tts_device;
+  if(c.endpoint_mode && $('endpointMode')) $('endpointMode').value=c.endpoint_mode;
+  if(c.final_stt_mode && $('finalSttMode')) $('finalSttMode').value=c.final_stt_mode;
+  if(c.silence_ms){ endSilenceMs=parseInt(c.silence_ms,10); $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; }
+  if(c.mode){ mode=c.mode; document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.mode===mode)); }
+}
+async function loadConfig(){
+  try{ const c=await (await fetch('/api/config')).json(); applyConfig(c); $('settingsInfo').textContent='Loaded saved config.json settings.'; }
+  catch(e){ console.warn('config load failed', e); }
+}
+function saveConfigNow(){
+  const cfg=collectConfig();
+  return fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)}).catch(e=>console.warn('config save failed', e));
+}
+function saveConfigSoon(){ clearTimeout(saveConfigTimer); saveConfigTimer=setTimeout(saveConfigNow,250); }
+function markActivity(reason='activity'){
+  lastActivityAt=performance.now();
+  idleAckCount=0;
+  // Keep this quiet except in the status debug area to avoid log spam.
+}
+function recordIdleAck(){
+  lastActivityAt=performance.now();
+  idleAckCount++;
+}
+function nextIdleDelayMs(){
+  const initial=Number(appConfig.idle_ack_initial_ms||5000);
+  const step=Number(appConfig.idle_ack_step_ms||5000);
+  return initial + (idleAckCount * step);
+}
 async function health(){
   try{let j=await (await fetch('/api/health')).json(); setDot('pageDot',j.whisper_loaded?'good':'warn'); $('pageHealth').textContent=`${j.whisper_backend||'Whisper'} ${j.whisper_loaded?'loaded':'lazy'} · selected STT ${sttBackend()} ${sttDevice()}/${sttModel()} · LM ${lmModel()} · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available?'yes':'no'} · ${j.lmstudio_model}`;}catch(e){setDot('pageDot','bad');$('pageHealth').textContent='page server offline'}
   try{let j=await (await fetch(`${TTS}/health`)).json(); setDot('ttsDot',j.loaded?'good':'warn'); $('ttsHealth').textContent=`Kokoro ${j.loaded?'ready':'lazy'} · selected TTS ${ttsDevice()} · last ${j.device||'none'} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('ttsDot','bad');$('ttsHealth').textContent='Kokoro offline'}
 }
-health(); setInterval(health,10000);
+setInterval(health,10000);
 
 async function loadModelOptions(){
   try{
@@ -136,10 +194,10 @@ async function loadModelOptions(){
 }
 $('settingsBtn').onclick=()=>{ $('settingsModal').classList.add('open'); loadModelOptions(); };
 $('closeSettingsBtn').onclick=()=>$('settingsModal').classList.remove('open');
-$('saveSettingsBtn').onclick=()=>$('settingsModal').classList.remove('open');
+$('saveSettingsBtn').onclick=()=>{ saveConfigNow(); $('settingsModal').classList.remove('open'); };
 $('refreshModelsBtn').onclick=()=>loadModelOptions();
 $('settingsModal').onclick=e=>{ if(e.target===$('settingsModal')) $('settingsModal').classList.remove('open'); };
-loadModelOptions();
+// initApp loads model options after saved config.
 
 async function loadAcks(tag='global'){
   try{
@@ -151,15 +209,16 @@ async function loadAcks(tag='global'){
     return urls;
   }catch(e){ console.warn('ack load failed', e); return []; }
 }
-loadAcks('global');
-$('speed').oninput=()=> $('speedDisplay').textContent=parseFloat($('speed').value).toFixed(1)+'×';
-$('silenceMs').oninput=()=>{ endSilenceMs=parseInt($('silenceMs').value,10); $('silenceDisplay').textContent=endSilenceMs+'ms'; };
-$('endpointMode').onchange=()=>{ endSilenceMs=endpointMode()==='reading'?3200:950; $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; status($('sttStatus'),`Endpointing mode: ${endpointMode()} (${endSilenceMs}ms silence before Korina responds).`, 'warn'); };
-$('sttDevice').onchange=()=>{ status($('sttStatus'),`STT device set to ${sttDevice()}. Next transcription will use it. First use may load a second model.`, 'warn'); health(); };
-$('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttModel()}. First use downloads/loads that model.`, 'warn'); health(); };
-$('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?'LLM audio STT selected. LM Studio /v1/chat currently accepts text/images on many builds; audio may fail unless the selected model/server supports input_audio.':'faster-whisper STT selected.'; status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; };
-$('lmModel').onchange=()=>{ status($('sttStatus'),`LM Studio model set to ${lmModel()}.`, 'warn'); };
-$('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); };
+// initApp loads ack metadata after saved config.
+$('speed').oninput=()=>{ $('speedDisplay').textContent=parseFloat($('speed').value).toFixed(1)+'×'; saveConfigSoon(); };
+$('ackEnabled').onchange=()=>saveConfigSoon();
+$('silenceMs').oninput=()=>{ endSilenceMs=parseInt($('silenceMs').value,10); $('silenceDisplay').textContent=endSilenceMs+'ms'; saveConfigSoon(); };
+$('endpointMode').onchange=()=>{ endSilenceMs=endpointMode()==='reading'?3200:950; $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; status($('sttStatus'),`Endpointing mode: ${endpointMode()} (${endSilenceMs}ms silence before Korina responds).`, 'warn'); saveConfigSoon(); };
+$('sttDevice').onchange=()=>{ status($('sttStatus'),`STT device set to ${sttDevice()}. Next transcription will use it. First use may load a second model.`, 'warn'); health(); saveConfigSoon(); };
+$('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttModel()}. First use downloads/loads that model.`, 'warn'); health(); saveConfigSoon(); };
+$('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?'LLM audio STT selected. LM Studio /v1/chat currently accepts text/images on many builds; audio may fail unless the selected model/server supports input_audio.':'faster-whisper STT selected.'; status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; saveConfigSoon(); };
+$('lmModel').onchange=()=>{ status($('sttStatus'),`LM Studio model set to ${lmModel()}.`, 'warn'); saveConfigSoon(); };
+$('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
 $('voice').onchange=async()=>{
   ackFiles=[]; ackBuffers=[]; ackBuffersByTag={};
   status($('sttStatus'),`Voice changed to ${$('voice').value}. Clearing old ack cache and queueing fresh acks for this voice…`,'warn');
@@ -168,10 +227,23 @@ $('voice').onchange=async()=>{
     const j=await r.json();
     $('transcriptInfo').textContent=`Ack rebuild for ${j.voice}: removed ${j.removed}, missing/queued ${j.queued_or_missing}.`;
   }catch(e){ console.warn('ack rebuild failed', e); }
+  saveConfigSoon();
+  markActivity('voice-change');
   setTimeout(()=>loadAcks('global'),1500);
 };
-$('finalSttMode').onchange=()=>{ status($('sttStatus'),`Finalization mode: ${finalSttMode()==='chunks'?'live chunks only':'full utterance final pass'}.`, 'warn'); };
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.mode;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));});
+$('finalSttMode').onchange=()=>{ status($('sttStatus'),`Finalization mode: ${finalSttMode()==='chunks'?'live chunks only':'full utterance final pass'}.`, 'warn'); saveConfigSoon(); };
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.mode;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t)); saveConfigSoon();});
+
+
+async function initApp(){
+  await loadConfig();
+  await loadModelOptions();
+  await loadConfig(); // Re-apply after LM model options are populated.
+  await loadAcks('global');
+  health();
+  markActivity('init');
+}
+initApp();
 
 function ensureAudio(){ if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)(); gain=audioCtx.createGain(); gain.connect(audioCtx.destination);} if(audioCtx.state==='suspended') audioCtx.resume(); }
 async function preloadAckBuffers(tag='global'){
@@ -214,7 +286,7 @@ function interruptedSpeechContext(){
 async function schedulePcm(b64,sr=24000){ ensureAudio(); const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i); const i16=new Int16Array(u8.buffer); const f32=new Float32Array(i16.length); for(let i=0;i<i16.length;i++)f32[i]=Math.max(-1,Math.min(1,i16[i]/32768)); const buf=audioCtx.createBuffer(1,f32.length,sr); buf.copyToChannel(f32,0); const src=audioCtx.createBufferSource(); src.buffer=buf; src.connect(gain); const when=Math.max(audioCtx.currentTime,nextPlayTime,ackPlayingUntil); src.start(when); activeSources.push(src); src.onended=()=>{activeSources=activeSources.filter(x=>x!==src);}; nextPlayTime=when+f32.length/sr; currentTtsEstimatedEnd=Math.max(currentTtsEstimatedEnd,nextPlayTime); }
 async function speakSSE(text){ controller=new AbortController(); nextPlayTime=0; let chunks=0,samples=0,start=performance.now(),buf=''; status($('ttsStatus'),'Streaming Kokoro chunks…','warn'); $('progress').style.width='5%'; const r=await fetch(`${TTS}/stream/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const reader=r.body.getReader(), dec=new TextDecoder(); while(true){const {done,value}=await reader.read(); if(done)break; buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf=lines.pop(); for(const line of lines){ if(!line.startsWith('data: '))continue; const ev=JSON.parse(line.slice(6)); await schedulePcm(ev.audio,ev.sample_rate||24000); chunks++; samples+=ev.samples||0; const elapsed=(performance.now()-start)/1000; $('progress').style.width=Math.min(99,10+chunks*12)+'%'; $('chunkInfo').textContent=`${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`; }} $('progress').style.width='100%'; status($('ttsStatus'),`Done · ${chunks} chunks`,'good'); }
 async function speakBuffered(text){ controller=new AbortController(); status($('ttsStatus'),'Synthesizing full WAV…','warn'); $('progress').style.width='10%'; const r=await fetch(`${TTS}/v1/audio/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const blob=await r.blob(); $('audio').src=URL.createObjectURL(blob); $('audio').play().catch(()=>{}); $('progress').style.width='100%'; status($('ttsStatus'),'Done · buffered WAV ready','good'); }
-async function speakText(text, wait=false){ if(!text.trim())return; $('playBtn').disabled=true; $('stopBtn').disabled=false; $('chunkInfo').textContent=''; ensureAudio(); currentKorinaText=text; currentTtsStartedAt=audioCtx.currentTime; currentTtsEstimatedEnd=currentTtsStartedAt; activeSources=[]; ttsSpeaking=true; if(live) startBargeInCapture(); try{ if(mode==='sse') await speakSSE(text); else await speakBuffered(text); if(wait && mode==='sse') await waitForScheduledAudio(); }catch(e){ if(e.name==='AbortError'){ status($('ttsStatus'),'Interrupted'); return; } else { status($('ttsStatus'),'Error: '+e.message,'bad'); throw e; } } finally{ if(!handlingBarge){ ttsSpeaking=false; if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); } $('playBtn').disabled=false;$('stopBtn').disabled=true;controller=null;} }
+async function speakText(text, wait=false){ if(!text.trim())return; markActivity('korina-speech-start'); $('playBtn').disabled=true; $('stopBtn').disabled=false; $('chunkInfo').textContent=''; ensureAudio(); currentKorinaText=text; currentTtsStartedAt=audioCtx.currentTime; currentTtsEstimatedEnd=currentTtsStartedAt; activeSources=[]; ttsSpeaking=true; if(live) startBargeInCapture(); try{ if(mode==='sse') await speakSSE(text); else await speakBuffered(text); if(wait && mode==='sse') await waitForScheduledAudio(); }catch(e){ if(e.name==='AbortError'){ status($('ttsStatus'),'Interrupted'); return; } else { status($('ttsStatus'),'Error: '+e.message,'bad'); throw e; } } finally{ if(!handlingBarge){ ttsSpeaking=false; if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); } markActivity('korina-speech-end'); $('playBtn').disabled=false;$('stopBtn').disabled=true;controller=null;} }
 async function askLM(message){ status($('sttStatus'),'Sending transcript to LM Studio…','warn'); const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history,max_tokens:180,temperature:0.7,model:lmModel()})}); const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||''; }
 async function askAndSpeak(message, context=''){ log('You',message); history.push({role:'user',content:message}); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-12); status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); }
 async function playRandomAck(tag='global'){
@@ -232,6 +304,7 @@ async function playRandomAck(tag='global'){
     src.start(when);
     ackSource=src;
     ackPlayingUntil=when + pick.buffer.duration + 0.05;
+    if(tag==='idle') recordIdleAck(); else markActivity('ack');
     $('chunkInfo').textContent=`Ack ${tag}: ${pick.url.split('/').pop()} · ${pick.buffer.duration.toFixed(2)}s`;
   }catch(e){ console.warn('ack playback failed', e); }
 }
@@ -479,7 +552,7 @@ async function handleBargeRecording(){
 $('recBtn').onclick=async()=>{ try{ await setupMic(); makeRecorder(async()=>{ try{ if(raf)cancelAnimationFrame(raf); if(stream)stream.getTracks().forEach(t=>t.stop()); status($('sttStatus'),'Uploading to faster-whisper streaming STT…','warn'); const blob=new Blob(recChunks,{type:recChunks[0]?.type||'audio/webm'}); const j=await transcribeBlob(blob); $('transcript').value=j.text||''; status($('sttStatus'),`Transcribed in ${j.seconds.toFixed(2)}s · ${j.model}`,'good'); $('transcriptInfo').textContent='Manual recording transcribed.'; }catch(e){status($('sttStatus'),'Transcribe error: '+e.message,'bad');} finally{$('recBtn').disabled=false;$('stopRecBtn').disabled=true;} }); $('recBtn').disabled=true; $('stopRecBtn').disabled=false; status($('sttStatus'),'Recording…','warn'); }catch(e){status($('sttStatus'),'Mic error: '+e.message,'bad');}};
 $('stopRecBtn').onclick=()=>{ if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); };
 
-async function startLive(){ live=true; liveBusy=false; $('liveBtn').classList.add('on'); $('liveBtn').textContent='Stop Live Conversation'; $('recBtn').disabled=true; $('stopRecBtn').disabled=true; status($('sttStatus'),'Preloading ack phrases + arming mic…','warn'); await setupMic(); await preloadAckBuffers('global'); await preloadAckBuffers('idle'); liveArmedAt=performance.now(); lastIdleAckAt=0; status($('sttStatus'),`Live mode armed (${endpointMode()}, ${endSilenceMs}ms endpoint). Start speaking…`,'warn'); startLiveRecorder(); liveMonitor(); }
+async function startLive(){ live=true; liveBusy=false; $('liveBtn').classList.add('on'); $('liveBtn').textContent='Stop Live Conversation'; $('recBtn').disabled=true; $('stopRecBtn').disabled=true; status($('sttStatus'),'Preloading ack phrases + arming mic…','warn'); await setupMic(); await preloadAckBuffers('global'); await preloadAckBuffers('idle'); markActivity('live-start'); status($('sttStatus'),`Live mode armed (${endpointMode()}, ${endSilenceMs}ms endpoint). Start speaking…`,'warn'); startLiveRecorder(); liveMonitor(); }
 function stopLive(){ live=false; liveBusy=false; stopPartialTranscriptionLoop(true); $('liveBtn').classList.remove('on'); $('liveBtn').textContent='Live Conversation'; $('recBtn').disabled=false; $('stopRecBtn').disabled=true; if(liveLoopId)cancelAnimationFrame(liveLoopId); if(bargeLoopId)cancelAnimationFrame(bargeLoopId); liveLoopId=null; bargeLoopId=null; if(mediaRecorder && mediaRecorder.state!=='inactive')mediaRecorder.stop(); if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); if(stream)stream.getTracks().forEach(t=>t.stop()); if(raf)cancelAnimationFrame(raf); stopTtsNow(); if(ackSource){try{ackSource.stop();}catch{} ackSource=null;} ackPlayingUntil=0; handlingBarge=false; status($('sttStatus'),'Live mode stopped.'); }
 function startLiveRecorder(){ if(!live || !stream)return; liveSpeechStart=0; liveSilenceStart=0; liveLastVoice=0; vadSpeechFrames=0; vadSilenceFrames=0; partialWindowIndex=0; latestPartialText=''; makeRecorder(async()=>{ if(!live)return; await handleLiveTurn(); },500); startPartialTranscriptionLoop(); }
 function liveMonitor(){
@@ -505,17 +578,20 @@ function liveMonitor(){
     if(vadSpeechFrames>=VAD_SPEECH_FRAMES){
       liveSpeechStart=now;
       liveLastVoice=now;
+      markActivity('user-speech-start');
       liveSilenceStart=0;
       status($('sttStatus'),`Listening… voice confirmed level ${level.toFixed(3)} · noise ${vadNoiseFloor.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} silence<${vadSilenceThreshold.toFixed(3)}`,'warn');
     } else {
       $('transcriptInfo').textContent=`Calibrated noise ${vadNoiseFloor.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} · silence<${vadSilenceThreshold.toFixed(3)}`;
-      if(liveArmedAt && now-liveArmedAt>10000 && now-lastIdleAckAt>20000 && !ttsSpeaking){
-        lastIdleAckAt=now;
+      const idleFor=now-lastActivityAt;
+      const due=nextIdleDelayMs();
+      if(idleFor>due && !ttsSpeaking && !liveBusy && (!audioCtx || audioCtx.currentTime>=ackPlayingUntil)){
         playRandomAck('idle');
       }
     }
   } else if(aboveSpeech){
     liveLastVoice=now;
+    markActivity('user-speaking');
     liveSilenceStart=0;
     status($('sttStatus'),`Listening… level ${level.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} silence<${vadSilenceThreshold.toFixed(3)}`,'warn');
   } else if(vadSilenceFrames>=VAD_SILENCE_FRAMES){
