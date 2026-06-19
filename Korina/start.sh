@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KORINA_ROOT="/home/roggoz/Documents/Korina"
+KORINA_ROOT="/home/roggoz/Korina"
 PY="/home/roggoz/kokoro-env4/bin/python"
 KORINA_APP="/home/roggoz/korina_voice_lab.py"
 KOKORO_APP="/home/roggoz/kokoro-streaming-server.py"
