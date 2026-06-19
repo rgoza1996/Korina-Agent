@@ -8,20 +8,20 @@ Local voice conversation agent: browser UI → faster-whisper STT → LM Studio 
 Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
   │                                │
   │  mic → VAD chunking            │  faster-whisper
-  │  ─────────────────────────────► │  /api/transcribe/partial  (live rolling)
+  │  ─────────────────────────────►│  /api/transcribe/partial  (live rolling)
   │                                │  /api/transcribe/stream   (end-of-turn SSE)
   │                                │  /api/transcribe          (buffered JSON)
   │                                │
   │  ◄── transcription text ────── │
   │                                │
-  │  ─── user transcript ────────►│  /api/chat  →  LM Studio (:1234)
+  │  ─── user transcript ────────► │  /api/chat  →  LM Studio (:1234)
   │                                │          ◄── LLM reply
   │                                │
-  │  ◄── reply text ───────────── │
+  │  ◄── reply text ─────────────  │
   │                                │
-  │  ─── reply + voice ──────────►│  Kokoro TTS (:8880)
+  │  ─── reply + voice ──────────► │  Kokoro TTS (:8880)
   │                                │  /stream/speech  (SSE PCM chunks)
-  │  ◄── audio stream ─────────── │
+  │  ◄── audio stream ───────────  │
   │                                │
   └────────── Web Audio playback ──┘
 ```
@@ -90,8 +90,8 @@ Kokoro TTS with Web Audio SSE streaming. Voices selectable in the UI. Ack phrase
 
 ## Branching
 
-- `master` — stable, production-ready snapshots
-- `beta` — release candidates
-- `alpha` — active development (default working branch)
+- `master` — stable, production-ready snapshots (default branch)
+- `beta` — release candidates (debugging branch)
+- `alpha` — active development (working branch)
 
 Do all new work on `alpha`.
