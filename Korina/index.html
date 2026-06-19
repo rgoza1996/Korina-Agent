@@ -94,10 +94,11 @@ let activeSources=[], ttsSpeaking=false, currentKorinaText='', currentTtsStarted
 let mediaRecorder=null, recChunks=[], analyser=null, raf=null, stream=null, meterAudioCtx=null;
 let bargeRecorder=null, bargeChunks=[], bargeLoopId=null, bargeSpeechStart=0, bargeSilenceStart=0, handlingBarge=false;
 let live=false, liveBusy=false, liveSilenceStart=0, liveSpeechStart=0, liveLastVoice=0, liveLoopId=null, history=[];
+let vadNoiseFloor=0.012, vadNoiseSamples=[], vadCalibratingUntil=0, vadSpeechFrames=0, vadSilenceFrames=0, vadSpeechThreshold=0.035, vadSilenceThreshold=0.022;
 let partialTimer=null, partialInFlight=false, partialSeq=0, partialController=null, latestPartialText='', latestPartialAt=0;
 let partialRecorder=null, partialChunks=[], partialWindowMs=1800, partialWindowIndex=0, partialQueue=[], partialQueueProcessing=false;
 let ackFiles=[], ackBuffers=[], ackSource=null, ackPlayingUntil=0;
-const SPEECH_THRESHOLD=0.035, SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=450;
+const VAD_BASE_SPEECH_THRESHOLD=0.035, VAD_BASE_SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=1200, VAD_SPEECH_FRAMES=8, VAD_SILENCE_FRAMES=10;
 let endSilenceMs=3200;
 const $=id=>document.getElementById(id);
 $('hostInfo').textContent=`${location.hostname}:8001 → LM Studio localhost:1234 on roggoz → ${location.hostname}:8880`;
@@ -221,7 +222,30 @@ $('stopBtn').onclick=()=>{ stopTtsNow(); if(bargeLoopId)cancelAnimationFrame(bar
 
 function drawWave(){ if(!analyser)return; const data=new Uint8Array(analyser.frequencyBinCount); analyser.getByteTimeDomainData(data); const wave=$('wave'); wave.innerHTML=''; for(let i=0;i<80;i++){ const v=Math.abs(data[Math.floor(i*data.length/80)]-128)/128; const b=document.createElement('div'); b.className='bar'; b.style.height=(4+v*44)+'px'; wave.appendChild(b);} raf=requestAnimationFrame(drawWave); }
 function rmsLevel(){ if(!analyser)return 0; const data=new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(data); let sum=0; for(const x of data){ const v=(x-128)/128; sum+=v*v; } return Math.sqrt(sum/data.length); }
-async function setupMic(){ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}); meterAudioCtx=new AudioContext(); const src=meterAudioCtx.createMediaStreamSource(stream); analyser=meterAudioCtx.createAnalyser(); analyser.fftSize=512; src.connect(analyser); drawWave(); }
+function clamp(n,min,max){ return Math.max(min,Math.min(max,n)); }
+function resetAdaptiveVad(){
+  vadNoiseFloor=0.012;
+  vadNoiseSamples=[];
+  vadCalibratingUntil=performance.now()+900;
+  vadSpeechFrames=0;
+  vadSilenceFrames=0;
+  vadSpeechThreshold=VAD_BASE_SPEECH_THRESHOLD;
+  vadSilenceThreshold=VAD_BASE_SILENCE_THRESHOLD;
+}
+function updateAdaptiveVad(level, now){
+  // Calibrate on the room/mic floor before the user starts speaking, then slowly track quiet room drift only while idle.
+  if(!liveSpeechStart && now<vadCalibratingUntil){
+    vadNoiseSamples.push(level);
+    const sorted=[...vadNoiseSamples].sort((a,b)=>a-b);
+    const p60=sorted[Math.floor(sorted.length*0.60)]||level;
+    vadNoiseFloor=clamp(p60,0.002,0.035);
+  } else if(!liveSpeechStart && level<vadSpeechThreshold){
+    vadNoiseFloor=clamp(vadNoiseFloor*0.96 + level*0.04,0.002,0.035);
+  }
+  vadSilenceThreshold=clamp(vadNoiseFloor*2.2 + 0.006,0.012,0.045);
+  vadSpeechThreshold=clamp(Math.max(vadSilenceThreshold+0.010, vadNoiseFloor*3.4 + 0.012),0.026,0.085);
+}
+async function setupMic(){ stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true}}); meterAudioCtx=new AudioContext(); const src=meterAudioCtx.createMediaStreamSource(stream); analyser=meterAudioCtx.createAnalyser(); analyser.fftSize=512; src.connect(analyser); resetAdaptiveVad(); drawWave(); }
 function makeRecorder(onstop,timeslice=0){ recChunks=[]; const mime=MediaRecorder.isTypeSupported('audio/webm;codecs=opus')?'audio/webm;codecs=opus':'audio/webm'; mediaRecorder=new MediaRecorder(stream,{mimeType:mime}); mediaRecorder.ondataavailable=e=>{if(e.data.size)recChunks.push(e.data)}; mediaRecorder.onstop=onstop; mediaRecorder.start(timeslice||undefined); }
 async function transcribeBlob(blob){
   const fd=new FormData();
@@ -438,9 +462,52 @@ $('stopRecBtn').onclick=()=>{ if(mediaRecorder && mediaRecorder.state!=='inactiv
 
 async function startLive(){ live=true; liveBusy=false; $('liveBtn').classList.add('on'); $('liveBtn').textContent='Stop Live Conversation'; $('recBtn').disabled=true; $('stopRecBtn').disabled=true; status($('sttStatus'),'Preloading ack phrases + arming mic…','warn'); await setupMic(); await preloadAckBuffers(); status($('sttStatus'),`Live mode armed (${endpointMode()}, ${endSilenceMs}ms endpoint). Start speaking…`,'warn'); startLiveRecorder(); liveMonitor(); }
 function stopLive(){ live=false; liveBusy=false; stopPartialTranscriptionLoop(true); $('liveBtn').classList.remove('on'); $('liveBtn').textContent='Live Conversation'; $('recBtn').disabled=false; $('stopRecBtn').disabled=true; if(liveLoopId)cancelAnimationFrame(liveLoopId); if(bargeLoopId)cancelAnimationFrame(bargeLoopId); liveLoopId=null; bargeLoopId=null; if(mediaRecorder && mediaRecorder.state!=='inactive')mediaRecorder.stop(); if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); if(stream)stream.getTracks().forEach(t=>t.stop()); if(raf)cancelAnimationFrame(raf); stopTtsNow(); if(ackSource){try{ackSource.stop();}catch{} ackSource=null;} ackPlayingUntil=0; handlingBarge=false; status($('sttStatus'),'Live mode stopped.'); }
-function startLiveRecorder(){ if(!live || !stream)return; liveSpeechStart=0; liveSilenceStart=0; liveLastVoice=0; partialWindowIndex=0; latestPartialText=''; makeRecorder(async()=>{ if(!live)return; await handleLiveTurn(); },500); startPartialTranscriptionLoop(); }
-function liveMonitor(){ if(!live || liveBusy)return; const level=rmsLevel(); const now=performance.now(); if(level>SPEECH_THRESHOLD){ if(!liveSpeechStart) liveSpeechStart=now; liveLastVoice=now; liveSilenceStart=0; status($('sttStatus'),`Listening… voice detected (${level.toFixed(3)})`,'warn'); }
-  else if(liveSpeechStart && level<SILENCE_THRESHOLD){ if(!liveSilenceStart) liveSilenceStart=now; const speechMs=liveLastVoice-liveSpeechStart; const silenceMs=now-liveSilenceStart; if(speechMs>MIN_SPEECH_MS && silenceMs>endSilenceMs){ liveBusy=true; status($('sttStatus'),`End of speech detected after ${endSilenceMs}ms silence (${endpointMode()}). Draining STT queue…`,'warn'); stopPartialTranscriptionLoop(false); playRandomAck(); if(mediaRecorder && mediaRecorder.state!=='inactive')mediaRecorder.stop(); return; }}
+function startLiveRecorder(){ if(!live || !stream)return; liveSpeechStart=0; liveSilenceStart=0; liveLastVoice=0; vadSpeechFrames=0; vadSilenceFrames=0; partialWindowIndex=0; latestPartialText=''; makeRecorder(async()=>{ if(!live)return; await handleLiveTurn(); },500); startPartialTranscriptionLoop(); }
+function liveMonitor(){
+  if(!live || liveBusy)return;
+  const level=rmsLevel();
+  const now=performance.now();
+  updateAdaptiveVad(level, now);
+  const aboveSpeech=level>vadSpeechThreshold;
+  const belowSilence=level<vadSilenceThreshold;
+  if(aboveSpeech){
+    vadSpeechFrames++;
+    vadSilenceFrames=0;
+  } else if(belowSilence){
+    vadSilenceFrames++;
+    vadSpeechFrames=0;
+  } else {
+    // Between thresholds: hold current state instead of flapping.
+    vadSpeechFrames=0;
+    vadSilenceFrames=0;
+  }
+
+  if(!liveSpeechStart){
+    if(vadSpeechFrames>=VAD_SPEECH_FRAMES){
+      liveSpeechStart=now;
+      liveLastVoice=now;
+      liveSilenceStart=0;
+      status($('sttStatus'),`Listening… voice confirmed level ${level.toFixed(3)} · noise ${vadNoiseFloor.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} silence<${vadSilenceThreshold.toFixed(3)}`,'warn');
+    } else {
+      $('transcriptInfo').textContent=`Calibrated noise ${vadNoiseFloor.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} · silence<${vadSilenceThreshold.toFixed(3)}`;
+    }
+  } else if(aboveSpeech){
+    liveLastVoice=now;
+    liveSilenceStart=0;
+    status($('sttStatus'),`Listening… level ${level.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} silence<${vadSilenceThreshold.toFixed(3)}`,'warn');
+  } else if(vadSilenceFrames>=VAD_SILENCE_FRAMES){
+    if(!liveSilenceStart) liveSilenceStart=now;
+    const speechMs=liveLastVoice-liveSpeechStart;
+    const silenceMs=now-liveSilenceStart;
+    if(speechMs>MIN_SPEECH_MS && silenceMs>endSilenceMs){
+      liveBusy=true;
+      status($('sttStatus'),`End of speech after ${Math.round(silenceMs)}ms silence (${endpointMode()}). noise ${vadNoiseFloor.toFixed(3)} · draining STT queue…`,'warn');
+      stopPartialTranscriptionLoop(false);
+      playRandomAck();
+      if(mediaRecorder && mediaRecorder.state!=='inactive')mediaRecorder.stop();
+      return;
+    }
+  }
   liveLoopId=requestAnimationFrame(liveMonitor);
 }
 async function handleLiveTurn(){ stopPartialTranscriptionLoop(false); try{

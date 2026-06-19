@@ -30,9 +30,9 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
 
 - `korina_voice_lab.py` — FastAPI server: STT endpoints, chat proxy to LM Studio, settings API.
 - `kokoro-streaming-server.py` — Kokoro TTS server: SSE streaming, buffered WAV fallback.
-- `Documents/Korina/index.html` — Browser UI: live VAD, partial transcription queue, settings modal, Web Audio playback.
-- `Documents/Korina/start.sh` / `stop.sh` — Service lifecycle.
-- `Documents/Korina/Ack/` — Short acknowledgement WAV files played while Korina is "thinking".
+- `Korina/index.html` — Browser UI: live VAD, partial transcription queue, settings modal, Web Audio playback.
+- `Korina/start.sh` / `stop.sh` — Service lifecycle.
+- `Korina/Ack/` — Short acknowledgement WAV files played while Korina is "thinking".
 
 ## Setup on a new machine
 
@@ -54,7 +54,7 @@ pip install kokoro-onnx pydub
 # 4. LM Studio running locally on :1234 with your model loaded
 
 # 5. Start
-./Documents/Korina/start.sh
+./Korina/start.sh
 # Open http://hostname:8001
 ```
 

@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-APP_DIR = Path('/home/roggoz/Documents/Korina')
+APP_DIR = Path('/home/roggoz/Korina')
 INDEX_PATH = APP_DIR / 'index.html'
 ACK_DIR = APP_DIR / 'Ack'
 WHISPER_MODEL_ID = os.environ.get('WHISPER_MODEL_ID', 'turbo')
