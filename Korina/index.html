@@ -97,7 +97,7 @@ let live=false, liveBusy=false, liveSilenceStart=0, liveSpeechStart=0, liveLastV
 let vadNoiseFloor=0.012, vadNoiseSamples=[], vadCalibratingUntil=0, vadSpeechFrames=0, vadSilenceFrames=0, vadSpeechThreshold=0.035, vadSilenceThreshold=0.022;
 let partialTimer=null, partialInFlight=false, partialSeq=0, partialController=null, latestPartialText='', latestPartialAt=0;
 let partialRecorder=null, partialChunks=[], partialWindowMs=1800, partialWindowIndex=0, partialQueue=[], partialQueueProcessing=false;
-let ackFiles=[], ackBuffers=[], ackSource=null, ackPlayingUntil=0;
+let ackFiles=[], ackBuffers=[], ackBuffersByTag={}, ackSource=null, ackPlayingUntil=0, liveArmedAt=0, lastIdleAckAt=0;
 const VAD_BASE_SPEECH_THRESHOLD=0.035, VAD_BASE_SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=1200, VAD_SPEECH_FRAMES=8, VAD_SILENCE_FRAMES=10;
 let endSilenceMs=3200;
 const $=id=>document.getElementById(id);
@@ -141,14 +141,17 @@ $('refreshModelsBtn').onclick=()=>loadModelOptions();
 $('settingsModal').onclick=e=>{ if(e.target===$('settingsModal')) $('settingsModal').classList.remove('open'); };
 loadModelOptions();
 
-async function loadAcks(){
+async function loadAcks(tag='global'){
   try{
-    const j=await (await fetch('/api/acks')).json();
-    ackFiles=(j.acks||[]).map(a=>a.url);
-    if(ackFiles.length) $('sttStatus').textContent=`Ready. ${ackFiles.length} ack phrases listed. Reading mode waits ${endSilenceMs}ms before ending a turn.`;
-  }catch(e){ console.warn('ack load failed', e); }
+    const j=await (await fetch(`/api/acks?voice=${encodeURIComponent($('voice').value)}&tag=${encodeURIComponent(tag)}`)).json();
+    const urls=(j.acks||[]).map(a=>a.url);
+    if(tag==='global') ackFiles=urls;
+    if(urls.length) $('sttStatus').textContent=`Ready. ${urls.length} ${tag} ack phrases for ${$('voice').value}. Queue ${j.status?.queue_depth||0}; missing ${j.status?.missing_count||0}.`;
+    else $('sttStatus').textContent=`Ack phrases for ${$('voice').value}/${tag} are queued for generation. Queue ${j.status?.queue_depth||0}; missing ${j.status?.missing_count||0}.`;
+    return urls;
+  }catch(e){ console.warn('ack load failed', e); return []; }
 }
-loadAcks();
+loadAcks('global');
 $('speed').oninput=()=> $('speedDisplay').textContent=parseFloat($('speed').value).toFixed(1)+'×';
 $('silenceMs').oninput=()=>{ endSilenceMs=parseInt($('silenceMs').value,10); $('silenceDisplay').textContent=endSilenceMs+'ms'; };
 $('endpointMode').onchange=()=>{ endSilenceMs=endpointMode()==='reading'?3200:950; $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; status($('sttStatus'),`Endpointing mode: ${endpointMode()} (${endSilenceMs}ms silence before Korina responds).`, 'warn'); };
@@ -157,23 +160,37 @@ $('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttMo
 $('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?'LLM audio STT selected. LM Studio /v1/chat currently accepts text/images on many builds; audio may fail unless the selected model/server supports input_audio.':'faster-whisper STT selected.'; status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; };
 $('lmModel').onchange=()=>{ status($('sttStatus'),`LM Studio model set to ${lmModel()}.`, 'warn'); };
 $('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); };
+$('voice').onchange=async()=>{
+  ackFiles=[]; ackBuffers=[]; ackBuffersByTag={};
+  status($('sttStatus'),`Voice changed to ${$('voice').value}. Clearing old ack cache and queueing fresh acks for this voice…`,'warn');
+  try{
+    const r=await fetch('/api/acks/rebuild',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({voice:$('voice').value,clear:true})});
+    const j=await r.json();
+    $('transcriptInfo').textContent=`Ack rebuild for ${j.voice}: removed ${j.removed}, missing/queued ${j.queued_or_missing}.`;
+  }catch(e){ console.warn('ack rebuild failed', e); }
+  setTimeout(()=>loadAcks('global'),1500);
+};
 $('finalSttMode').onchange=()=>{ status($('sttStatus'),`Finalization mode: ${finalSttMode()==='chunks'?'live chunks only':'full utterance final pass'}.`, 'warn'); };
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.mode;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));});
 
 function ensureAudio(){ if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)(); gain=audioCtx.createGain(); gain.connect(audioCtx.destination);} if(audioCtx.state==='suspended') audioCtx.resume(); }
-async function preloadAckBuffers(){
+async function preloadAckBuffers(tag='global'){
   ensureAudio();
-  if(ackBuffers.length || !ackFiles.length) return;
+  if(ackBuffersByTag[tag]?.length) return ackBuffersByTag[tag];
+  const urls=tag==='global' && ackFiles.length ? ackFiles : await loadAcks(tag);
+  if(!urls.length) return [];
   const decoded=[];
-  for(const url of ackFiles){
+  for(const url of urls){
     try{
       const ab=await (await fetch(url)).arrayBuffer();
       const buf=await audioCtx.decodeAudioData(ab.slice(0));
-      decoded.push({url, buffer:buf});
+      decoded.push({url, buffer:buf, tag});
     }catch(e){ console.warn('ack decode failed', url, e); }
   }
-  ackBuffers=decoded;
-  if(ackBuffers.length) status($('sttStatus'),`Live mode ready. ${ackBuffers.length} ack phrases preloaded in memory.`,'good');
+  ackBuffersByTag[tag]=decoded;
+  if(tag==='global') ackBuffers=decoded;
+  if(decoded.length) status($('sttStatus'),`Live mode ready. ${decoded.length} ${tag} ack phrases preloaded for ${$('voice').value}.`,'good');
+  return decoded;
 }
 async function waitForScheduledAudio(){ if(!audioCtx)return; const ms=Math.max(0,(nextPlayTime-audioCtx.currentTime)*1000)+150; if(ms>0) await new Promise(r=>setTimeout(r,ms)); }
 function stopTtsNow(){
@@ -200,25 +217,27 @@ async function speakBuffered(text){ controller=new AbortController(); status($('
 async function speakText(text, wait=false){ if(!text.trim())return; $('playBtn').disabled=true; $('stopBtn').disabled=false; $('chunkInfo').textContent=''; ensureAudio(); currentKorinaText=text; currentTtsStartedAt=audioCtx.currentTime; currentTtsEstimatedEnd=currentTtsStartedAt; activeSources=[]; ttsSpeaking=true; if(live) startBargeInCapture(); try{ if(mode==='sse') await speakSSE(text); else await speakBuffered(text); if(wait && mode==='sse') await waitForScheduledAudio(); }catch(e){ if(e.name==='AbortError'){ status($('ttsStatus'),'Interrupted'); return; } else { status($('ttsStatus'),'Error: '+e.message,'bad'); throw e; } } finally{ if(!handlingBarge){ ttsSpeaking=false; if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); } $('playBtn').disabled=false;$('stopBtn').disabled=true;controller=null;} }
 async function askLM(message){ status($('sttStatus'),'Sending transcript to LM Studio…','warn'); const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history,max_tokens:180,temperature:0.7,model:lmModel()})}); const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||''; }
 async function askAndSpeak(message, context=''){ log('You',message); history.push({role:'user',content:message}); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-12); status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); }
-function playRandomAck(){
-  if($('ackEnabled').value!=='on' || !ackBuffers.length) return;
+async function playRandomAck(tag='global'){
+  if($('ackEnabled').value!=='on') return;
   try{
     ensureAudio();
+    const pool=await preloadAckBuffers(tag);
+    if(!pool.length) return;
     if(ackSource){ try{ ackSource.stop(); }catch{} }
-    const pick=ackBuffers[Math.floor(Math.random()*ackBuffers.length)];
+    const pick=pool[Math.floor(Math.random()*pool.length)];
     const src=audioCtx.createBufferSource();
     src.buffer=pick.buffer;
     src.connect(gain);
-    const when=audioCtx.currentTime + 0.005; // schedule almost immediately, but avoid race with current quantum
+    const when=Math.max(audioCtx.currentTime + 0.005, ackPlayingUntil);
     src.start(when);
     ackSource=src;
     ackPlayingUntil=when + pick.buffer.duration + 0.05;
-    $('chunkInfo').textContent=`Ack immediately: ${pick.url.split('/').pop()} · ${pick.buffer.duration.toFixed(2)}s`;
+    $('chunkInfo').textContent=`Ack ${tag}: ${pick.url.split('/').pop()} · ${pick.buffer.duration.toFixed(2)}s`;
   }catch(e){ console.warn('ack playback failed', e); }
 }
 $('playBtn').onclick=()=>speakText($('text').value,false).catch(()=>{});
 $('askBtn').onclick=()=>askAndSpeak($('text').value.trim()).catch(e=>status($('sttStatus'),'LM/TTS error: '+e.message,'bad'));
-$('stopBtn').onclick=()=>{ stopTtsNow(); if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); if(ackSource){try{ackSource.stop();}catch{} ackSource=null;} if(audioCtx){try{audioCtx.close()}catch{} audioCtx=null; ackBuffers=[];} $('audio').pause(); status($('ttsStatus'),'Stopped'); };
+$('stopBtn').onclick=()=>{ stopTtsNow(); if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); if(ackSource){try{ackSource.stop();}catch{} ackSource=null;} if(audioCtx){try{audioCtx.close()}catch{} audioCtx=null; ackBuffers=[]; ackBuffersByTag={};} $('audio').pause(); status($('ttsStatus'),'Stopped'); };
 
 function drawWave(){ if(!analyser)return; const data=new Uint8Array(analyser.frequencyBinCount); analyser.getByteTimeDomainData(data); const wave=$('wave'); wave.innerHTML=''; for(let i=0;i<80;i++){ const v=Math.abs(data[Math.floor(i*data.length/80)]-128)/128; const b=document.createElement('div'); b.className='bar'; b.style.height=(4+v*44)+'px'; wave.appendChild(b);} raf=requestAnimationFrame(drawWave); }
 function rmsLevel(){ if(!analyser)return 0; const data=new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(data); let sum=0; for(const x of data){ const v=(x-128)/128; sum+=v*v; } return Math.sqrt(sum/data.length); }
@@ -460,7 +479,7 @@ async function handleBargeRecording(){
 $('recBtn').onclick=async()=>{ try{ await setupMic(); makeRecorder(async()=>{ try{ if(raf)cancelAnimationFrame(raf); if(stream)stream.getTracks().forEach(t=>t.stop()); status($('sttStatus'),'Uploading to faster-whisper streaming STT…','warn'); const blob=new Blob(recChunks,{type:recChunks[0]?.type||'audio/webm'}); const j=await transcribeBlob(blob); $('transcript').value=j.text||''; status($('sttStatus'),`Transcribed in ${j.seconds.toFixed(2)}s · ${j.model}`,'good'); $('transcriptInfo').textContent='Manual recording transcribed.'; }catch(e){status($('sttStatus'),'Transcribe error: '+e.message,'bad');} finally{$('recBtn').disabled=false;$('stopRecBtn').disabled=true;} }); $('recBtn').disabled=true; $('stopRecBtn').disabled=false; status($('sttStatus'),'Recording…','warn'); }catch(e){status($('sttStatus'),'Mic error: '+e.message,'bad');}};
 $('stopRecBtn').onclick=()=>{ if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); };
 
-async function startLive(){ live=true; liveBusy=false; $('liveBtn').classList.add('on'); $('liveBtn').textContent='Stop Live Conversation'; $('recBtn').disabled=true; $('stopRecBtn').disabled=true; status($('sttStatus'),'Preloading ack phrases + arming mic…','warn'); await setupMic(); await preloadAckBuffers(); status($('sttStatus'),`Live mode armed (${endpointMode()}, ${endSilenceMs}ms endpoint). Start speaking…`,'warn'); startLiveRecorder(); liveMonitor(); }
+async function startLive(){ live=true; liveBusy=false; $('liveBtn').classList.add('on'); $('liveBtn').textContent='Stop Live Conversation'; $('recBtn').disabled=true; $('stopRecBtn').disabled=true; status($('sttStatus'),'Preloading ack phrases + arming mic…','warn'); await setupMic(); await preloadAckBuffers('global'); await preloadAckBuffers('idle'); liveArmedAt=performance.now(); lastIdleAckAt=0; status($('sttStatus'),`Live mode armed (${endpointMode()}, ${endSilenceMs}ms endpoint). Start speaking…`,'warn'); startLiveRecorder(); liveMonitor(); }
 function stopLive(){ live=false; liveBusy=false; stopPartialTranscriptionLoop(true); $('liveBtn').classList.remove('on'); $('liveBtn').textContent='Live Conversation'; $('recBtn').disabled=false; $('stopRecBtn').disabled=true; if(liveLoopId)cancelAnimationFrame(liveLoopId); if(bargeLoopId)cancelAnimationFrame(bargeLoopId); liveLoopId=null; bargeLoopId=null; if(mediaRecorder && mediaRecorder.state!=='inactive')mediaRecorder.stop(); if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); if(stream)stream.getTracks().forEach(t=>t.stop()); if(raf)cancelAnimationFrame(raf); stopTtsNow(); if(ackSource){try{ackSource.stop();}catch{} ackSource=null;} ackPlayingUntil=0; handlingBarge=false; status($('sttStatus'),'Live mode stopped.'); }
 function startLiveRecorder(){ if(!live || !stream)return; liveSpeechStart=0; liveSilenceStart=0; liveLastVoice=0; vadSpeechFrames=0; vadSilenceFrames=0; partialWindowIndex=0; latestPartialText=''; makeRecorder(async()=>{ if(!live)return; await handleLiveTurn(); },500); startPartialTranscriptionLoop(); }
 function liveMonitor(){
@@ -490,6 +509,10 @@ function liveMonitor(){
       status($('sttStatus'),`Listening… voice confirmed level ${level.toFixed(3)} · noise ${vadNoiseFloor.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} silence<${vadSilenceThreshold.toFixed(3)}`,'warn');
     } else {
       $('transcriptInfo').textContent=`Calibrated noise ${vadNoiseFloor.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} · silence<${vadSilenceThreshold.toFixed(3)}`;
+      if(liveArmedAt && now-liveArmedAt>10000 && now-lastIdleAckAt>20000 && !ttsSpeaking){
+        lastIdleAckAt=now;
+        playRandomAck('idle');
+      }
     }
   } else if(aboveSpeech){
     liveLastVoice=now;

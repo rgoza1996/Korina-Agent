@@ -84,6 +84,19 @@ Korina uses a browser-side energy VAD (root mean square of audio buffer) with co
 
 Partial transcription windows (~1.8s each) are queued rather than dropped, so slow CPU inference catches up gracefully.
 
+
+## Ack phrases
+
+Ack phrases are generated audio cache files, not source assets. `Korina/Ack/ack_phrases.json` is the source of truth. Each phrase has:
+
+- `id` — stable phrase id
+- `text` — phrase to synthesize
+- `tags` — when it can be used, e.g. `global`, `thinking`, `idle`
+
+On boot, Korina checks the manifest for the selected/default voice and queues any missing WAV files for generation through Kokoro. `/api/acks?voice=<voice>&tag=<tag>` also queues missing files for that voice/tag and returns currently available audio.
+
+When the UI voice changes, Korina clears the ack WAV cache and queues a fresh set for the new voice. Idle acks use the `idle` tag, currently triggered after about 10 seconds with no voice input.
+
 ## TTS
 
 Kokoro TTS with Web Audio SSE streaming. Voices selectable in the UI. Ack phrases pre-loaded and scheduled before the LLM reply to avoid overlap.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -26,6 +27,9 @@ from pydantic import BaseModel
 APP_DIR = Path('/home/roggoz/Korina')
 INDEX_PATH = APP_DIR / 'index.html'
 ACK_DIR = APP_DIR / 'Ack'
+ACK_PHRASES_PATH = ACK_DIR / 'ack_phrases.json'
+KOKORO_URL = os.environ.get('KOKORO_URL', 'http://127.0.0.1:8880')
+ACK_DEFAULT_VOICE = os.environ.get('ACK_DEFAULT_VOICE', 'af_heart')
 WHISPER_MODEL_ID = os.environ.get('WHISPER_MODEL_ID', 'turbo')
 WHISPER_DEVICE = os.environ.get('WHISPER_DEVICE')
 WHISPER_COMPUTE_TYPE = os.environ.get('WHISPER_COMPUTE_TYPE')
@@ -53,6 +57,197 @@ _asr_lock = threading.Lock()
 _asr_infer_lock = threading.Lock()
 _asr_device: Optional[str] = None
 _asr_compute_type: Optional[str] = None
+
+
+
+_ack_queue: list[tuple[str, str, str]] = []
+_ack_in_progress: set[tuple[str, str]] = set()
+_ack_queue_lock = threading.Lock()
+_ack_worker_running = False
+_ack_last_error: Optional[str] = None
+_ack_last_generated: Optional[str] = None
+_ack_current_voice = ACK_DEFAULT_VOICE
+
+
+def safe_slug(value: str) -> str:
+    slug = re.sub(r'[^a-zA-Z0-9_-]+', '_', (value or '').strip()).strip('_').lower()
+    return slug or 'ack'
+
+
+def load_ack_manifest() -> list[dict]:
+    """Read ack_phrases.json. Supports old list[str] format and new tagged format."""
+    if not ACK_PHRASES_PATH.exists():
+        return []
+    data = json.loads(ACK_PHRASES_PATH.read_text())
+    if isinstance(data, list):
+        phrases = data
+        return [
+            {'id': f'ack_{i:02d}', 'text': str(text), 'tags': ['global']}
+            for i, text in enumerate(phrases, start=1)
+            if str(text).strip()
+        ]
+    raw_phrases = data.get('phrases', []) if isinstance(data, dict) else []
+    out = []
+    for i, item in enumerate(raw_phrases, start=1):
+        if isinstance(item, str):
+            text = item.strip()
+            tags = ['global']
+            ack_id = f'ack_{i:02d}'
+        elif isinstance(item, dict):
+            text = str(item.get('text', '')).strip()
+            tags = item.get('tags') or ['global']
+            if isinstance(tags, str):
+                tags = [tags]
+            tags = [safe_slug(str(t)) for t in tags if str(t).strip()] or ['global']
+            ack_id = safe_slug(str(item.get('id') or text or f'ack_{i:02d}'))
+        else:
+            continue
+        if text:
+            out.append({'id': ack_id, 'text': text, 'tags': tags})
+    return out
+
+
+def ack_filename(voice: str, phrase: dict) -> str:
+    digest = hashlib.sha1(f"{phrase['id']}|{phrase['text']}".encode('utf-8')).hexdigest()[:8]
+    return f"{safe_slug(voice)}__{safe_slug(phrase['id'])}__{digest}.wav"
+
+
+def ack_path(voice: str, phrase: dict) -> Path:
+    return ACK_DIR / ack_filename(voice, phrase)
+
+
+def ack_files_for(voice: str, tag: Optional[str] = None) -> list[dict]:
+    ACK_DIR.mkdir(parents=True, exist_ok=True)
+    requested_tag = safe_slug(tag or 'global')
+    manifest = load_ack_manifest()
+    matching = [p for p in manifest if requested_tag in p.get('tags', [])]
+    if tag and not matching:
+        matching = [p for p in manifest if 'global' in p.get('tags', [])]
+    elif not tag:
+        matching = [p for p in manifest if 'global' in p.get('tags', [])]
+    files = []
+    for phrase in matching:
+        path = ack_path(voice, phrase)
+        if path.exists() and path.stat().st_size > 44:
+            files.append({
+                'id': phrase['id'],
+                'text': phrase['text'],
+                'tags': phrase.get('tags', ['global']),
+                'voice': voice,
+                'name': path.name,
+                'url': f'/Ack/{path.name}',
+                'bytes': path.stat().st_size,
+            })
+    return files
+
+
+def missing_ack_phrases(voice: str, tag: Optional[str] = None) -> list[dict]:
+    requested_tag = safe_slug(tag) if tag else None
+    manifest = load_ack_manifest()
+    if requested_tag:
+        manifest = [p for p in manifest if requested_tag in p.get('tags', [])]
+    missing = []
+    for phrase in manifest:
+        path = ack_path(voice, phrase)
+        if not path.exists() or path.stat().st_size <= 44:
+            missing.append(phrase)
+    return missing
+
+
+def enqueue_missing_acks(voice: str, tag: Optional[str] = None) -> int:
+    global _ack_worker_running
+    voice = (voice or ACK_DEFAULT_VOICE).strip() or ACK_DEFAULT_VOICE
+    missing = missing_ack_phrases(voice, tag)
+    with _ack_queue_lock:
+        existing = {(v, pid) for v, pid, _ in _ack_queue} | set(_ack_in_progress)
+        added = 0
+        for phrase in missing:
+            key = (voice, phrase['id'])
+            if key not in existing:
+                _ack_queue.append((voice, phrase['id'], phrase['text']))
+                existing.add(key)
+                added += 1
+        if added and not _ack_worker_running:
+            _ack_worker_running = True
+            threading.Thread(target=ack_generation_worker, daemon=True).start()
+    return len(missing)
+
+
+def synthesize_ack_wav(voice: str, phrase_id: str, text: str) -> None:
+    phrase = next((p for p in load_ack_manifest() if p['id'] == phrase_id), {'id': phrase_id, 'text': text, 'tags': ['global']})
+    out = ack_path(voice, phrase)
+    payload = json.dumps({'input': text, 'voice': voice, 'speed': 1.0, 'device': 'cpu'}).encode('utf-8')
+    req = urllib.request.Request(
+        f'{KOKORO_URL}/v1/audio/speech',
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    tmp = out.with_suffix('.tmp.wav')
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = resp.read()
+    if len(data) <= 44:
+        raise RuntimeError(f'generated ack for {phrase_id} was empty')
+    tmp.write_bytes(data)
+    tmp.replace(out)
+
+
+def ack_generation_worker() -> None:
+    global _ack_worker_running, _ack_last_error, _ack_last_generated
+    try:
+        while True:
+            with _ack_queue_lock:
+                if not _ack_queue:
+                    _ack_worker_running = False
+                    return
+                voice, phrase_id, text = _ack_queue.pop(0)
+                _ack_in_progress.add((voice, phrase_id))
+            try:
+                synthesize_ack_wav(voice, phrase_id, text)
+                _ack_last_generated = f'{voice}:{phrase_id}'
+                _ack_last_error = None
+                print(f'[acks] generated {_ack_last_generated}', flush=True)
+            except Exception as e:
+                _ack_last_error = f'{voice}:{phrase_id}: {e}'
+                print(f'[acks] generation failed: {_ack_last_error}', flush=True)
+                time.sleep(2)
+            finally:
+                with _ack_queue_lock:
+                    _ack_in_progress.discard((voice, phrase_id))
+    finally:
+        with _ack_queue_lock:
+            if not _ack_queue:
+                _ack_worker_running = False
+
+
+def clear_ack_wavs() -> int:
+    count = 0
+    for f in ACK_DIR.glob('*.wav'):
+        try:
+            f.unlink()
+            count += 1
+        except FileNotFoundError:
+            pass
+    return count
+
+
+def ack_status(voice: str) -> dict:
+    manifest = load_ack_manifest()
+    generated = [p for p in manifest if ack_path(voice, p).exists() and ack_path(voice, p).stat().st_size > 44]
+    with _ack_queue_lock:
+        queued = len(_ack_queue)
+        worker_running = _ack_worker_running
+    return {
+        'voice': voice,
+        'manifest_count': len(manifest),
+        'generated_count': len(generated),
+        'missing_count': len(missing_ack_phrases(voice)),
+        'queue_depth': queued,
+        'in_progress': [f'{v}:{pid}' for v, pid in sorted(_ack_in_progress)],
+        'generating': worker_running,
+        'last_generated': _ack_last_generated,
+        'last_error': _ack_last_error,
+    }
 
 
 class ChatRequest(BaseModel):
@@ -327,6 +522,12 @@ def lmstudio_chat(req: ChatRequest) -> str:
         raise RuntimeError(f'Unexpected LM Studio response: {body!r}')
 
 
+@app.on_event('startup')
+def startup_generate_default_acks():
+    ACK_DIR.mkdir(parents=True, exist_ok=True)
+    enqueue_missing_acks(ACK_DEFAULT_VOICE)
+
+
 @app.get('/')
 def index():
     if not INDEX_PATH.exists():
@@ -354,7 +555,8 @@ def health():
         'cuda': torch.cuda.is_available(),
         'lmstudio_url': LMSTUDIO_URL,
         'lmstudio_model': LMSTUDIO_MODEL,
-        'ack_count': len(list(ACK_DIR.glob('*.wav'))),
+        'ack_count': len(ack_files_for(_ack_current_voice)),
+        'ack_status': ack_status(_ack_current_voice),
     }
 
 
@@ -375,18 +577,34 @@ def models():
 
 
 @app.get('/api/acks')
-def acks():
-    files = sorted(ACK_DIR.glob('*.wav'))
+def acks(voice: str = Query(ACK_DEFAULT_VOICE), tag: Optional[str] = Query(None)):
+    voice = (voice or ACK_DEFAULT_VOICE).strip() or ACK_DEFAULT_VOICE
+    enqueue_missing_acks(voice, tag)
     return {
-        'acks': [
-            {
-                'name': f.name,
-                'url': f'/Ack/{f.name}',
-                'bytes': f.stat().st_size,
-            }
-            for f in files
-        ]
+        'acks': ack_files_for(voice, tag),
+        'tag': tag or 'global',
+        'status': ack_status(voice),
     }
+
+
+@app.get('/api/acks/status')
+def acks_status(voice: str = Query(ACK_DEFAULT_VOICE)):
+    return ack_status((voice or ACK_DEFAULT_VOICE).strip() or ACK_DEFAULT_VOICE)
+
+
+@app.post('/api/acks/rebuild')
+def acks_rebuild(payload: dict):
+    global _ack_current_voice
+    voice = (payload.get('voice') or ACK_DEFAULT_VOICE).strip()
+    tag = payload.get('tag')
+    clear = bool(payload.get('clear', False))
+    if clear:
+        removed = clear_ack_wavs()
+    else:
+        removed = 0
+    _ack_current_voice = voice
+    missing = enqueue_missing_acks(voice, tag)
+    return {'ok': True, 'voice': voice, 'tag': tag, 'removed': removed, 'queued_or_missing': missing, 'status': ack_status(voice)}
 
 
 @app.post('/api/transcribe')
