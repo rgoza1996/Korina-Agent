@@ -146,7 +146,7 @@ let activeSources=[], ttsSpeaking=false, currentKorinaText='', currentTtsStarted
 let mediaRecorder=null, recChunks=[], analyser=null, raf=null, stream=null, meterAudioCtx=null;
 let bargeRecorder=null, bargeChunks=[], bargeLoopId=null, bargeSpeechStart=0, bargeSilenceStart=0, handlingBarge=false;
 let live=false, liveBusy=false, liveSilenceStart=0, liveSpeechStart=0, liveLastVoice=0, liveLoopId=null, history=[];
-let vadNoiseFloor=0.012, vadNoiseSamples=[], vadCalibratingUntil=0, vadSpeechFrames=0, vadSilenceFrames=0, vadSpeechThreshold=0.035, vadSilenceThreshold=0.022;
+let vadNoiseFloor=0.012, vadNoiseSamples=[], vadIdleNoiseSamples=[], vadCalibratingUntil=0, vadLastIdleRecalibrationAt=0, vadSpeechFrames=0, vadSilenceFrames=0, vadSpeechThreshold=0.035, vadSilenceThreshold=0.022;
 let partialTimer=null, partialInFlight=false, partialSeq=0, partialController=null, latestPartialText='', latestPartialAt=0;
 let partialRecorder=null, partialChunks=[], partialWindowMs=1800, partialWindowIndex=0, partialQueue=[], partialQueueProcessing=false;
 let ackFiles=[], ackBuffers=[], ackBuffersByTag={}, ackSource=null, ackPlayingUntil=0, lastActivityAt=performance.now(), idleAckCount=0, saveConfigTimer=null;
@@ -593,21 +593,40 @@ function clamp(n,min,max){ return Math.max(min,Math.min(max,n)); }
 function resetAdaptiveVad(){
   vadNoiseFloor=0.012;
   vadNoiseSamples=[];
+  vadIdleNoiseSamples=[];
   vadCalibratingUntil=performance.now()+900;
+  vadLastIdleRecalibrationAt=performance.now();
   vadSpeechFrames=0;
   vadSilenceFrames=0;
   vadSpeechThreshold=VAD_BASE_SPEECH_THRESHOLD;
   vadSilenceThreshold=VAD_BASE_SILENCE_THRESHOLD;
 }
 function updateAdaptiveVad(level, now){
-  // Calibrate on the room/mic floor before the user starts speaking, then slowly track quiet room drift only while idle.
+  // Initial room/mic calibration runs when Live starts. After that, recalibrate at intervals only during true idle.
   if(!liveSpeechStart && now<vadCalibratingUntil){
     vadNoiseSamples.push(level);
     const sorted=[...vadNoiseSamples].sort((a,b)=>a-b);
     const p60=sorted[Math.floor(sorted.length*0.60)]||level;
     vadNoiseFloor=clamp(p60,0.002,0.035);
-  } else if(!liveSpeechStart && level<vadSpeechThreshold){
-    vadNoiseFloor=clamp(vadNoiseFloor*0.96 + level*0.04,0.002,0.035);
+  } else {
+    const audioIdle=!liveSpeechStart && !liveBusy && !ttsSpeaking && (!audioCtx || audioCtx.currentTime>=ackPlayingUntil) && performance.now()>=suppressAckUntil;
+    const looksQuiet=level<Math.max(vadSilenceThreshold, vadNoiseFloor*2.0 + 0.008);
+    if(audioIdle && looksQuiet){
+      vadIdleNoiseSamples.push(level);
+      if(vadIdleNoiseSamples.length>240) vadIdleNoiseSamples.splice(0, vadIdleNoiseSamples.length-240);
+      if(now-vadLastIdleRecalibrationAt>=10000 && vadIdleNoiseSamples.length>=30){
+        const sorted=[...vadIdleNoiseSamples].sort((a,b)=>a-b);
+        const p60=sorted[Math.floor(sorted.length*0.60)]||level;
+        const nextFloor=clamp(p60,0.002,0.035);
+        vadNoiseFloor=clamp(vadNoiseFloor*0.70 + nextFloor*0.30,0.002,0.035);
+        vadIdleNoiseSamples=[];
+        vadLastIdleRecalibrationAt=now;
+        $('transcriptInfo').textContent=`Idle noise recalibrated ${vadNoiseFloor.toFixed(3)} · speech>${vadSpeechThreshold.toFixed(3)} · silence<${vadSilenceThreshold.toFixed(3)}`;
+      }
+    } else if(level>vadSpeechThreshold || liveSpeechStart || ttsSpeaking || liveBusy){
+      vadIdleNoiseSamples=[];
+      if(now-vadLastIdleRecalibrationAt>30000) vadLastIdleRecalibrationAt=now;
+    }
   }
   vadSilenceThreshold=clamp(vadNoiseFloor*2.2 + 0.006,0.012,0.045);
   vadSpeechThreshold=clamp(Math.max(vadSilenceThreshold+0.010, vadNoiseFloor*3.4 + 0.012),0.026,0.085);
