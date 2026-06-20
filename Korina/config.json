@@ -1,9 +1,12 @@
 {
   "ack_enabled": "on",
+  "agent_api_key": "",
+  "agent_base_url": "http://127.0.0.1:1234/v1",
   "agent_enabled": "on",
   "agent_max_tokens": 512,
   "agent_max_turns": 16,
   "agent_model": "",
+  "agent_provider": "openai-compatible",
   "endpoint_mode": "reading",
   "final_stt_mode": "chunks",
   "idle_ack_initial_ms": 5000,

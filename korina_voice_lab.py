@@ -83,6 +83,9 @@ DEFAULT_CONFIG = {
     'stt_cloud_model': '',
     'stt_api_key_env': '',
     'agent_enabled': 'on',
+    'agent_provider': 'openai-compatible',
+    'agent_base_url': 'http://127.0.0.1:1234/v1',
+    'agent_api_key': '',
     'agent_model': '',
     'agent_max_turns': 16,
     'agent_max_tokens': 512,
@@ -161,6 +164,70 @@ def auth_headers_from_env(env_name: str) -> dict:
     if not value:
         return {}
     return {'Authorization': f'Bearer {value}'}
+
+
+def api_key_from_config(config: dict, direct_key: str = '', env_key_name: str = '') -> str:
+    direct = str(direct_key or '').strip()
+    if direct:
+        return direct
+    env_name = str(env_key_name or '').strip()
+    return os.environ.get(env_name, '').strip() if env_name else ''
+
+
+def agent_provider(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    return str(config.get('agent_provider') or 'openai-compatible').strip().lower()
+
+
+def agent_base_url(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    return str(config.get('agent_base_url') or config.get('llm_base_url') or 'http://127.0.0.1:1234/v1').strip().rstrip('/')
+
+
+def agent_models_url(config: Optional[dict] = None) -> str:
+    base = agent_base_url(config)
+    if base.endswith('/messages'):
+        base = base.rsplit('/messages', 1)[0]
+    if base.endswith('/chat/completions'):
+        base = base.rsplit('/chat/completions', 1)[0]
+    return f'{base}/models'
+
+
+def agent_chat_url(config: Optional[dict] = None) -> str:
+    base = agent_base_url(config)
+    provider = agent_provider(config)
+    if provider == 'anthropic':
+        return base if base.endswith('/messages') else f'{base}/messages'
+    return base if base.endswith('/chat/completions') else f'{base}/chat/completions'
+
+
+def agent_auth_headers(config: dict) -> dict:
+    key = api_key_from_config(config, config.get('agent_api_key') or '', config.get('llm_api_key_env') or '')
+    provider = agent_provider(config)
+    if not key:
+        return {}
+    if provider == 'anthropic':
+        return {'x-api-key': key, 'anthropic-version': '2023-06-01'}
+    return {'Authorization': f'Bearer {key}'}
+
+
+def parse_model_ids(body: dict) -> list[str]:
+    models = []
+    data = body.get('data', []) if isinstance(body, dict) else []
+    if isinstance(data, list):
+        for item in data:
+            mid = item.get('id') if isinstance(item, dict) else item
+            if isinstance(mid, str) and mid.strip():
+                models.append(mid.strip())
+    return models
+
+
+def agent_model_choices() -> list[str]:
+    config = load_config()
+    req = urllib.request.Request(agent_models_url(config), headers=agent_auth_headers(config), method='GET')
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        body = json.loads(resp.read().decode('utf-8'))
+    return parse_model_ids(body)
 
 
 _ack_queue: list[tuple[str, str, str]] = []
@@ -652,25 +719,36 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
         'Create a concise state report for Korina Converse to inject into its next spoken reply.\n'
         'Do not write the spoken reply. Do not use emojis.\n'
         'Include: current user intent, relevant facts, unresolved tasks/questions, emotional/interaction notes, and suggested next-response steering.\n'
+        'Korina Agent and Korina Converse take turns by passing hidden state. Never ask to interrupt or speak directly.\n'
         'Use compact plain text with short headings.'
     )
     user_payload = {
         'previous_report': req.previous_report[-4000:],
         'recent_transcript': turns,
     }
-    payload = {
-        'model': selected_model,
-        'messages': [
-            {'role': 'system', 'content': system},
-            {'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)},
-        ],
-        'temperature': 0.2,
-        'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
-        'stream': False,
-    }
-    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
+    provider = agent_provider(config)
+    headers = {'Content-Type': 'application/json'} | agent_auth_headers(config)
+    if provider == 'anthropic':
+        payload = {
+            'model': selected_model,
+            'system': system,
+            'messages': [{'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)}],
+            'temperature': 0.2,
+            'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
+        }
+    else:
+        payload = {
+            'model': selected_model,
+            'messages': [
+                {'role': 'system', 'content': system},
+                {'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)},
+            ],
+            'temperature': 0.2,
+            'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
+            'stream': False,
+        }
     http_req = urllib.request.Request(
-        config_llm_chat_url(config),
+        agent_chat_url(config),
         data=json.dumps(payload).encode('utf-8'),
         headers=headers,
         method='POST',
@@ -680,10 +758,13 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
             body = json.loads(resp.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         detail = e.read().decode('utf-8', errors='replace')
-        raise RuntimeError(f'Korina Agent HTTP {e.code}: {detail}')
+        raise RuntimeError(f'Korina Agent {provider} HTTP {e.code}: {detail}')
     except Exception as e:
         raise RuntimeError(f'Korina Agent request failed: {e}')
     try:
+        if provider == 'anthropic':
+            parts = body.get('content') or []
+            return ''.join(part.get('text', '') for part in parts if isinstance(part, dict)).strip()
         return (body['choices'][0]['message']['content'] or '').strip()
     except Exception:
         raise RuntimeError(f'Unexpected Korina Agent response: {body!r}')
@@ -788,6 +869,15 @@ def acks_rebuild(payload: dict):
     _ack_current_voice = voice
     missing = enqueue_missing_acks(voice, tag)
     return {'ok': True, 'voice': voice, 'tag': tag, 'removed': removed, 'queued_or_missing': missing, 'status': ack_status(voice)}
+
+
+@app.get('/api/agent/models')
+def agent_models():
+    try:
+        models = agent_model_choices()
+        return {'ok': True, 'models': models, 'provider': agent_provider(), 'default': str(load_config().get('agent_model') or load_config().get('lm_model') or LMSTUDIO_MODEL), 'error': None}
+    except Exception as e:
+        return {'ok': False, 'models': [], 'provider': agent_provider(), 'default': str(load_config().get('agent_model') or load_config().get('lm_model') or LMSTUDIO_MODEL), 'error': str(e)}
 
 
 @app.post('/api/agent/state-report')
