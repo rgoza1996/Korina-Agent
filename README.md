@@ -14,13 +14,13 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
   │                                │
   │  ◄── transcription text ────── │
   │                                │
-  │  ─── user transcript ────────► │  /api/chat  →  LM Studio (:1234)
+  │  ─── user transcript ────────► │  /api/chat  →  configured OpenAI-compatible LLM
   │                                │          ◄── LLM reply
   │                                │
   │  ◄── reply text ─────────────  │
   │                                │
-  │  ─── reply + voice ──────────► │  Kokoro TTS (:8880)
-  │                                │  /stream/speech  (SSE PCM chunks)
+  │  ─── reply + voice ──────────► │  configured Kokoro/OpenAI-compatible TTS
+  │                                │
   │  ◄── audio stream ───────────  │
   │                                │
   └────────── Web Audio playback ──┘
@@ -28,11 +28,12 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
 
 ## What's included
 
-- `korina_voice_lab.py` — FastAPI server: STT endpoints, chat proxy to LM Studio, settings API.
+- `korina_voice_lab.py` — FastAPI server: STT endpoints, chat proxy, settings/config API.
 - `kokoro-streaming-server.py` — Kokoro TTS server: SSE streaming, buffered WAV fallback.
 - `Korina/index.html` — Browser UI: live VAD, partial transcription queue, settings modal, Web Audio playback.
+- `Korina/config.json` — persisted test-site settings.
 - `Korina/start.sh` / `stop.sh` — Service lifecycle.
-- `Korina/Ack/` — Short acknowledgement WAV files played while Korina is "thinking".
+- `Korina/Ack/ack_phrases.json` — tagged acknowledgement phrase manifest. Generated WAVs are cache files and are ignored by git.
 
 ## Setup on a new machine
 
@@ -51,7 +52,7 @@ pip install faster-whisper
 pip install kokoro-onnx pydub
 # Download voice manifests / models separately (see Kokoro docs)
 
-# 4. LM Studio running locally on :1234 with your model loaded
+# 4. Run an OpenAI-compatible LLM server, e.g. LM Studio on :1234
 
 # 5. Start
 ./Korina/start.sh
@@ -66,24 +67,41 @@ pip install kokoro-onnx pydub
 | Kokoro TTS     | 8880 |
 | LM Studio LLM  | 1234 |
 
+## Configuration
+
+The browser loads and writes settings through:
+
+```text
+GET  /api/config
+POST /api/config
+```
+
+The backing file is:
+
+```text
+Korina/config.json
+```
+
+Persisted settings include voice, speed, STT backend/model/device, LLM model/base URL, TTS provider/port/base URL/model, endpointing mode, silence duration, final STT mode, and idle ack cadence.
+
+For local TTS, leave `tts_base_url` blank and set `tts_port` (default `8880`). The browser builds:
+
+```text
+${location.protocol}//${location.hostname}:${tts_port}
+```
+
+For custom or cloud-compatible endpoints, set the full base URL in the settings modal. API keys are not stored directly in the UI; config stores optional env-var names such as `llm_api_key_env` / `stt_api_key_env` so the server can read secrets from the environment.
+
 ## STT backends
 
 Korina supports two speech-to-text backends via the Settings modal:
 
 1. **faster-whisper** (default, stable) — CTranslate2-based Whisper inference, CPU or CUDA.
    - Models: `tiny.en`, `base.en`, `small.en`, `turbo`, `distil-large-v3`
-   - Recommended for CPU: `base.en` (~0.6s warm / 1.8s audio clip) or `tiny.en` (~0.4s warm)
-2. **LM Studio multimodal LLM** (experimental) — Routes audio to a loaded multimodal/audio LLM via OpenAI-compatible `/v1/chat/completions` with `input_audio` content blocks. Depends on model and LM Studio build support.
+   - Recommended for CPU: `base.en` or `tiny.en`
+2. **LM Studio multimodal LLM** (experimental) — Routes audio to a loaded multimodal/audio LLM via OpenAI-compatible `/v1/chat/completions` with `input_audio` content blocks. Depends on model and server support.
 
-## Voice activity detection
-
-Korina uses a browser-side energy VAD (root mean square of audio buffer) with configurable silence threshold. Endpointing modes:
-
-- **Reading/dictation**: 3200ms silence before finalizing a turn. Pauses inside sentences don't cut you off.
-- **Conversation**: 950ms silence — quicker back-and-forth.
-
-Partial transcription windows (~1.8s each) are queued rather than dropped, so slow CPU inference catches up gracefully.
-
+Cloud STT fields are persisted in config for provider experiments, but the stable active STT path is still faster-whisper.
 
 ## Ack phrases
 
@@ -93,18 +111,27 @@ Ack phrases are generated audio cache files, not source assets. `Korina/Ack/ack_
 - `text` — phrase to synthesize
 - `tags` — when it can be used, e.g. `global`, `thinking`, `idle`
 
-On boot, Korina checks the manifest for the selected/default voice and queues any missing WAV files for generation through Kokoro. `/api/acks?voice=<voice>&tag=<tag>` also queues missing files for that voice/tag and returns currently available audio.
+On boot, Korina checks the manifest for the selected/default voice and queues any missing WAV files for generation through the configured TTS endpoint. `/api/acks?voice=<voice>&tag=<tag>` also queues missing files for that voice/tag and returns currently available audio.
 
-When the UI voice changes, Korina clears the ack WAV cache and queues a fresh set for the new voice. Idle acks use the `idle` tag, currently triggered after about 10 seconds with no voice input.
+When the UI voice changes, Korina clears the ack WAV cache and queues a fresh set for the new voice. Idle acks use the `idle` tag with cumulative delays: first after 5s of no activity, then 10s after that, then 15s, etc.
 
 ## TTS
 
-Kokoro TTS with Web Audio SSE streaming. Voices selectable in the UI. Ack phrases pre-loaded and scheduled before the LLM reply to avoid overlap.
+Kokoro TTS with Web Audio SSE streaming by default. Voices selectable in the UI. TTS endpoint/port/provider fields are configurable from the settings modal and persisted to `config.json`.
+
+## Voice activity detection
+
+Korina uses a browser-side adaptive energy VAD (root mean square of audio buffer) with configurable endpointing.
+
+- **Reading/dictation**: 3200ms silence before finalizing a turn.
+- **Conversation**: 950ms silence.
+
+Partial transcription windows (~1.8s each) are queued rather than dropped, so slow CPU inference catches up gracefully.
 
 ## Branching
 
-- `master` — stable, production-ready snapshots (default branch)
-- `beta` — release candidates (debugging branch)
-- `alpha` — active development (working branch)
+- `master` — stable, production-ready snapshots
+- `beta` — release candidates
+- `alpha` — active development (default working branch)
 
 Do all new work on `alpha`.

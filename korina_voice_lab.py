@@ -71,6 +71,17 @@ DEFAULT_CONFIG = {
     'stt_model': 'base.en',
     'lm_model': LMSTUDIO_MODEL,
     'tts_device': 'cpu',
+    'tts_provider': 'kokoro',
+    'tts_port': 8880,
+    'tts_base_url': '',
+    'tts_model': 'kokoro',
+    'llm_provider': 'openai-compatible',
+    'llm_base_url': 'http://127.0.0.1:1234/v1',
+    'llm_api_key_env': '',
+    'stt_cloud_provider': '',
+    'stt_cloud_base_url': '',
+    'stt_cloud_model': '',
+    'stt_api_key_env': '',
     'endpoint_mode': 'reading',
     'silence_ms': 3200,
     'final_stt_mode': 'chunks',
@@ -109,6 +120,43 @@ def save_config(config: dict) -> dict:
     tmp.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
     tmp.replace(CONFIG_PATH)
     return merged
+
+
+
+def config_tts_base_url(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    explicit = str(config.get('tts_base_url') or '').strip().rstrip('/')
+    if explicit:
+        return explicit
+    port = int(config.get('tts_port') or 8880)
+    return f'http://127.0.0.1:{port}'
+
+
+def config_llm_base_url(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    return str(config.get('llm_base_url') or 'http://127.0.0.1:1234/v1').strip().rstrip('/')
+
+
+def config_llm_chat_url(config: Optional[dict] = None) -> str:
+    base = config_llm_base_url(config)
+    return base if base.endswith('/chat/completions') else f'{base}/chat/completions'
+
+
+def config_llm_models_url(config: Optional[dict] = None) -> str:
+    base = config_llm_base_url(config)
+    if base.endswith('/chat/completions'):
+        base = base.rsplit('/chat/completions', 1)[0]
+    return f'{base}/models'
+
+
+def auth_headers_from_env(env_name: str) -> dict:
+    env_name = (env_name or '').strip()
+    if not env_name:
+        return {}
+    value = os.environ.get(env_name, '').strip()
+    if not value:
+        return {}
+    return {'Authorization': f'Bearer {value}'}
 
 
 _ack_queue: list[tuple[str, str, str]] = []
@@ -229,7 +277,7 @@ def synthesize_ack_wav(voice: str, phrase_id: str, text: str) -> None:
     out = ack_path(voice, phrase)
     payload = json.dumps({'input': text, 'voice': voice, 'speed': 1.0, 'device': 'cpu'}).encode('utf-8')
     req = urllib.request.Request(
-        f'{KOKORO_URL}/v1/audio/speech',
+        f'{config_tts_base_url()}/v1/audio/speech',
         data=payload,
         headers={'Content-Type': 'application/json'},
         method='POST',
@@ -442,8 +490,10 @@ def convert_to_16k_wav(src: Path, dst: Path) -> None:
 
 
 def lmstudio_models() -> list[str]:
-    url = LMSTUDIO_URL.rsplit('/v1/', 1)[0] + '/v1/models'
-    req = urllib.request.Request(url, method='GET')
+    config = load_config()
+    url = config_llm_models_url(config)
+    headers = auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
+    req = urllib.request.Request(url, headers=headers, method='GET')
     with urllib.request.urlopen(req, timeout=15) as resp:
         body = json.loads(resp.read().decode('utf-8'))
     models = []
@@ -461,7 +511,8 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None) -> dict:
     depends on the loaded model + server support, so this endpoint returns a clear
     error if the selected model rejects input_audio.
     """
-    selected_model = (model or LMSTUDIO_MODEL).strip()
+    config = load_config()
+    selected_model = (model or str(config.get('lm_model') or LMSTUDIO_MODEL)).strip()
     data = wav.read_bytes()
     b64 = base64.b64encode(data).decode('ascii')
     started = time.time()
@@ -484,10 +535,11 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None) -> dict:
         'max_tokens': 512,
         'stream': False,
     }
+    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
     http_req = urllib.request.Request(
-        LMSTUDIO_URL,
+        config_llm_chat_url(config),
         data=json.dumps(payload).encode('utf-8'),
-        headers={'Content-Type': 'application/json'},
+        headers=headers,
         method='POST',
     )
     try:
@@ -545,7 +597,7 @@ def lmstudio_chat(req: ChatRequest) -> str:
     messages.append({'role': 'user', 'content': req.message.strip()})
 
     payload = {
-        'model': (req.model or LMSTUDIO_MODEL),
+        'model': (req.model or str(load_config().get('lm_model') or LMSTUDIO_MODEL)),
         'messages': messages,
         'temperature': req.temperature,
         'max_tokens': req.max_tokens,
@@ -604,8 +656,9 @@ def health():
         'whisper_cpu_threads': WHISPER_CPU_THREADS,
         'partial_min_seconds': PARTIAL_MIN_SECONDS,
         'cuda': torch.cuda.is_available(),
-        'lmstudio_url': LMSTUDIO_URL,
-        'lmstudio_model': LMSTUDIO_MODEL,
+        'lmstudio_url': config_llm_chat_url(),
+        'lmstudio_model': str(load_config().get('lm_model') or LMSTUDIO_MODEL),
+        'tts_base_url': config_tts_base_url(),
         'ack_count': len(ack_files_for(_ack_current_voice)),
         'ack_status': ack_status(_ack_current_voice),
     }
@@ -783,7 +836,7 @@ def chat(req: ChatRequest):
         return JSONResponse({
             'reply': reply,
             'seconds': time.time() - started,
-            'model': req.model or LMSTUDIO_MODEL,
+            'model': req.model or str(load_config().get('lm_model') or LMSTUDIO_MODEL),
         })
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

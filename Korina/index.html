@@ -7,7 +7,7 @@
   <style>
     :root { --bg:#0d0f14; --card:#171a22; --card2:#10131a; --line:#2a3040; --text:#edf1ff; --muted:#95a0b8; --accent:#8b7cff; --good:#4ade80; --warn:#fbbf24; --bad:#fb7185; }
     *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,#22244a 0,#0d0f14 38rem);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,Segoe UI,sans-serif;padding:28px 14px;display:flex;justify-content:center}
-    main{width:min(920px,100%);display:grid;gap:16px} h1{font-size:28px;margin:0;text-align:center;letter-spacing:-.03em}.sub{text-align:center;color:var(--muted);margin-top:-8px}.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 20px 60px #0006} label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px} textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:12px;background:#080a0f;color:var(--text);font:15px/1.45 inherit;padding:12px;resize:vertical} textarea:focus,select:focus{outline:none;border-color:var(--accent)} .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.grid{grid-template-columns:1fr}} select,input[type=range]{width:100%;background:#080a0f;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}@media(max-width:700px){.btns{grid-template-columns:1fr}}button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;color:white;background:var(--accent);cursor:pointer}button.secondary{background:#2b3142}button.danger{background:#8f2638}button.live{background:#138a54}button.live.on{background:#b45309}button:disabled{opacity:.45;cursor:not-allowed}.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#090b11}.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.dot.good{background:var(--good);box-shadow:0 0 10px var(--good)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}.tabs{display:flex;background:#080a0f;border:1px solid var(--line);border-radius:12px;overflow:hidden}.tab{flex:1;text-align:center;padding:10px;color:var(--muted);font-weight:800;font-size:13px;cursor:pointer}.tab.active{background:var(--accent);color:white}.meter{height:6px;background:#080a0f;border:1px solid var(--line);border-radius:999px;overflow:hidden}.meter>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#55d6ff);transition:width .12s}.status{min-height:22px;text-align:center;color:var(--muted);font-size:14px}.status.good{color:var(--good)}.status.bad{color:var(--bad)}.status.warn{color:var(--warn)}audio{width:100%;margin-top:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.wave{height:54px;border:1px solid var(--line);border-radius:12px;background:#080a0f;display:flex;align-items:end;gap:2px;padding:8px;overflow:hidden}.bar{width:3px;min-height:2px;background:var(--accent);opacity:.9;border-radius:2px}.log{max-height:190px;overflow:auto;border:1px solid var(--line);background:#080a0f;border-radius:12px;padding:10px;font-size:13px;line-height:1.35}.msg{margin:0 0 8px}.msg b{color:var(--accent)}
+    main{width:min(920px,100%);display:grid;gap:16px} h1{font-size:28px;margin:0;text-align:center;letter-spacing:-.03em}.sub{text-align:center;color:var(--muted);margin-top:-8px}.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 20px 60px #0006} label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px} textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:12px;background:#080a0f;color:var(--text);font:15px/1.45 inherit;padding:12px;resize:vertical} textarea:focus,select:focus{outline:none;border-color:var(--accent)} .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.grid{grid-template-columns:1fr}} select,input[type=range],input[type=text],input[type=number]{width:100%;background:#080a0f;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}@media(max-width:700px){.btns{grid-template-columns:1fr}}button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;color:white;background:var(--accent);cursor:pointer}button.secondary{background:#2b3142}button.danger{background:#8f2638}button.live{background:#138a54}button.live.on{background:#b45309}button:disabled{opacity:.45;cursor:not-allowed}.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#090b11}.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.dot.good{background:var(--good);box-shadow:0 0 10px var(--good)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}.tabs{display:flex;background:#080a0f;border:1px solid var(--line);border-radius:12px;overflow:hidden}.tab{flex:1;text-align:center;padding:10px;color:var(--muted);font-weight:800;font-size:13px;cursor:pointer}.tab.active{background:var(--accent);color:white}.meter{height:6px;background:#080a0f;border:1px solid var(--line);border-radius:999px;overflow:hidden}.meter>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#55d6ff);transition:width .12s}.status{min-height:22px;text-align:center;color:var(--muted);font-size:14px}.status.good{color:var(--good)}.status.bad{color:var(--bad)}.status.warn{color:var(--warn)}audio{width:100%;margin-top:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.wave{height:54px;border:1px solid var(--line);border-radius:12px;background:#080a0f;display:flex;align-items:end;gap:2px;padding:8px;overflow:hidden}.bar{width:3px;min-height:2px;background:var(--accent);opacity:.9;border-radius:2px}.log{max-height:190px;overflow:auto;border:1px solid var(--line);background:#080a0f;border-radius:12px;padding:10px;font-size:13px;line-height:1.35}.msg{margin:0 0 8px}.msg b{color:var(--accent)}
   .modalBackdrop{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBackdrop.open{display:flex}.modal{width:min(760px,100%);max-height:88vh;overflow:auto;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 30px 90px #000}.modal h2{margin:0 0 12px}.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.settingsBtn{background:#2b3142}
   </style>
 </head>
@@ -31,10 +31,20 @@
         <div><label for="sttDevice">Whisper device</label><select id="sttDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
         <div><label for="sttModel">Whisper model</label><select id="sttModel"><option value="tiny.en">tiny.en — fastest CPU</option><option value="base.en" selected>base.en — CPU balanced</option><option value="small.en">small.en — better, slower</option><option value="turbo">turbo — quality, slow CPU</option><option value="distil-large-v3">distil-large-v3 — faster large English</option></select></div>
         <div><label for="ttsDevice">Text-to-speech device</label><select id="ttsDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
+        <div><label for="ttsProvider">TTS provider</label><select id="ttsProvider"><option value="kokoro" selected>Kokoro-compatible</option><option value="openai-compatible">OpenAI-compatible / cloud</option><option value="custom">Custom compatible endpoint</option></select></div>
+        <div><label for="ttsPort">TTS port</label><input id="ttsPort" type="number" min="1" max="65535" value="8880"></div>
+        <div><label for="ttsBaseUrl">TTS base URL override</label><input id="ttsBaseUrl" type="text" placeholder="blank = this host + TTS port"></div>
+        <div><label for="ttsModel">TTS model / engine</label><input id="ttsModel" type="text" value="kokoro" placeholder="kokoro, gpt-4o-mini-tts, etc."></div>
+        <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="lmstudio">LM Studio local</option><option value="custom">Custom / cloud</option></select></div>
+        <div><label for="llmBaseUrl">LLM API base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:1234/v1"></div>
+        <div><label for="llmApiKeyEnv">LLM API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
+        <div><label for="sttCloudBaseUrl">Cloud STT base URL</label><input id="sttCloudBaseUrl" type="text" placeholder="optional future STT endpoint"></div>
+        <div><label for="sttCloudModel">Cloud STT model</label><input id="sttCloudModel" type="text" placeholder="e.g. whisper-1"></div>
+        <div><label for="sttApiKeyEnv">STT API key env var</label><input id="sttApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
         <div><label for="endpointMode">Endpointing mode</label><select id="endpointMode"><option value="reading" selected>Reading/dictation — wait longer</option><option value="conversation">Conversation — quicker turns</option></select></div>
         <div><label for="finalSttMode">End-of-speech finalization</label><select id="finalSttMode"><option value="chunks" selected>Use live chunks — no full paragraph retranscribe</option><option value="full">Full utterance final pass</option></select></div>
       </div>
-      <p class="small mono" id="settingsInfo">Model list loads from LM Studio /v1/models via /api/models.</p>
+      <p class="small mono" id="settingsInfo">Model list loads from the configured LLM /models endpoint via /api/models. Endpoint and port settings save to config.json.</p>
       <div class="actions"><button id="refreshModelsBtn" class="secondary">Refresh models</button><button id="saveSettingsBtn">Done</button></div>
     </div>
   </div>
@@ -88,7 +98,8 @@
   <section class="card"><label>Conversation</label><div class="log" id="log"></div></section>
 </main>
 <script>
-const TTS = `${location.protocol}//${location.hostname}:8880`;
+function ttsPort(){return parseInt($('ttsPort')?.value||'8880',10)||8880}
+function ttsBaseUrl(){ const explicit=String($('ttsBaseUrl')?.value||'').trim().replace(/\/$/,''); return explicit || `${location.protocol}//${location.hostname}:${ttsPort()}`; }
 let mode='sse', controller=null, audioCtx=null, gain=null, nextPlayTime=0;
 let activeSources=[], ttsSpeaking=false, currentKorinaText='', currentTtsStartedAt=0, currentTtsEstimatedEnd=0, interruptContext='';
 let mediaRecorder=null, recChunks=[], analyser=null, raf=null, stream=null, meterAudioCtx=null;
@@ -102,10 +113,14 @@ let appConfig={idle_ack_initial_ms:5000,idle_ack_step_ms:5000};
 const VAD_BASE_SPEECH_THRESHOLD=0.035, VAD_BASE_SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=1200, VAD_SPEECH_FRAMES=8, VAD_SILENCE_FRAMES=10;
 let endSilenceMs=3200;
 const $=id=>document.getElementById(id);
-$('hostInfo').textContent=`${location.hostname}:8001 → LM Studio localhost:1234 on roggoz → ${location.hostname}:8880`;
+$('hostInfo').textContent=`${location.hostname}:8001 → LLM ${$('llmBaseUrl')?.value||'http://127.0.0.1:1234/v1'} → TTS ${ttsBaseUrl()}`;
 function status(el,msg,cls=''){el.textContent=msg;el.className='status '+cls}
 function sttDevice(){return $('sttDevice')?.value||'cpu'}
 function ttsDevice(){return $('ttsDevice')?.value||'cpu'}
+function ttsProvider(){return $('ttsProvider')?.value||'kokoro'}
+function ttsModel(){return $('ttsModel')?.value||'kokoro'}
+function llmProvider(){return $('llmProvider')?.value||'openai-compatible'}
+function llmBaseUrl(){return $('llmBaseUrl')?.value||'http://127.0.0.1:1234/v1'}
 function sttModel(){return $('sttModel')?.value||'base.en'}
 function sttBackend(){return $('sttBackend')?.value||'whisper'}
 function lmModel(){return $('lmModel')?.value||'qwen3.5-2b-uncensored-hauhaucs-aggressive'}
@@ -125,6 +140,16 @@ function collectConfig(){
     stt_model:sttModel(),
     lm_model:lmModel(),
     tts_device:ttsDevice(),
+    tts_provider:ttsProvider(),
+    tts_port:ttsPort(),
+    tts_base_url:String($('ttsBaseUrl')?.value||'').trim(),
+    tts_model:ttsModel(),
+    llm_provider:llmProvider(),
+    llm_base_url:llmBaseUrl(),
+    llm_api_key_env:String($('llmApiKeyEnv')?.value||'').trim(),
+    stt_cloud_base_url:String($('sttCloudBaseUrl')?.value||'').trim(),
+    stt_cloud_model:String($('sttCloudModel')?.value||'').trim(),
+    stt_api_key_env:String($('sttApiKeyEnv')?.value||'').trim(),
     endpoint_mode:endpointMode(),
     silence_ms:endSilenceMs,
     final_stt_mode:finalSttMode(),
@@ -142,10 +167,21 @@ function applyConfig(c={}){
   if(c.stt_model && $('sttModel')) $('sttModel').value=c.stt_model;
   if(c.lm_model && $('lmModel')) $('lmModel').value=c.lm_model;
   if(c.tts_device && $('ttsDevice')) $('ttsDevice').value=c.tts_device;
+  if(c.tts_provider && $('ttsProvider')) $('ttsProvider').value=c.tts_provider;
+  if(c.tts_port && $('ttsPort')) $('ttsPort').value=c.tts_port;
+  if(c.tts_base_url!==undefined && $('ttsBaseUrl')) $('ttsBaseUrl').value=c.tts_base_url||'';
+  if(c.tts_model && $('ttsModel')) $('ttsModel').value=c.tts_model;
+  if(c.llm_provider && $('llmProvider')) $('llmProvider').value=c.llm_provider;
+  if(c.llm_base_url && $('llmBaseUrl')) $('llmBaseUrl').value=c.llm_base_url;
+  if(c.llm_api_key_env!==undefined && $('llmApiKeyEnv')) $('llmApiKeyEnv').value=c.llm_api_key_env||'';
+  if(c.stt_cloud_base_url!==undefined && $('sttCloudBaseUrl')) $('sttCloudBaseUrl').value=c.stt_cloud_base_url||'';
+  if(c.stt_cloud_model!==undefined && $('sttCloudModel')) $('sttCloudModel').value=c.stt_cloud_model||'';
+  if(c.stt_api_key_env!==undefined && $('sttApiKeyEnv')) $('sttApiKeyEnv').value=c.stt_api_key_env||'';
   if(c.endpoint_mode && $('endpointMode')) $('endpointMode').value=c.endpoint_mode;
   if(c.final_stt_mode && $('finalSttMode')) $('finalSttMode').value=c.final_stt_mode;
   if(c.silence_ms){ endSilenceMs=parseInt(c.silence_ms,10); $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; }
   if(c.mode){ mode=c.mode; document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.mode===mode)); }
+  $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`;
 }
 async function loadConfig(){
   try{ const c=await (await fetch('/api/config')).json(); applyConfig(c); $('settingsInfo').textContent='Loaded saved config.json settings.'; }
@@ -172,7 +208,7 @@ function nextIdleDelayMs(){
 }
 async function health(){
   try{let j=await (await fetch('/api/health')).json(); setDot('pageDot',j.whisper_loaded?'good':'warn'); $('pageHealth').textContent=`${j.whisper_backend||'Whisper'} ${j.whisper_loaded?'loaded':'lazy'} · selected STT ${sttBackend()} ${sttDevice()}/${sttModel()} · LM ${lmModel()} · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available?'yes':'no'} · ${j.lmstudio_model}`;}catch(e){setDot('pageDot','bad');$('pageHealth').textContent='page server offline'}
-  try{let j=await (await fetch(`${TTS}/health`)).json(); setDot('ttsDot',j.loaded?'good':'warn'); $('ttsHealth').textContent=`Kokoro ${j.loaded?'ready':'lazy'} · selected TTS ${ttsDevice()} · last ${j.device||'none'} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('ttsDot','bad');$('ttsHealth').textContent='Kokoro offline'}
+  try{let j=await (await fetch(`${ttsBaseUrl()}/health`)).json(); setDot('ttsDot',j.loaded?'good':'warn'); $('ttsHealth').textContent=`Kokoro ${j.loaded?'ready':'lazy'} · selected TTS ${ttsProvider()} ${ttsDevice()} @ ${ttsBaseUrl()} · last ${j.device||'none'} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('ttsDot','bad');$('ttsHealth').textContent='Kokoro offline'}
 }
 setInterval(health,10000);
 
@@ -219,6 +255,7 @@ $('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttMo
 $('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?'LLM audio STT selected. LM Studio /v1/chat currently accepts text/images on many builds; audio may fail unless the selected model/server supports input_audio.':'faster-whisper STT selected.'; status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; saveConfigSoon(); };
 $('lmModel').onchange=()=>{ status($('sttStatus'),`LM Studio model set to ${lmModel()}.`, 'warn'); saveConfigSoon(); };
 $('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
+['ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmProvider','llmBaseUrl','llmApiKeyEnv','sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`; health(); saveConfigSoon(); }; });
 $('voice').onchange=async()=>{
   ackFiles=[]; ackBuffers=[]; ackBuffersByTag={};
   status($('sttStatus'),`Voice changed to ${$('voice').value}. Clearing old ack cache and queueing fresh acks for this voice…`,'warn');
@@ -284,8 +321,8 @@ function interruptedSpeechContext(){
   return `The user interrupted Korina about ${(ratio*100).toFixed(0)}% through her previous spoken reply. Already spoken approximately: "${before}". Not yet spoken approximately: "${after}".`;
 }
 async function schedulePcm(b64,sr=24000){ ensureAudio(); const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i); const i16=new Int16Array(u8.buffer); const f32=new Float32Array(i16.length); for(let i=0;i<i16.length;i++)f32[i]=Math.max(-1,Math.min(1,i16[i]/32768)); const buf=audioCtx.createBuffer(1,f32.length,sr); buf.copyToChannel(f32,0); const src=audioCtx.createBufferSource(); src.buffer=buf; src.connect(gain); const when=Math.max(audioCtx.currentTime,nextPlayTime,ackPlayingUntil); src.start(when); activeSources.push(src); src.onended=()=>{activeSources=activeSources.filter(x=>x!==src);}; nextPlayTime=when+f32.length/sr; currentTtsEstimatedEnd=Math.max(currentTtsEstimatedEnd,nextPlayTime); }
-async function speakSSE(text){ controller=new AbortController(); nextPlayTime=0; let chunks=0,samples=0,start=performance.now(),buf=''; status($('ttsStatus'),'Streaming Kokoro chunks…','warn'); $('progress').style.width='5%'; const r=await fetch(`${TTS}/stream/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const reader=r.body.getReader(), dec=new TextDecoder(); while(true){const {done,value}=await reader.read(); if(done)break; buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf=lines.pop(); for(const line of lines){ if(!line.startsWith('data: '))continue; const ev=JSON.parse(line.slice(6)); await schedulePcm(ev.audio,ev.sample_rate||24000); chunks++; samples+=ev.samples||0; const elapsed=(performance.now()-start)/1000; $('progress').style.width=Math.min(99,10+chunks*12)+'%'; $('chunkInfo').textContent=`${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`; }} $('progress').style.width='100%'; status($('ttsStatus'),`Done · ${chunks} chunks`,'good'); }
-async function speakBuffered(text){ controller=new AbortController(); status($('ttsStatus'),'Synthesizing full WAV…','warn'); $('progress').style.width='10%'; const r=await fetch(`${TTS}/v1/audio/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const blob=await r.blob(); $('audio').src=URL.createObjectURL(blob); $('audio').play().catch(()=>{}); $('progress').style.width='100%'; status($('ttsStatus'),'Done · buffered WAV ready','good'); }
+async function speakSSE(text){ controller=new AbortController(); nextPlayTime=0; let chunks=0,samples=0,start=performance.now(),buf=''; status($('ttsStatus'),'Streaming Kokoro chunks…','warn'); $('progress').style.width='5%'; const r=await fetch(`${ttsBaseUrl()}/stream/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice(),model:ttsModel(),provider:ttsProvider()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const reader=r.body.getReader(), dec=new TextDecoder(); while(true){const {done,value}=await reader.read(); if(done)break; buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf=lines.pop(); for(const line of lines){ if(!line.startsWith('data: '))continue; const ev=JSON.parse(line.slice(6)); await schedulePcm(ev.audio,ev.sample_rate||24000); chunks++; samples+=ev.samples||0; const elapsed=(performance.now()-start)/1000; $('progress').style.width=Math.min(99,10+chunks*12)+'%'; $('chunkInfo').textContent=`${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`; }} $('progress').style.width='100%'; status($('ttsStatus'),`Done · ${chunks} chunks`,'good'); }
+async function speakBuffered(text){ controller=new AbortController(); status($('ttsStatus'),'Synthesizing full WAV…','warn'); $('progress').style.width='10%'; const r=await fetch(`${ttsBaseUrl()}/v1/audio/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice(),model:ttsModel(),provider:ttsProvider()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const blob=await r.blob(); $('audio').src=URL.createObjectURL(blob); $('audio').play().catch(()=>{}); $('progress').style.width='100%'; status($('ttsStatus'),'Done · buffered WAV ready','good'); }
 async function speakText(text, wait=false){ if(!text.trim())return; markActivity('korina-speech-start'); $('playBtn').disabled=true; $('stopBtn').disabled=false; $('chunkInfo').textContent=''; ensureAudio(); currentKorinaText=text; currentTtsStartedAt=audioCtx.currentTime; currentTtsEstimatedEnd=currentTtsStartedAt; activeSources=[]; ttsSpeaking=true; if(live) startBargeInCapture(); try{ if(mode==='sse') await speakSSE(text); else await speakBuffered(text); if(wait && mode==='sse') await waitForScheduledAudio(); }catch(e){ if(e.name==='AbortError'){ status($('ttsStatus'),'Interrupted'); return; } else { status($('ttsStatus'),'Error: '+e.message,'bad'); throw e; } } finally{ if(!handlingBarge){ ttsSpeaking=false; if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); } markActivity('korina-speech-end'); $('playBtn').disabled=false;$('stopBtn').disabled=true;controller=null;} }
 async function askLM(message){ status($('sttStatus'),'Sending transcript to LM Studio…','warn'); const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history,max_tokens:180,temperature:0.7,model:lmModel()})}); const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||''; }
 async function askAndSpeak(message, context=''){ log('You',message); history.push({role:'user',content:message}); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-12); status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); }
