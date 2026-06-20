@@ -173,7 +173,22 @@ function finalSttMode(){return $('finalSttMode')?.value||'chunks'}
 function endpointMode(){return $('endpointMode')?.value||'reading'}
 function setDot(id,state){$(id).className='dot '+state}
 function log(role,text){ const p=document.createElement('p'); p.className='msg'; p.innerHTML=`<b>${role}:</b> ${String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}`; $('log').appendChild(p); $('log').scrollTop=$('log').scrollHeight; }
-function addTranscriptEntry(role,text){ history.push({role:'assistant',content:`[${role}] ${text}`}); log(role,text); }
+function stripTranscriptLabels(text){
+  return String(text||'')
+    .replace(/\[\s*Ack Phrase\s*\]\s*[^.?!]*(?:[.?!]\s*)?/gi,'')
+    .replace(/\bAck Phrase\b\s*/gi,'')
+    .replace(/\[\s*Korina Agent Interrupt\s*\]\s*/gi,'')
+    .replace(/\bKorina Agent Interrupt\s*:\s*/gi,'')
+    .replace(/\s{2,}/g,' ')
+    .trim();
+}
+function cleanHistoryForModel(){
+  return history
+    .filter(m=>!(m.role==='assistant' && /^\s*\[\s*Ack Phrase\s*\]/i.test(m.content||'')))
+    .map(m=>({role:m.role,content:stripTranscriptLabels(m.content)}))
+    .filter(m=>m.content);
+}
+function addTranscriptEntry(role,text,{includeInHistory=false}={}){ if(includeInHistory) history.push({role:'assistant',content:`[${role}] ${text}`}); log(role,text); }
 function agentDebug(label,obj){ const el=$('agentDebug'); if(!el) return; const stamp=new Date().toLocaleTimeString(); const body=typeof obj==='string'?obj:JSON.stringify(obj,null,2); el.textContent += `\n\n[${stamp}] ${label}\n${body}`; el.scrollTop=el.scrollHeight; }
 
 function collectConfig(){
@@ -465,11 +480,11 @@ function interruptedSpeechContext(){
 async function schedulePcm(b64,sr=24000){ ensureAudio(); const bin=atob(b64); const u8=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i); const i16=new Int16Array(u8.buffer); const f32=new Float32Array(i16.length); for(let i=0;i<i16.length;i++)f32[i]=Math.max(-1,Math.min(1,i16[i]/32768)); const buf=audioCtx.createBuffer(1,f32.length,sr); buf.copyToChannel(f32,0); const src=audioCtx.createBufferSource(); src.buffer=buf; src.connect(gain); const when=Math.max(audioCtx.currentTime,nextPlayTime,ackPlayingUntil); src.start(when); activeSources.push(src); src.onended=()=>{activeSources=activeSources.filter(x=>x!==src);}; nextPlayTime=when+f32.length/sr; currentTtsEstimatedEnd=Math.max(currentTtsEstimatedEnd,nextPlayTime); }
 async function speakSSE(text){ controller=new AbortController(); nextPlayTime=0; let chunks=0,samples=0,start=performance.now(),buf=''; status($('ttsStatus'),'Streaming Kokoro chunks…','warn'); $('progress').style.width='5%'; const r=await fetch(`${ttsBaseUrl()}/stream/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice(),model:ttsModel(),provider:ttsProvider()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const reader=r.body.getReader(), dec=new TextDecoder(); while(true){const {done,value}=await reader.read(); if(done)break; buf+=dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf=lines.pop(); for(const line of lines){ if(!line.startsWith('data: '))continue; const ev=JSON.parse(line.slice(6)); await schedulePcm(ev.audio,ev.sample_rate||24000); chunks++; samples+=ev.samples||0; const elapsed=(performance.now()-start)/1000; $('progress').style.width=Math.min(99,10+chunks*12)+'%'; $('chunkInfo').textContent=`${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`; }} $('progress').style.width='100%'; status($('ttsStatus'),`Done · ${chunks} chunks`,'good'); }
 async function speakBuffered(text){ controller=new AbortController(); status($('ttsStatus'),'Synthesizing full WAV…','warn'); $('progress').style.width='10%'; const r=await fetch(`${ttsBaseUrl()}/v1/audio/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice(),model:ttsModel(),provider:ttsProvider()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const blob=await r.blob(); $('audio').src=URL.createObjectURL(blob); $('audio').play().catch(()=>{}); $('progress').style.width='100%'; status($('ttsStatus'),'Done · buffered WAV ready','good'); }
-async function speakText(text, wait=false){ if(!text.trim())return; markActivity('korina-speech-start'); $('playBtn').disabled=true; $('stopBtn').disabled=false; $('chunkInfo').textContent=''; ensureAudio(); currentKorinaText=text; currentTtsStartedAt=audioCtx.currentTime; currentTtsEstimatedEnd=currentTtsStartedAt; activeSources=[]; ttsSpeaking=true; if(live) startBargeInCapture(); try{ if(mode==='sse') await speakSSE(text); else await speakBuffered(text); if(wait && mode==='sse') await waitForScheduledAudio(); }catch(e){ if(e.name==='AbortError'){ status($('ttsStatus'),'Interrupted'); return; } else { status($('ttsStatus'),'Error: '+e.message,'bad'); throw e; } } finally{ if(!handlingBarge){ ttsSpeaking=false; if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); } markActivity('korina-speech-end'); $('playBtn').disabled=false;$('stopBtn').disabled=true;controller=null;} }
+async function speakText(text, wait=false){ text=stripTranscriptLabels(text); if(!text.trim())return; markActivity('korina-speech-start'); $('playBtn').disabled=true; $('stopBtn').disabled=false; $('chunkInfo').textContent=''; ensureAudio(); currentKorinaText=text; currentTtsStartedAt=audioCtx.currentTime; currentTtsEstimatedEnd=currentTtsStartedAt; activeSources=[]; ttsSpeaking=true; if(live) startBargeInCapture(); try{ if(mode==='sse') await speakSSE(text); else await speakBuffered(text); if(wait && mode==='sse') await waitForScheduledAudio(); }catch(e){ if(e.name==='AbortError'){ status($('ttsStatus'),'Interrupted'); return; } else { status($('ttsStatus'),'Error: '+e.message,'bad'); throw e; } } finally{ if(!handlingBarge){ ttsSpeaking=false; if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); } markActivity('korina-speech-end'); $('playBtn').disabled=false;$('stopBtn').disabled=true;controller=null;} }
 function transcriptHash(turns){ return JSON.stringify(turns.map(m=>[m.role,m.content])).slice(-4000); }
 const priorityRank={low:0,normal:1,important:2,critical:3};
 function priorityAtLeast(p,min){return (priorityRank[p||'normal']??1)>=(priorityRank[min||'important']??2)}
-function agentTranscriptSlice(){ const max=parseInt($('agentMaxTurns')?.value||'16',10)||16; return history.slice(-max); }
+function agentTranscriptSlice(){ const max=parseInt($('agentMaxTurns')?.value||'16',10)||16; return cleanHistoryForModel().slice(-max); }
 async function deliverTranscriptToAgent(reason='turn'){
   if(agentEnabled()!=='on') return;
   const statusResp=await fetch('/api/agent/status').then(r=>r.json()).catch(()=>({busy:false}));
@@ -532,7 +547,7 @@ function interruptConverse(text, hard=false){
   if(hard && ttsSpeaking) stopTtsNow();
   if(!ttsSpeaking || hard){
     const msg=pendingImportantAgentMessage; pendingImportantAgentMessage='';
-    addTranscriptEntry('Korina Agent Interrupt', msg);
+    addTranscriptEntry('Korina Agent Interrupt', msg,{includeInHistory:false});
     speakText(msg,true).catch(e=>console.warn('agent interrupt speech failed', e));
   }
 }
@@ -557,10 +572,10 @@ async function askLM(message){
     pendingAgentStateReport='';
   }
   status($('sttStatus'),'Sending transcript to LM Studio…','warn');
-  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:steer+message,history,max_tokens:180,temperature:0.7,model:lmModel()})});
+  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:stripTranscriptLabels(steer+message),history:cleanHistoryForModel(),max_tokens:180,temperature:0.7,model:lmModel()})});
   const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||'';
 }
-async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:message}); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; addTranscriptEntry('Korina Agent Interrupt', msg); await speakText(msg,true).catch(()=>{}); } maybeDeliverTranscriptToAgent('turn'); }
+async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:stripTranscriptLabels(message)}); const lmMessage=context ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}` : stripTranscriptLabels(message); const reply=stripTranscriptLabels(await askLM(lmMessage)); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; addTranscriptEntry('Korina Agent Interrupt', msg,{includeInHistory:false}); await speakText(msg,true).catch(()=>{}); } maybeDeliverTranscriptToAgent('turn'); }
 async function playRandomAck(tag='global'){
   if($('ackEnabled').value!=='on') return;
   if(performance.now()<suppressAckUntil || pendingImportantAgentMessage || awaitingAgentPermission) return;
@@ -578,7 +593,7 @@ async function playRandomAck(tag='global'){
     ackSource=src;
     ackPlayingUntil=when + pick.buffer.duration + 0.05;
     const ackText=pick.text||pick.url.split('/').pop();
-    addTranscriptEntry('Ack Phrase', ackText);
+    addTranscriptEntry('Ack Phrase', ackText,{includeInHistory:false});
     if(tag==='idle') recordIdleAck(); else markActivity('ack');
     $('chunkInfo').textContent=`Ack ${tag}: ${ackText} · ${pick.buffer.duration.toFixed(2)}s`;
   }catch(e){ console.warn('ack playback failed', e); }
