@@ -1,5 +1,9 @@
 {
   "ack_enabled": "on",
+  "agent_enabled": "on",
+  "agent_max_tokens": 512,
+  "agent_max_turns": 16,
+  "agent_model": "",
   "endpoint_mode": "reading",
   "final_stt_mode": "chunks",
   "idle_ack_initial_ms": 5000,

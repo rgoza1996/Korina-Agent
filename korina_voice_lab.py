@@ -82,6 +82,10 @@ DEFAULT_CONFIG = {
     'stt_cloud_base_url': '',
     'stt_cloud_model': '',
     'stt_api_key_env': '',
+    'agent_enabled': 'on',
+    'agent_model': '',
+    'agent_max_turns': 16,
+    'agent_max_tokens': 512,
     'endpoint_mode': 'reading',
     'silence_ms': 3200,
     'final_stt_mode': 'chunks',
@@ -358,6 +362,13 @@ class ChatRequest(BaseModel):
     model: str | None = None
 
 
+class AgentStateRequest(BaseModel):
+    transcript: list[dict] = []
+    previous_report: str = ''
+    model: str | None = None
+    max_tokens: int = 512
+
+
 def normalize_device(requested: Optional[str], *, default_env: Optional[str] = None) -> str:
     value = (requested or default_env or '').strip().lower()
     if value in ('gpu', 'cuda'):
@@ -604,10 +615,12 @@ def lmstudio_chat(req: ChatRequest) -> str:
         'stream': False,
     }
     data = json.dumps(payload).encode('utf-8')
+    config = load_config()
+    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
     http_req = urllib.request.Request(
-        LMSTUDIO_URL,
+        config_llm_chat_url(config),
         data=data,
-        headers={'Content-Type': 'application/json'},
+        headers=headers,
         method='POST',
     )
     try:
@@ -623,6 +636,57 @@ def lmstudio_chat(req: ChatRequest) -> str:
         return format_voice_reply(body['choices'][0]['message']['content'] or '')
     except Exception:
         raise RuntimeError(f'Unexpected LM Studio response: {body!r}')
+
+
+def generate_agent_state_report(req: AgentStateRequest) -> str:
+    config = load_config()
+    selected_model = (req.model or str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL)).strip()
+    turns = []
+    for m in req.transcript[-int(config.get('agent_max_turns') or 16):]:
+        role = m.get('role')
+        content = m.get('content')
+        if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
+            turns.append({'role': role, 'content': content.strip()[:2000]})
+    system = (
+        'You are Korina Agent, an agentic state tracker inspired by Pi Agent Harness concepts: maintain compact state, infer next useful steering, and do not chat with the user.\n'
+        'Create a concise state report for Korina Converse to inject into its next spoken reply.\n'
+        'Do not write the spoken reply. Do not use emojis.\n'
+        'Include: current user intent, relevant facts, unresolved tasks/questions, emotional/interaction notes, and suggested next-response steering.\n'
+        'Use compact plain text with short headings.'
+    )
+    user_payload = {
+        'previous_report': req.previous_report[-4000:],
+        'recent_transcript': turns,
+    }
+    payload = {
+        'model': selected_model,
+        'messages': [
+            {'role': 'system', 'content': system},
+            {'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)},
+        ],
+        'temperature': 0.2,
+        'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
+        'stream': False,
+    }
+    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
+    http_req = urllib.request.Request(
+        config_llm_chat_url(config),
+        data=json.dumps(payload).encode('utf-8'),
+        headers=headers,
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(http_req, timeout=90) as resp:
+            body = json.loads(resp.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode('utf-8', errors='replace')
+        raise RuntimeError(f'Korina Agent HTTP {e.code}: {detail}')
+    except Exception as e:
+        raise RuntimeError(f'Korina Agent request failed: {e}')
+    try:
+        return (body['choices'][0]['message']['content'] or '').strip()
+    except Exception:
+        raise RuntimeError(f'Unexpected Korina Agent response: {body!r}')
 
 
 @app.on_event('startup')
@@ -724,6 +788,17 @@ def acks_rebuild(payload: dict):
     _ack_current_voice = voice
     missing = enqueue_missing_acks(voice, tag)
     return {'ok': True, 'voice': voice, 'tag': tag, 'removed': removed, 'queued_or_missing': missing, 'status': ack_status(voice)}
+
+
+@app.post('/api/agent/state-report')
+def agent_state_report(req: AgentStateRequest):
+    if str(load_config().get('agent_enabled') or 'on') == 'off':
+        return {'ok': True, 'state_report': '', 'disabled': True}
+    try:
+        report = generate_agent_state_report(req)
+        return {'ok': True, 'state_report': report, 'model': req.model or str(load_config().get('agent_model') or load_config().get('lm_model') or LMSTUDIO_MODEL)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post('/api/transcribe')

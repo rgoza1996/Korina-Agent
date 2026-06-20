@@ -119,6 +119,17 @@ When the UI voice changes, Korina clears the ack WAV cache and queues a fresh se
 
 Kokoro TTS with Web Audio SSE streaming by default. Voices selectable in the UI. TTS endpoint/port/provider fields are configurable from the settings modal and persisted to `config.json`.
 
+## Korina Agent state reports
+
+The settings modal has two tabs:
+
+- **Korina Converse** — live voice conversation, STT/TTS/LLM, endpointing, and provider settings.
+- **Korina Agent** — agentic state-report settings.
+
+Korina Agent is a lightweight agentic layer inspired by Pi Agent Harness / Pi Coding Agent concepts. After conversation turns, the recent transcript is sent to `/api/agent/state-report`; the model produces a compact state report containing user intent, relevant facts, unresolved questions, and next-response steering. That report is then injected into Korina Converse on the next response as a `/steer`-style prefix.
+
+Pi is MIT licensed. See `THIRD_PARTY_NOTICES.md` for preserved attribution and license text.
+
 ## Voice activity detection
 
 Korina uses a browser-side adaptive energy VAD (root mean square of audio buffer) with configurable endpointing.
