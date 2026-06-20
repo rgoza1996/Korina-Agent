@@ -135,6 +135,17 @@ Korina Agent can use a separate vendor-agnostic endpoint from Korina Converse. T
 - API-key entry saved locally in `config.json` for test/dev use.
 - Model discovery through `/api/agent/models` when the provider exposes a `/models` endpoint.
 
+The Agent tab also exposes Pi-style behavior settings for the voice-first agent layer:
+
+- YOLO / autonomous mode.
+- Project trust: `ask`, `always`, or `never`.
+- Steering mode and follow-up mode: `one-at-a-time` or `all`.
+- Thinking level: `off`, `minimal`, `low`, `medium`, `high`, or `xhigh`.
+- Auto-compaction and token budgets.
+- Hide thinking block, transport, retry settings, HTTP idle timeout, skill commands, and image blocking.
+
+These are persisted as `agent_*` fields in `config.json`. Some currently steer the state-report behavior directly; others are saved now so the later Pi-compatible execution layer can consume them.
+
 Pi is MIT licensed. See `THIRD_PARTY_NOTICES.md` for preserved attribution and license text.
 
 ## Voice activity detection

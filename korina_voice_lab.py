@@ -89,6 +89,22 @@ DEFAULT_CONFIG = {
     'agent_model': '',
     'agent_max_turns': 16,
     'agent_max_tokens': 512,
+    'agent_yolo_mode': 'off',
+    'agent_project_trust': 'ask',
+    'agent_steering_mode': 'one-at-a-time',
+    'agent_follow_up_mode': 'one-at-a-time',
+    'agent_thinking_level': 'low',
+    'agent_auto_compact': 'on',
+    'agent_compaction_reserve_tokens': 16384,
+    'agent_compaction_keep_recent_tokens': 20000,
+    'agent_hide_thinking': 'on',
+    'agent_transport': 'auto',
+    'agent_retry_enabled': 'on',
+    'agent_max_retries': 3,
+    'agent_retry_base_delay_ms': 2000,
+    'agent_http_idle_timeout_ms': 0,
+    'agent_enable_skill_commands': 'on',
+    'agent_block_images': 'off',
     'endpoint_mode': 'reading',
     'silence_ms': 3200,
     'final_stt_mode': 'chunks',
@@ -714,12 +730,19 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
         content = m.get('content')
         if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
             turns.append({'role': role, 'content': content.strip()[:2000]})
+    autonomy_note = (
+        f"Pi-style settings: yolo_mode={config.get('agent_yolo_mode')}, project_trust={config.get('agent_project_trust')}, "
+        f"steering_mode={config.get('agent_steering_mode')}, follow_up_mode={config.get('agent_follow_up_mode')}, "
+        f"thinking_level={config.get('agent_thinking_level')}, auto_compact={config.get('agent_auto_compact')}."
+    )
     system = (
         'You are Korina Agent, an agentic state tracker inspired by Pi Agent Harness concepts: maintain compact state, infer next useful steering, and do not chat with the user.\n'
         'Create a concise state report for Korina Converse to inject into its next spoken reply.\n'
         'Do not write the spoken reply. Do not use emojis.\n'
         'Include: current user intent, relevant facts, unresolved tasks/questions, emotional/interaction notes, and suggested next-response steering.\n'
         'Korina Agent and Korina Converse take turns by passing hidden state. Never ask to interrupt or speak directly.\n'
+        'If yolo_mode is on, be more decisive in suggested steering, but still never perform external side effects from this state-report endpoint.\n'
+        f'{autonomy_note}\n'
         'Use compact plain text with short headings.'
     )
     user_payload = {

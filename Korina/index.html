@@ -54,6 +54,23 @@
         <div><label>&nbsp;</label><button id="refreshAgentModelsBtn" class="secondary" type="button">Refresh Agent models</button></div>
         <div><label for="agentMaxTurns">Transcript turns sent to agent</label><input id="agentMaxTurns" type="number" min="2" max="40" value="16"></div>
         <div><label for="agentMaxTokens">State report max tokens</label><input id="agentMaxTokens" type="number" min="64" max="2048" value="512"></div>
+        <div class="secretNote"><label>Pi-style behavior</label><p class="small mono">These mirror Pi Coding Agent-style controls for trust, steering, compaction, thinking, transport, retries, and visual/tool behavior.</p></div>
+        <div class="secretNote"><label>YOLO / autonomous mode</label><div class="toggleLine"><input id="agentYoloMode" type="checkbox"><span>More decisive steering; trust Korina Agent to act without extra confirmation prompts where supported</span></div></div>
+        <div><label for="agentProjectTrust">Project trust</label><select id="agentProjectTrust"><option value="ask" selected>Ask</option><option value="always">Always trust</option><option value="never">Never trust</option></select></div>
+        <div><label for="agentThinkingLevel">Thinking level</label><select id="agentThinkingLevel"><option value="off">Off</option><option value="minimal">Minimal</option><option value="low" selected>Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select></div>
+        <div><label for="agentSteeringMode">Steering mode</label><select id="agentSteeringMode"><option value="one-at-a-time" selected>One at a time</option><option value="all">All queued steering</option></select></div>
+        <div><label for="agentFollowUpMode">Follow-up mode</label><select id="agentFollowUpMode"><option value="one-at-a-time" selected>One at a time</option><option value="all">All follow-ups</option></select></div>
+        <div><label for="agentTransport">Transport</label><select id="agentTransport"><option value="auto" selected>Auto</option><option value="responses">Responses API</option><option value="chat">Chat completions</option></select></div>
+        <div><label for="agentHttpIdleTimeoutMs">HTTP idle timeout ms</label><input id="agentHttpIdleTimeoutMs" type="number" min="0" value="0"></div>
+        <div><label for="agentAutoCompact">Auto compaction</label><select id="agentAutoCompact"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+        <div><label for="agentHideThinking">Hide thinking block</label><select id="agentHideThinking"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+        <div><label for="agentCompactionReserveTokens">Compaction reserve tokens</label><input id="agentCompactionReserveTokens" type="number" min="0" value="16384"></div>
+        <div><label for="agentCompactionKeepRecentTokens">Keep recent tokens</label><input id="agentCompactionKeepRecentTokens" type="number" min="0" value="20000"></div>
+        <div><label for="agentRetryEnabled">Retry</label><select id="agentRetryEnabled"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+        <div><label for="agentMaxRetries">Max retries</label><input id="agentMaxRetries" type="number" min="0" value="3"></div>
+        <div><label for="agentRetryBaseDelayMs">Retry base delay ms</label><input id="agentRetryBaseDelayMs" type="number" min="0" value="2000"></div>
+        <div><label for="agentEnableSkillCommands">Skill commands</label><select id="agentEnableSkillCommands"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+        <div><label for="agentBlockImages">Block images</label><select id="agentBlockImages"><option value="off" selected>Off</option><option value="on">On</option></select></div>
       </div>
       <p class="small mono" id="settingsInfo">Model list loads from the configured LLM /models endpoint via /api/models. Endpoint and port settings save to config.json.</p>
       <div class="actions"><button id="refreshModelsBtn" class="secondary">Refresh models</button><button id="saveSettingsBtn">Done</button></div>
@@ -171,6 +188,22 @@ function collectConfig(){
     agent_model:String($('agentModel')?.value||'').trim(),
     agent_max_turns:parseInt($('agentMaxTurns')?.value||'16',10)||16,
     agent_max_tokens:parseInt($('agentMaxTokens')?.value||'512',10)||512,
+    agent_yolo_mode:$('agentYoloMode')?.checked?'on':'off',
+    agent_project_trust:$('agentProjectTrust')?.value||'ask',
+    agent_steering_mode:$('agentSteeringMode')?.value||'one-at-a-time',
+    agent_follow_up_mode:$('agentFollowUpMode')?.value||'one-at-a-time',
+    agent_thinking_level:$('agentThinkingLevel')?.value||'low',
+    agent_auto_compact:$('agentAutoCompact')?.value||'on',
+    agent_compaction_reserve_tokens:parseInt($('agentCompactionReserveTokens')?.value||'16384',10)||16384,
+    agent_compaction_keep_recent_tokens:parseInt($('agentCompactionKeepRecentTokens')?.value||'20000',10)||20000,
+    agent_hide_thinking:$('agentHideThinking')?.value||'on',
+    agent_transport:$('agentTransport')?.value||'auto',
+    agent_retry_enabled:$('agentRetryEnabled')?.value||'on',
+    agent_max_retries:parseInt($('agentMaxRetries')?.value||'3',10),
+    agent_retry_base_delay_ms:parseInt($('agentRetryBaseDelayMs')?.value||'2000',10)||2000,
+    agent_http_idle_timeout_ms:parseInt($('agentHttpIdleTimeoutMs')?.value||'0',10),
+    agent_enable_skill_commands:$('agentEnableSkillCommands')?.value||'on',
+    agent_block_images:$('agentBlockImages')?.value||'off',
     endpoint_mode:endpointMode(),
     silence_ms:endSilenceMs,
     final_stt_mode:finalSttMode(),
@@ -208,6 +241,22 @@ function applyConfig(c={}){
   }
   if(c.agent_max_turns && $('agentMaxTurns')) $('agentMaxTurns').value=c.agent_max_turns;
   if(c.agent_max_tokens && $('agentMaxTokens')) $('agentMaxTokens').value=c.agent_max_tokens;
+  if(c.agent_yolo_mode && $('agentYoloMode')) $('agentYoloMode').checked=c.agent_yolo_mode==='on';
+  if(c.agent_project_trust && $('agentProjectTrust')) $('agentProjectTrust').value=c.agent_project_trust;
+  if(c.agent_steering_mode && $('agentSteeringMode')) $('agentSteeringMode').value=c.agent_steering_mode;
+  if(c.agent_follow_up_mode && $('agentFollowUpMode')) $('agentFollowUpMode').value=c.agent_follow_up_mode;
+  if(c.agent_thinking_level && $('agentThinkingLevel')) $('agentThinkingLevel').value=c.agent_thinking_level;
+  if(c.agent_auto_compact && $('agentAutoCompact')) $('agentAutoCompact').value=c.agent_auto_compact;
+  if(c.agent_compaction_reserve_tokens!==undefined && $('agentCompactionReserveTokens')) $('agentCompactionReserveTokens').value=c.agent_compaction_reserve_tokens;
+  if(c.agent_compaction_keep_recent_tokens!==undefined && $('agentCompactionKeepRecentTokens')) $('agentCompactionKeepRecentTokens').value=c.agent_compaction_keep_recent_tokens;
+  if(c.agent_hide_thinking && $('agentHideThinking')) $('agentHideThinking').value=c.agent_hide_thinking;
+  if(c.agent_transport && $('agentTransport')) $('agentTransport').value=c.agent_transport;
+  if(c.agent_retry_enabled && $('agentRetryEnabled')) $('agentRetryEnabled').value=c.agent_retry_enabled;
+  if(c.agent_max_retries!==undefined && $('agentMaxRetries')) $('agentMaxRetries').value=c.agent_max_retries;
+  if(c.agent_retry_base_delay_ms!==undefined && $('agentRetryBaseDelayMs')) $('agentRetryBaseDelayMs').value=c.agent_retry_base_delay_ms;
+  if(c.agent_http_idle_timeout_ms!==undefined && $('agentHttpIdleTimeoutMs')) $('agentHttpIdleTimeoutMs').value=c.agent_http_idle_timeout_ms;
+  if(c.agent_enable_skill_commands && $('agentEnableSkillCommands')) $('agentEnableSkillCommands').value=c.agent_enable_skill_commands;
+  if(c.agent_block_images && $('agentBlockImages')) $('agentBlockImages').value=c.agent_block_images;
   if(c.endpoint_mode && $('endpointMode')) $('endpointMode').value=c.endpoint_mode;
   if(c.final_stt_mode && $('finalSttMode')) $('finalSttMode').value=c.final_stt_mode;
   if(c.silence_ms){ endSilenceMs=parseInt(c.silence_ms,10); $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; }
@@ -306,7 +355,7 @@ $('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttMo
 $('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?'LLM audio STT selected. LM Studio /v1/chat currently accepts text/images on many builds; audio may fail unless the selected model/server supports input_audio.':'faster-whisper STT selected.'; status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; saveConfigSoon(); };
 $('lmModel').onchange=()=>{ status($('sttStatus'),`LM Studio model set to ${lmModel()}.`, 'warn'); saveConfigSoon(); };
 $('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
-['ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmProvider','llmBaseUrl','llmApiKeyEnv','sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider','agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`; health(); saveConfigSoon(); }; });
+['ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmProvider','llmBaseUrl','llmApiKeyEnv','sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider','agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens','agentYoloMode','agentProjectTrust','agentSteeringMode','agentFollowUpMode','agentThinkingLevel','agentAutoCompact','agentCompactionReserveTokens','agentCompactionKeepRecentTokens','agentHideThinking','agentTransport','agentRetryEnabled','agentMaxRetries','agentRetryBaseDelayMs','agentHttpIdleTimeoutMs','agentEnableSkillCommands','agentBlockImages'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`; health(); saveConfigSoon(); }; });
 $('voice').onchange=async()=>{
   ackFiles=[]; ackBuffers=[]; ackBuffersByTag={};
   status($('sttStatus'),`Voice changed to ${$('voice').value}. Clearing old ack cache and queueing fresh acks for this voice…`,'warn');
