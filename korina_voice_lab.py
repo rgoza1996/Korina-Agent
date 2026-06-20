@@ -114,6 +114,7 @@ DEFAULT_CONFIG = {
     'agent_interrupts_enabled': 'on',
     'agent_interrupt_min_priority': 'important',
     'agent_hard_interrupt_min_priority': 'critical',
+    'agent_interrupt_cooldown_padding_ms': 3000,
     'agent_permission_interrupts': 'on',
     'agent_report_injection_mode': 'next_reply',
     'endpoint_mode': 'reading',

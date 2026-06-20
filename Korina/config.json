@@ -16,6 +16,7 @@
   "agent_hide_thinking": "on",
   "agent_http_idle_timeout_ms": 0,
   "agent_idle_delivery_mode": "prompt",
+  "agent_interrupt_cooldown_padding_ms": 3000,
   "agent_interrupt_min_priority": "important",
   "agent_interrupts_enabled": "on",
   "agent_max_retries": 3,
