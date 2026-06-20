@@ -128,6 +128,8 @@ The settings modal has two tabs:
 
 Korina Agent is a lightweight agentic layer inspired by Pi Agent Harness / Pi Coding Agent concepts. Korina Converse and Korina Agent run as independent loops: Converse stays focused on real-time voice while Agent receives transcript deliveries through `/api/agent/transcript`, works in the background, and emits events through `/api/agent/events`. The frontend polls those events and either stores normal reports as hidden next-reply `/steer` injections or routes important/critical reports through Converse as voice interrupts. Permission requests are spoken by Converse and answered through `/api/agent/permission-answer`, so Converse remains the human-facing permission UX while Agent remains the background worker.
 
+Agent debugging is visible in the **Korina Agent Debug** panel. It logs transcript deliveries/prompts, queued `/steer` updates, Agent events, and Agent output. Agent interrupts and ack phrases are added to the conversation transcript as explicit labels (`Korina Agent Interrupt` and `Ack Phrase`). Ack phrase playback is suppressed briefly during Agent interrupts so a thinking/idle ack does not overlap an interrupt.
+
 Korina Agent can use a separate vendor-agnostic endpoint from Korina Converse. The Agent tab supports:
 
 - OpenAI-compatible endpoints, including local LM Studio and compatible cloud APIs such as MiniMax-style endpoints.

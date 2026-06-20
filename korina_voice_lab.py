@@ -274,6 +274,8 @@ _agent_status = 'idle'
 _agent_last_report = ''
 _agent_pending_steers: list[dict] = []
 _agent_last_error: Optional[str] = None
+_agent_last_emitted_report_hash = ''
+_agent_last_emitted_report_at = 0.0
 
 
 def safe_slug(value: str) -> str:
@@ -771,10 +773,13 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
     )
     system = (
         'You are Korina Agent, an agentic state tracker inspired by Pi Agent Harness concepts: maintain compact state, infer next useful steering, and do not chat with the user.\n'
-        'Create a concise state report for Korina Converse to inject into its next spoken reply.\n'
-        'Do not write the spoken reply. Do not use emojis.\n'
+        'Create a concise state report for Korina Converse to inject into its next spoken reply. Do not write the spoken reply. Do not use emojis.\n'
+        'Start with exactly one line: Priority: low|normal|important|critical.\n'
+        'Priority rules: low = bookkeeping/debug/no user-facing update. normal = useful state for the next reply only. important = user should hear this soon, but it can wait for a sentence boundary. critical = immediate safety/security/data-loss risk, time-sensitive blocking result, or explicit permission required before a tool call.\n'
+        'Do NOT mark garbled STT/Whisper output, uncertain transcript text, routine model errors, repeated observations, or general warnings as critical. Treat transcript uncertainty as low or normal unless it creates an immediate unsafe action.\n'
+        'If permission is required, include the exact phrase Permission request: followed by the requested action, risk, and yes/no question.\n'
         'Include: current user intent, relevant facts, unresolved tasks/questions, emotional/interaction notes, and suggested next-response steering.\n'
-        'Korina Agent and Korina Converse take turns by passing hidden state. Never ask to interrupt or speak directly.\n'
+        'Korina Agent and Korina Converse exchange hidden state. Never speak directly to the user except by emitting important/critical reports for Converse to relay.\n'
         'If yolo_mode is on, be more decisive in suggested steering, but still never perform external side effects from this state-report endpoint.\n'
         f'{autonomy_note}\n'
         'Use compact plain text with short headings.'
@@ -832,10 +837,23 @@ PRIORITY_ORDER = {'low': 0, 'normal': 1, 'important': 2, 'critical': 3}
 
 def classify_agent_priority(report: str) -> str:
     text = (report or '').lower()
-    if any(word in text for word in ['permission', 'approve', 'authorization', 'dangerous command', 'destructive', 'credential', 'secret leaked']):
+    m = re.search(r'^\s*priority\s*:\s*(low|normal|important|critical)\b', text, re.I | re.M)
+    explicit = m.group(1).lower() if m else None
+    critical_cues = ['permission request:', 'explicit permission', 'approve this command', 'authorization required', 'destructive command', 'delete data', 'data loss', 'secret leaked', 'credential exposed']
+    garbled_cues = ['garbled', 'whisper', 'transcription uncertainty', 'stt', 'unclear transcript']
+    # Guardrail: even if the model says critical, garbled STT alone is not critical.
+    if explicit == 'critical' and any(word in text for word in garbled_cues) and not any(word in text for word in critical_cues):
+        return 'normal'
+    if explicit:
+        return explicit
+    # Critical is intentionally narrow: immediate safety/security/data-loss/time-sensitive risk or explicit permission.
+    if any(word in text for word in critical_cues):
         return 'critical'
-    if any(word in text for word in ['critical', 'urgent', 'blocked', 'failed', 'security', 'error', 'cannot continue']):
+    if any(word in text for word in ['critical:', 'urgent:', 'blocked:', 'security risk', 'cannot continue without', 'task is blocked']):
         return 'important'
+    # Garbled STT, Whisper uncertainty, generic errors, and routine warnings should not interrupt by keyword accident.
+    if any(word in text for word in ['garbled', 'whisper', 'transcription uncertainty', 'stt', 'unclear transcript']):
+        return 'normal'
     return 'normal'
 
 
@@ -864,7 +882,7 @@ def agent_snapshot() -> dict:
 
 
 def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
-    global _agent_busy, _agent_status, _agent_last_report, _agent_last_error
+    global _agent_busy, _agent_status, _agent_last_report, _agent_last_error, _agent_last_emitted_report_hash, _agent_last_emitted_report_at
     config = load_config()
     with _agent_lock:
         if _agent_busy:
@@ -898,22 +916,40 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
             model=str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
             max_tokens=int(config.get('agent_max_tokens') or 512),
         )
+        agent_input = {
+            'delivery_mode': req.delivery_mode,
+            'reason': req.reason,
+            'turn_count': req.turn_count,
+            'previous_report': state_req.previous_report,
+            'transcript': state_req.transcript,
+            'model': state_req.model,
+        }
         report = generate_agent_state_report(state_req)
         priority = classify_agent_priority(report)
+        report_hash = hashlib.sha256(report.encode('utf-8')).hexdigest()
+        now = time.time()
+        duplicate_recent = report_hash == _agent_last_emitted_report_hash and (now - _agent_last_emitted_report_at) < 60 and priority != 'critical'
+        _agent_last_emitted_report_hash = report_hash
+        _agent_last_emitted_report_at = now
         with _agent_lock:
             _agent_last_report = report
             _agent_status = 'idle'
             _agent_last_error = None
-        event_type = 'permission_request' if priority == 'critical' and 'permission' in report.lower() else 'state_report'
-        push_agent_event({
-            'type': event_type,
-            'priority': priority,
-            'report': report,
-            'message': report,
-            'delivery_mode': req.delivery_mode,
-            'reason': req.reason,
-            'turn_count': req.turn_count,
-        })
+        event_type = 'permission_request' if priority == 'critical' and 'permission request:' in report.lower() else 'state_report'
+        if not duplicate_recent:
+            push_agent_event({
+                'type': event_type,
+                'priority': priority,
+                'report': report,
+                'message': report,
+                'delivery_mode': req.delivery_mode,
+                'reason': req.reason,
+                'turn_count': req.turn_count,
+                'agent_input': agent_input,
+                'duplicate_suppressed': False,
+            })
+        else:
+            push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'agent_input': agent_input})
     except Exception as e:
         with _agent_lock:
             _agent_status = 'idle'

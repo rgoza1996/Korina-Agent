@@ -8,7 +8,7 @@
     :root { --bg:#0d0f14; --card:#171a22; --card2:#10131a; --line:#2a3040; --text:#edf1ff; --muted:#95a0b8; --accent:#8b7cff; --good:#4ade80; --warn:#fbbf24; --bad:#fb7185; }
     *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,#22244a 0,#0d0f14 38rem);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,Segoe UI,sans-serif;padding:28px 14px;display:flex;justify-content:center}
     main{width:min(920px,100%);display:grid;gap:16px} h1{font-size:28px;margin:0;text-align:center;letter-spacing:-.03em}.sub{text-align:center;color:var(--muted);margin-top:-8px}.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 20px 60px #0006} label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px} textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:12px;background:#080a0f;color:var(--text);font:15px/1.45 inherit;padding:12px;resize:vertical} textarea:focus,select:focus{outline:none;border-color:var(--accent)} .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.grid{grid-template-columns:1fr}} select,input[type=range],input[type=text],input[type=number],input[type=password]{width:100%;background:#080a0f;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}@media(max-width:700px){.btns{grid-template-columns:1fr}}button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;color:white;background:var(--accent);cursor:pointer}button.secondary{background:#2b3142}button.danger{background:#8f2638}button.live{background:#138a54}button.live.on{background:#b45309}button:disabled{opacity:.45;cursor:not-allowed}.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#090b11}.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.dot.good{background:var(--good);box-shadow:0 0 10px var(--good)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}.tabs{display:flex;background:#080a0f;border:1px solid var(--line);border-radius:12px;overflow:hidden}.tab{flex:1;text-align:center;padding:10px;color:var(--muted);font-weight:800;font-size:13px;cursor:pointer}.tab.active{background:var(--accent);color:white}.meter{height:6px;background:#080a0f;border:1px solid var(--line);border-radius:999px;overflow:hidden}.meter>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#55d6ff);transition:width .12s}.status{min-height:22px;text-align:center;color:var(--muted);font-size:14px}.status.good{color:var(--good)}.status.bad{color:var(--bad)}.status.warn{color:var(--warn)}audio{width:100%;margin-top:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.wave{height:54px;border:1px solid var(--line);border-radius:12px;background:#080a0f;display:flex;align-items:end;justify-content:center;gap:2px;padding:8px;overflow:hidden}.bar{width:3px;min-height:2px;background:var(--accent);opacity:.9;border-radius:2px}.log{max-height:190px;overflow:auto;border:1px solid var(--line);background:#080a0f;border-radius:12px;padding:10px;font-size:13px;line-height:1.35}.msg{margin:0 0 8px}.msg b{color:var(--accent)}
-  .modalBackdrop{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBackdrop.open{display:flex}.modal{width:min(760px,100%);max-height:88vh;overflow:auto;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 30px 90px #000}.modal h2{margin:0 0 12px}.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.settingsBtn{background:#2b3142}.settingsTabs{margin:10px 0 14px}.settingsPanel{display:none}.settingsPanel.active{display:grid}.toggleLine{display:flex;align-items:center;gap:10px;background:#080a0f;border:1px solid var(--line);border-radius:10px;padding:10px}.toggleLine input{width:auto}.secretNote{grid-column:1/-1}
+  .modalBackdrop{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBackdrop.open{display:flex}.modal{width:min(760px,100%);max-height:88vh;overflow:auto;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 30px 90px #000}.modal h2{margin:0 0 12px}.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.settingsBtn{background:#2b3142}.settingsTabs{margin:10px 0 14px}.settingsPanel{display:none}.settingsPanel.active{display:grid}.toggleLine{display:flex;align-items:center;gap:10px;background:#080a0f;border:1px solid var(--line);border-radius:10px;padding:10px}.toggleLine input{width:auto}.secretNote{grid-column:1/-1}.debugLog{max-height:280px;overflow:auto;background:#080a0f;border:1px solid var(--line);border-radius:12px;padding:10px;white-space:pre-wrap;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cbd5e1}
   </style>
 </head>
 <body>
@@ -136,6 +136,7 @@
   </section>
 
   <section class="card"><label>Conversation</label><div class="log" id="log"></div></section>
+  <section class="card"><label>Korina Agent Debug</label><div class="debugLog" id="agentDebug">Agent prompts, /steer deliveries, and outputs will appear here.</div></section>
 </main>
 <script>
 function ttsPort(){return parseInt($('ttsPort')?.value||'8880',10)||8880}
@@ -151,7 +152,7 @@ let partialRecorder=null, partialChunks=[], partialWindowMs=1800, partialWindowI
 let ackFiles=[], ackBuffers=[], ackBuffersByTag={}, ackSource=null, ackPlayingUntil=0, lastActivityAt=performance.now(), idleAckCount=0, saveConfigTimer=null;
 let appConfig={idle_ack_initial_ms:5000,idle_ack_step_ms:5000};
 let agentStateReport='', agentLastTranscriptHash='', pendingAgentStateReport='', pendingImportantAgentMessage='', awaitingAgentPermission=null;
-let agentEventCursor=0, agentTurnCount=0, agentLastDeliveredTurn=0, agentFirstDelivered=false, agentStartedAt=performance.now(), agentLastDeliveryAt=0;
+let agentEventCursor=0, agentTurnCount=0, agentLastDeliveredTurn=0, agentFirstDelivered=false, agentStartedAt=performance.now(), agentLastDeliveryAt=0, suppressAckUntil=0;
 const VAD_BASE_SPEECH_THRESHOLD=0.035, VAD_BASE_SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=1200, VAD_SPEECH_FRAMES=8, VAD_SILENCE_FRAMES=10;
 let endSilenceMs=3200;
 const $=id=>document.getElementById(id);
@@ -172,6 +173,8 @@ function finalSttMode(){return $('finalSttMode')?.value||'chunks'}
 function endpointMode(){return $('endpointMode')?.value||'reading'}
 function setDot(id,state){$(id).className='dot '+state}
 function log(role,text){ const p=document.createElement('p'); p.className='msg'; p.innerHTML=`<b>${role}:</b> ${String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}`; $('log').appendChild(p); $('log').scrollTop=$('log').scrollHeight; }
+function addTranscriptEntry(role,text){ history.push({role:'assistant',content:`[${role}] ${text}`}); log(role,text); }
+function agentDebug(label,obj){ const el=$('agentDebug'); if(!el) return; const stamp=new Date().toLocaleTimeString(); const body=typeof obj==='string'?obj:JSON.stringify(obj,null,2); el.textContent += `\n\n[${stamp}] ${label}\n${body}`; el.scrollTop=el.scrollHeight; }
 
 function collectConfig(){
   return {
@@ -373,7 +376,7 @@ document.querySelectorAll('.settingsTab').forEach(btn=>btn.onclick=()=>{
 async function loadAcks(tag='global'){
   try{
     const j=await (await fetch(`/api/acks?voice=${encodeURIComponent($('voice').value)}&tag=${encodeURIComponent(tag)}`)).json();
-    const urls=(j.acks||[]).map(a=>a.url);
+    const urls=(j.acks||[]).map(a=>({url:a.url,text:a.text||a.id||a.name||a.url,id:a.id,name:a.name,tags:a.tags||[]}));
     if(tag==='global') ackFiles=urls;
     if(urls.length) $('sttStatus').textContent=`Ready. ${urls.length} ${tag} ack phrases for ${$('voice').value}. Queue ${j.status?.queue_depth||0}; missing ${j.status?.missing_count||0}.`;
     else $('sttStatus').textContent=`Ack phrases for ${$('voice').value}/${tag} are queued for generation. Queue ${j.status?.queue_depth||0}; missing ${j.status?.missing_count||0}.`;
@@ -427,11 +430,12 @@ async function preloadAckBuffers(tag='global'){
   const urls=tag==='global' && ackFiles.length ? ackFiles : await loadAcks(tag);
   if(!urls.length) return [];
   const decoded=[];
-  for(const url of urls){
+  for(const item of urls){
+    const url=typeof item==='string'?item:item.url;
     try{
       const ab=await (await fetch(url)).arrayBuffer();
       const buf=await audioCtx.decodeAudioData(ab.slice(0));
-      decoded.push({url, buffer:buf, tag});
+      decoded.push({url, text:(typeof item==='string'?url:(item.text||item.id||item.name||url)), buffer:buf, tag});
     }catch(e){ console.warn('ack decode failed', url, e); }
   }
   ackBuffersByTag[tag]=decoded;
@@ -471,6 +475,7 @@ async function deliverTranscriptToAgent(reason='turn'){
   const statusResp=await fetch('/api/agent/status').then(r=>r.json()).catch(()=>({busy:false}));
   const mode=statusResp.busy ? ($('agentBusyDeliveryMode')?.value||'steer') : ($('agentIdleDeliveryMode')?.value||'prompt');
   const payload={transcript:agentTranscriptSlice(),delivery_mode:mode,reason,turn_count:agentTurnCount};
+  agentDebug(`Transcript delivery (${mode})`, payload);
   await fetch('/api/agent/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(e=>console.warn('agent transcript delivery failed', e));
   agentLastDeliveredTurn=agentTurnCount;
   agentLastDeliveryAt=performance.now();
@@ -495,7 +500,7 @@ async function pollAgentEvents(){
   if(agentEnabled()!=='on') return;
   try{
     const j=await (await fetch(`/api/agent/events?after=${agentEventCursor}`)).json();
-    for(const ev of (j.events||[])){ agentEventCursor=Math.max(agentEventCursor, ev.id||0); handleAgentEvent(ev); }
+    for(const ev of (j.events||[])){ agentEventCursor=Math.max(agentEventCursor, ev.id||0); agentDebug(`Agent event ${ev.type||''} #${ev.id||''}`, ev); handleAgentEvent(ev); }
   }catch(e){ console.warn('agent event poll failed', e); }
 }
 function conciseAgentMessage(ev){ const msg=(ev.report||ev.message||'').replace(/\s+/g,' ').trim(); return msg.length>520?msg.slice(0,520)+'…':msg; }
@@ -522,9 +527,12 @@ function handleAgentEvent(ev){
 }
 function interruptConverse(text, hard=false){
   pendingImportantAgentMessage=text;
+  suppressAckUntil=performance.now()+12000;
+  if(ackSource){ try{ackSource.stop();}catch{} ackSource=null; ackPlayingUntil=0; }
   if(hard && ttsSpeaking) stopTtsNow();
   if(!ttsSpeaking || hard){
     const msg=pendingImportantAgentMessage; pendingImportantAgentMessage='';
+    addTranscriptEntry('Korina Agent Interrupt', msg);
     speakText(msg,true).catch(e=>console.warn('agent interrupt speech failed', e));
   }
 }
@@ -552,9 +560,10 @@ async function askLM(message){
   const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:steer+message,history,max_tokens:180,temperature:0.7,model:lmModel()})});
   const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||'';
 }
-async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:message}); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; await speakText(msg,true).catch(()=>{}); } maybeDeliverTranscriptToAgent('turn'); }
+async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:message}); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; addTranscriptEntry('Korina Agent Interrupt', msg); await speakText(msg,true).catch(()=>{}); } maybeDeliverTranscriptToAgent('turn'); }
 async function playRandomAck(tag='global'){
   if($('ackEnabled').value!=='on') return;
+  if(performance.now()<suppressAckUntil || pendingImportantAgentMessage || awaitingAgentPermission) return;
   try{
     ensureAudio();
     const pool=await preloadAckBuffers(tag);
@@ -568,8 +577,10 @@ async function playRandomAck(tag='global'){
     src.start(when);
     ackSource=src;
     ackPlayingUntil=when + pick.buffer.duration + 0.05;
+    const ackText=pick.text||pick.url.split('/').pop();
+    addTranscriptEntry('Ack Phrase', ackText);
     if(tag==='idle') recordIdleAck(); else markActivity('ack');
-    $('chunkInfo').textContent=`Ack ${tag}: ${pick.url.split('/').pop()} · ${pick.buffer.duration.toFixed(2)}s`;
+    $('chunkInfo').textContent=`Ack ${tag}: ${ackText} · ${pick.buffer.duration.toFixed(2)}s`;
   }catch(e){ console.warn('ack playback failed', e); }
 }
 $('playBtn').onclick=()=>speakText($('text').value,false).catch(()=>{});
