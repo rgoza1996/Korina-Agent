@@ -54,6 +54,18 @@
         <div><label>&nbsp;</label><button id="refreshAgentModelsBtn" class="secondary" type="button">Refresh Agent models</button></div>
         <div><label for="agentMaxTurns">Transcript turns sent to agent</label><input id="agentMaxTurns" type="number" min="2" max="40" value="16"></div>
         <div><label for="agentMaxTokens">State report max tokens</label><input id="agentMaxTokens" type="number" min="64" max="2048" value="512"></div>
+        <div class="secretNote"><label>Converse ↔ Agent coordination</label><p class="small mono">Converse stays real-time; Agent receives transcript deltas independently and returns hidden steering or priority interrupts.</p></div>
+        <div><label for="agentFirstDeliveryMode">First transcript delivery</label><select id="agentFirstDeliveryMode"><option value="first_turn_or_timer" selected>After first turn or timer</option><option value="first_turn">After first turn</option><option value="timer">After timer only</option></select></div>
+        <div><label for="agentFirstDeliverySeconds">First delivery seconds</label><input id="agentFirstDeliverySeconds" type="number" min="1" value="20"></div>
+        <div><label for="agentPeriodicDeliveryTurns">Periodic delivery turns</label><input id="agentPeriodicDeliveryTurns" type="number" min="1" value="2"></div>
+        <div><label for="agentPeriodicDeliverySeconds">Periodic delivery seconds</label><input id="agentPeriodicDeliverySeconds" type="number" min="5" value="45"></div>
+        <div><label for="agentBusyDeliveryMode">When Agent busy</label><select id="agentBusyDeliveryMode"><option value="steer" selected>Deliver as /steer</option><option value="prompt">Deliver as prompt</option></select></div>
+        <div><label for="agentIdleDeliveryMode">When Agent idle</label><select id="agentIdleDeliveryMode"><option value="prompt" selected>Deliver as prompt</option><option value="steer">Deliver as /steer</option></select></div>
+        <div><label for="agentInterruptsEnabled">Agent interrupts</label><select id="agentInterruptsEnabled"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+        <div><label for="agentInterruptMinPriority">Soft interrupt at</label><select id="agentInterruptMinPriority"><option value="normal">Normal</option><option value="important" selected>Important</option><option value="critical">Critical only</option></select></div>
+        <div><label for="agentHardInterruptMinPriority">Hard interrupt at</label><select id="agentHardInterruptMinPriority"><option value="important">Important</option><option value="critical" selected>Critical only</option></select></div>
+        <div><label for="agentPermissionInterrupts">Permission interrupts</label><select id="agentPermissionInterrupts"><option value="on" selected>On</option><option value="off">Off</option></select></div>
+        <div><label for="agentReportInjectionMode">Normal reports</label><select id="agentReportInjectionMode"><option value="next_reply" selected>Inject into next reply</option><option value="silent">Store silently</option></select></div>
         <div class="secretNote"><label>Pi-style behavior</label><p class="small mono">These mirror Pi Coding Agent-style controls for trust, steering, compaction, thinking, transport, retries, and visual/tool behavior.</p></div>
         <div class="secretNote"><label>YOLO / autonomous mode</label><div class="toggleLine"><input id="agentYoloMode" type="checkbox"><span>More decisive steering; trust Korina Agent to act without extra confirmation prompts where supported</span></div></div>
         <div><label for="agentProjectTrust">Project trust</label><select id="agentProjectTrust"><option value="ask" selected>Ask</option><option value="always">Always trust</option><option value="never">Never trust</option></select></div>
@@ -138,7 +150,8 @@ let partialTimer=null, partialInFlight=false, partialSeq=0, partialController=nu
 let partialRecorder=null, partialChunks=[], partialWindowMs=1800, partialWindowIndex=0, partialQueue=[], partialQueueProcessing=false;
 let ackFiles=[], ackBuffers=[], ackBuffersByTag={}, ackSource=null, ackPlayingUntil=0, lastActivityAt=performance.now(), idleAckCount=0, saveConfigTimer=null;
 let appConfig={idle_ack_initial_ms:5000,idle_ack_step_ms:5000};
-let agentStateReport='', agentLastTranscriptHash='', pendingAgentStateReport='';
+let agentStateReport='', agentLastTranscriptHash='', pendingAgentStateReport='', pendingImportantAgentMessage='', awaitingAgentPermission=null;
+let agentEventCursor=0, agentTurnCount=0, agentLastDeliveredTurn=0, agentFirstDelivered=false, agentStartedAt=performance.now(), agentLastDeliveryAt=0;
 const VAD_BASE_SPEECH_THRESHOLD=0.035, VAD_BASE_SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=1200, VAD_SPEECH_FRAMES=8, VAD_SILENCE_FRAMES=10;
 let endSilenceMs=3200;
 const $=id=>document.getElementById(id);
@@ -204,6 +217,17 @@ function collectConfig(){
     agent_http_idle_timeout_ms:parseInt($('agentHttpIdleTimeoutMs')?.value||'0',10),
     agent_enable_skill_commands:$('agentEnableSkillCommands')?.value||'on',
     agent_block_images:$('agentBlockImages')?.value||'off',
+    agent_first_delivery_mode:$('agentFirstDeliveryMode')?.value||'first_turn_or_timer',
+    agent_first_delivery_seconds:parseInt($('agentFirstDeliverySeconds')?.value||'20',10)||20,
+    agent_periodic_delivery_turns:parseInt($('agentPeriodicDeliveryTurns')?.value||'2',10)||2,
+    agent_periodic_delivery_seconds:parseInt($('agentPeriodicDeliverySeconds')?.value||'45',10)||45,
+    agent_busy_delivery_mode:$('agentBusyDeliveryMode')?.value||'steer',
+    agent_idle_delivery_mode:$('agentIdleDeliveryMode')?.value||'prompt',
+    agent_interrupts_enabled:$('agentInterruptsEnabled')?.value||'on',
+    agent_interrupt_min_priority:$('agentInterruptMinPriority')?.value||'important',
+    agent_hard_interrupt_min_priority:$('agentHardInterruptMinPriority')?.value||'critical',
+    agent_permission_interrupts:$('agentPermissionInterrupts')?.value||'on',
+    agent_report_injection_mode:$('agentReportInjectionMode')?.value||'next_reply',
     endpoint_mode:endpointMode(),
     silence_ms:endSilenceMs,
     final_stt_mode:finalSttMode(),
@@ -257,6 +281,17 @@ function applyConfig(c={}){
   if(c.agent_http_idle_timeout_ms!==undefined && $('agentHttpIdleTimeoutMs')) $('agentHttpIdleTimeoutMs').value=c.agent_http_idle_timeout_ms;
   if(c.agent_enable_skill_commands && $('agentEnableSkillCommands')) $('agentEnableSkillCommands').value=c.agent_enable_skill_commands;
   if(c.agent_block_images && $('agentBlockImages')) $('agentBlockImages').value=c.agent_block_images;
+  if(c.agent_first_delivery_mode && $('agentFirstDeliveryMode')) $('agentFirstDeliveryMode').value=c.agent_first_delivery_mode;
+  if(c.agent_first_delivery_seconds!==undefined && $('agentFirstDeliverySeconds')) $('agentFirstDeliverySeconds').value=c.agent_first_delivery_seconds;
+  if(c.agent_periodic_delivery_turns!==undefined && $('agentPeriodicDeliveryTurns')) $('agentPeriodicDeliveryTurns').value=c.agent_periodic_delivery_turns;
+  if(c.agent_periodic_delivery_seconds!==undefined && $('agentPeriodicDeliverySeconds')) $('agentPeriodicDeliverySeconds').value=c.agent_periodic_delivery_seconds;
+  if(c.agent_busy_delivery_mode && $('agentBusyDeliveryMode')) $('agentBusyDeliveryMode').value=c.agent_busy_delivery_mode;
+  if(c.agent_idle_delivery_mode && $('agentIdleDeliveryMode')) $('agentIdleDeliveryMode').value=c.agent_idle_delivery_mode;
+  if(c.agent_interrupts_enabled && $('agentInterruptsEnabled')) $('agentInterruptsEnabled').value=c.agent_interrupts_enabled;
+  if(c.agent_interrupt_min_priority && $('agentInterruptMinPriority')) $('agentInterruptMinPriority').value=c.agent_interrupt_min_priority;
+  if(c.agent_hard_interrupt_min_priority && $('agentHardInterruptMinPriority')) $('agentHardInterruptMinPriority').value=c.agent_hard_interrupt_min_priority;
+  if(c.agent_permission_interrupts && $('agentPermissionInterrupts')) $('agentPermissionInterrupts').value=c.agent_permission_interrupts;
+  if(c.agent_report_injection_mode && $('agentReportInjectionMode')) $('agentReportInjectionMode').value=c.agent_report_injection_mode;
   if(c.endpoint_mode && $('endpointMode')) $('endpointMode').value=c.endpoint_mode;
   if(c.final_stt_mode && $('finalSttMode')) $('finalSttMode').value=c.final_stt_mode;
   if(c.silence_ms){ endSilenceMs=parseInt(c.silence_ms,10); $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; }
@@ -355,7 +390,7 @@ $('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttMo
 $('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?'LLM audio STT selected. LM Studio /v1/chat currently accepts text/images on many builds; audio may fail unless the selected model/server supports input_audio.':'faster-whisper STT selected.'; status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; saveConfigSoon(); };
 $('lmModel').onchange=()=>{ status($('sttStatus'),`LM Studio model set to ${lmModel()}.`, 'warn'); saveConfigSoon(); };
 $('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
-['ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmProvider','llmBaseUrl','llmApiKeyEnv','sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider','agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens','agentYoloMode','agentProjectTrust','agentSteeringMode','agentFollowUpMode','agentThinkingLevel','agentAutoCompact','agentCompactionReserveTokens','agentCompactionKeepRecentTokens','agentHideThinking','agentTransport','agentRetryEnabled','agentMaxRetries','agentRetryBaseDelayMs','agentHttpIdleTimeoutMs','agentEnableSkillCommands','agentBlockImages'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`; health(); saveConfigSoon(); }; });
+['ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmProvider','llmBaseUrl','llmApiKeyEnv','sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider','agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens','agentYoloMode','agentProjectTrust','agentSteeringMode','agentFollowUpMode','agentThinkingLevel','agentAutoCompact','agentCompactionReserveTokens','agentCompactionKeepRecentTokens','agentHideThinking','agentTransport','agentRetryEnabled','agentMaxRetries','agentRetryBaseDelayMs','agentHttpIdleTimeoutMs','agentEnableSkillCommands','agentBlockImages','agentFirstDeliveryMode','agentFirstDeliverySeconds','agentPeriodicDeliveryTurns','agentPeriodicDeliverySeconds','agentBusyDeliveryMode','agentIdleDeliveryMode','agentInterruptsEnabled','agentInterruptMinPriority','agentHardInterruptMinPriority','agentPermissionInterrupts','agentReportInjectionMode'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`; health(); saveConfigSoon(); }; });
 $('voice').onchange=async()=>{
   ackFiles=[]; ackBuffers=[]; ackBuffersByTag={};
   status($('sttStatus'),`Voice changed to ${$('voice').value}. Clearing old ack cache and queueing fresh acks for this voice…`,'warn');
@@ -380,6 +415,8 @@ async function initApp(){
   await loadAcks('global');
   health();
   markActivity('init');
+  setInterval(()=>maybeDeliverTranscriptToAgent('timer'),3000);
+  setInterval(()=>pollAgentEvents(),2000);
 }
 initApp();
 
@@ -426,21 +463,84 @@ async function speakSSE(text){ controller=new AbortController(); nextPlayTime=0;
 async function speakBuffered(text){ controller=new AbortController(); status($('ttsStatus'),'Synthesizing full WAV…','warn'); $('progress').style.width='10%'; const r=await fetch(`${ttsBaseUrl()}/v1/audio/speech`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:text,voice:$('voice').value,speed:parseFloat($('speed').value),device:ttsDevice(),model:ttsModel(),provider:ttsProvider()}),signal:controller.signal}); if(!r.ok) throw new Error(await r.text()); const blob=await r.blob(); $('audio').src=URL.createObjectURL(blob); $('audio').play().catch(()=>{}); $('progress').style.width='100%'; status($('ttsStatus'),'Done · buffered WAV ready','good'); }
 async function speakText(text, wait=false){ if(!text.trim())return; markActivity('korina-speech-start'); $('playBtn').disabled=true; $('stopBtn').disabled=false; $('chunkInfo').textContent=''; ensureAudio(); currentKorinaText=text; currentTtsStartedAt=audioCtx.currentTime; currentTtsEstimatedEnd=currentTtsStartedAt; activeSources=[]; ttsSpeaking=true; if(live) startBargeInCapture(); try{ if(mode==='sse') await speakSSE(text); else await speakBuffered(text); if(wait && mode==='sse') await waitForScheduledAudio(); }catch(e){ if(e.name==='AbortError'){ status($('ttsStatus'),'Interrupted'); return; } else { status($('ttsStatus'),'Error: '+e.message,'bad'); throw e; } } finally{ if(!handlingBarge){ ttsSpeaking=false; if(bargeLoopId)cancelAnimationFrame(bargeLoopId); bargeLoopId=null; if(bargeRecorder && bargeRecorder.state!=='inactive')bargeRecorder.stop(); } markActivity('korina-speech-end'); $('playBtn').disabled=false;$('stopBtn').disabled=true;controller=null;} }
 function transcriptHash(turns){ return JSON.stringify(turns.map(m=>[m.role,m.content])).slice(-4000); }
-async function updateAgentStateReport(){
-  if(agentEnabled()!=='on') return '';
-  const maxTurns=parseInt($('agentMaxTurns')?.value||'16',10)||16;
-  const turns=history.slice(-maxTurns);
-  const h=transcriptHash(turns);
-  if(!turns.length || h===agentLastTranscriptHash) return agentStateReport;
-  agentLastTranscriptHash=h;
-  status($('sttStatus'),'Korina Agent is writing a state report…','warn');
-  const r=await fetch('/api/agent/state-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transcript:turns,previous_report:agentStateReport,model:agentModel(),max_tokens:parseInt($('agentMaxTokens')?.value||'512',10)||512})});
-  const j=await r.json();
-  if(!r.ok) throw new Error(j.detail||JSON.stringify(j));
-  agentStateReport=j.state_report||'';
-  pendingAgentStateReport=agentStateReport;
-  $('transcriptInfo').textContent='Korina Agent state report updated and will steer the next reply.';
-  return agentStateReport;
+const priorityRank={low:0,normal:1,important:2,critical:3};
+function priorityAtLeast(p,min){return (priorityRank[p||'normal']??1)>=(priorityRank[min||'important']??2)}
+function agentTranscriptSlice(){ const max=parseInt($('agentMaxTurns')?.value||'16',10)||16; return history.slice(-max); }
+async function deliverTranscriptToAgent(reason='turn'){
+  if(agentEnabled()!=='on') return;
+  const statusResp=await fetch('/api/agent/status').then(r=>r.json()).catch(()=>({busy:false}));
+  const mode=statusResp.busy ? ($('agentBusyDeliveryMode')?.value||'steer') : ($('agentIdleDeliveryMode')?.value||'prompt');
+  const payload={transcript:agentTranscriptSlice(),delivery_mode:mode,reason,turn_count:agentTurnCount};
+  await fetch('/api/agent/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(e=>console.warn('agent transcript delivery failed', e));
+  agentLastDeliveredTurn=agentTurnCount;
+  agentLastDeliveryAt=performance.now();
+  if(!agentFirstDelivered) agentFirstDelivered=true;
+}
+function maybeDeliverTranscriptToAgent(reason='timer'){
+  if(agentEnabled()!=='on' || !history.length) return;
+  const now=performance.now();
+  const firstMode=$('agentFirstDeliveryMode')?.value||'first_turn_or_timer';
+  const firstSeconds=(parseInt($('agentFirstDeliverySeconds')?.value||'20',10)||20)*1000;
+  if(!agentFirstDelivered){
+    const hasTurn=agentTurnCount>=1;
+    const timerDue=now-agentStartedAt>=firstSeconds;
+    if((firstMode==='first_turn' && hasTurn) || (firstMode==='timer' && timerDue) || (firstMode==='first_turn_or_timer' && (hasTurn||timerDue))) deliverTranscriptToAgent('first:'+reason);
+    return;
+  }
+  const turnsDue=agentTurnCount-agentLastDeliveredTurn >= (parseInt($('agentPeriodicDeliveryTurns')?.value||'2',10)||2);
+  const secondsDue=now-agentLastDeliveryAt >= ((parseInt($('agentPeriodicDeliverySeconds')?.value||'45',10)||45)*1000);
+  if(turnsDue || secondsDue) deliverTranscriptToAgent(reason);
+}
+async function pollAgentEvents(){
+  if(agentEnabled()!=='on') return;
+  try{
+    const j=await (await fetch(`/api/agent/events?after=${agentEventCursor}`)).json();
+    for(const ev of (j.events||[])){ agentEventCursor=Math.max(agentEventCursor, ev.id||0); handleAgentEvent(ev); }
+  }catch(e){ console.warn('agent event poll failed', e); }
+}
+function conciseAgentMessage(ev){ const msg=(ev.report||ev.message||'').replace(/\s+/g,' ').trim(); return msg.length>520?msg.slice(0,520)+'…':msg; }
+function handleAgentEvent(ev){
+  if(ev.type==='agent_status') return;
+  if(ev.type==='agent_error'){ pendingAgentStateReport=`Korina Agent error: ${ev.message}`; return; }
+  if(ev.type==='permission_request'){
+    if(($('agentPermissionInterrupts')?.value||'on')==='off'){ pendingAgentStateReport=conciseAgentMessage(ev); return; }
+    awaitingAgentPermission=ev;
+    interruptConverse(`Korina Agent needs your permission. ${conciseAgentMessage(ev)} Should I allow it?`, true);
+    return;
+  }
+  if(ev.type==='state_report'){
+    agentStateReport=ev.report||ev.message||'';
+    const priority=ev.priority||'normal';
+    if(($('agentInterruptsEnabled')?.value||'on')==='on' && priorityAtLeast(priority,$('agentInterruptMinPriority')?.value||'important')){
+      const hard=priorityAtLeast(priority,$('agentHardInterruptMinPriority')?.value||'critical');
+      interruptConverse(`I just found something you should know about. ${conciseAgentMessage(ev)}`, hard);
+    } else if(($('agentReportInjectionMode')?.value||'next_reply')==='next_reply'){
+      pendingAgentStateReport=agentStateReport;
+      $('transcriptInfo').textContent='Korina Agent report stored for next reply.';
+    }
+  }
+}
+function interruptConverse(text, hard=false){
+  pendingImportantAgentMessage=text;
+  if(hard && ttsSpeaking) stopTtsNow();
+  if(!ttsSpeaking || hard){
+    const msg=pendingImportantAgentMessage; pendingImportantAgentMessage='';
+    speakText(msg,true).catch(e=>console.warn('agent interrupt speech failed', e));
+  }
+}
+async function handlePermissionAnswerIfAny(message){
+  if(!awaitingAgentPermission) return false;
+  const m=message.trim().toLowerCase();
+  const yes=/^(yes|yeah|yep|approve|allow|go ahead|do it)\b/.test(m);
+  const no=/^(no|nope|deny|stop|do not|don't)\b/.test(m);
+  if(!yes && !no) return false;
+  const answer=yes?'yes':'no';
+  const req=awaitingAgentPermission; awaitingAgentPermission=null;
+  history.push({role:'user',content:`Permission answer to Korina Agent: ${answer}`});
+  await fetch('/api/agent/permission-answer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({request_id:String(req.id||''),answer,transcript:agentTranscriptSlice()})}).catch(e=>console.warn('permission answer failed', e));
+  const reply=answer==='yes'?'Okay. I told Korina Agent it has permission.':'Okay. I told Korina Agent not to proceed.';
+  $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); agentTurnCount++; await speakText(reply,true); maybeDeliverTranscriptToAgent('permission-answer');
+  return true;
 }
 async function askLM(message){
   let steer='';
@@ -452,7 +552,7 @@ async function askLM(message){
   const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:steer+message,history,max_tokens:180,temperature:0.7,model:lmModel()})});
   const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||'';
 }
-async function askAndSpeak(message, context=''){ log('You',message); history.push({role:'user',content:message}); await updateAgentStateReport().catch(e=>console.warn('agent state report failed', e)); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); updateAgentStateReport().catch(e=>console.warn('agent state report failed', e)); status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); }
+async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:message}); const lmMessage=context ? `${context}\n\nThe user now says: ${message}` : message; const reply=await askLM(lmMessage); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; await speakText(msg,true).catch(()=>{}); } maybeDeliverTranscriptToAgent('turn'); }
 async function playRandomAck(tag='global'){
   if($('ackEnabled').value!=='on') return;
   try{

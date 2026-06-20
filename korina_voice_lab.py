@@ -105,6 +105,17 @@ DEFAULT_CONFIG = {
     'agent_http_idle_timeout_ms': 0,
     'agent_enable_skill_commands': 'on',
     'agent_block_images': 'off',
+    'agent_first_delivery_mode': 'first_turn_or_timer',
+    'agent_first_delivery_seconds': 20,
+    'agent_periodic_delivery_turns': 2,
+    'agent_periodic_delivery_seconds': 45,
+    'agent_busy_delivery_mode': 'steer',
+    'agent_idle_delivery_mode': 'prompt',
+    'agent_interrupts_enabled': 'on',
+    'agent_interrupt_min_priority': 'important',
+    'agent_hard_interrupt_min_priority': 'critical',
+    'agent_permission_interrupts': 'on',
+    'agent_report_injection_mode': 'next_reply',
     'endpoint_mode': 'reading',
     'silence_ms': 3200,
     'final_stt_mode': 'chunks',
@@ -253,6 +264,16 @@ _ack_worker_running = False
 _ack_last_error: Optional[str] = None
 _ack_last_generated: Optional[str] = None
 _ack_current_voice = ACK_DEFAULT_VOICE
+
+
+_agent_lock = threading.Lock()
+_agent_events: list[dict] = []
+_agent_event_seq = 0
+_agent_busy = False
+_agent_status = 'idle'
+_agent_last_report = ''
+_agent_pending_steers: list[dict] = []
+_agent_last_error: Optional[str] = None
 
 
 def safe_slug(value: str) -> str:
@@ -450,6 +471,19 @@ class AgentStateRequest(BaseModel):
     previous_report: str = ''
     model: str | None = None
     max_tokens: int = 512
+
+
+class AgentTranscriptRequest(BaseModel):
+    transcript: list[dict] = []
+    delivery_mode: str = 'prompt'
+    reason: str = ''
+    turn_count: int = 0
+
+
+class AgentPermissionAnswer(BaseModel):
+    request_id: str = ''
+    answer: str = ''
+    transcript: list[dict] = []
 
 
 def normalize_device(requested: Optional[str], *, default_env: Optional[str] = None) -> str:
@@ -793,6 +827,116 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
         raise RuntimeError(f'Unexpected Korina Agent response: {body!r}')
 
 
+PRIORITY_ORDER = {'low': 0, 'normal': 1, 'important': 2, 'critical': 3}
+
+
+def classify_agent_priority(report: str) -> str:
+    text = (report or '').lower()
+    if any(word in text for word in ['permission', 'approve', 'authorization', 'dangerous command', 'destructive', 'credential', 'secret leaked']):
+        return 'critical'
+    if any(word in text for word in ['critical', 'urgent', 'blocked', 'failed', 'security', 'error', 'cannot continue']):
+        return 'important'
+    return 'normal'
+
+
+def push_agent_event(event: dict) -> dict:
+    global _agent_event_seq
+    with _agent_lock:
+        _agent_event_seq += 1
+        event = dict(event)
+        event['id'] = _agent_event_seq
+        event['created_at'] = time.time()
+        _agent_events.append(event)
+        del _agent_events[:-100]
+        return event
+
+
+def agent_snapshot() -> dict:
+    with _agent_lock:
+        return {
+            'busy': _agent_busy,
+            'status': _agent_status,
+            'last_report': _agent_last_report,
+            'pending_steers': len(_agent_pending_steers),
+            'last_error': _agent_last_error,
+            'last_event_id': _agent_event_seq,
+        }
+
+
+def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
+    global _agent_busy, _agent_status, _agent_last_report, _agent_last_error
+    config = load_config()
+    with _agent_lock:
+        if _agent_busy:
+            _agent_pending_steers.append({
+                'transcript': req.transcript,
+                'reason': req.reason,
+                'turn_count': req.turn_count,
+                'created_at': time.time(),
+            })
+            queued_busy = True
+        else:
+            queued_busy = False
+        if not queued_busy:
+            _agent_busy = True
+            _agent_status = 'working'
+    if queued_busy:
+        push_agent_event({'type': 'agent_status', 'status': 'busy_queued_steer', 'priority': 'low', 'message': 'Korina Agent is busy; transcript delta queued as steering.'})
+        return
+    push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'})
+    try:
+        previous = _agent_last_report
+        with _agent_lock:
+            if _agent_pending_steers:
+                steer_text = '\n\nQueued steering while busy:\n' + json.dumps(_agent_pending_steers[-5:], ensure_ascii=False)
+                _agent_pending_steers.clear()
+            else:
+                steer_text = ''
+        state_req = AgentStateRequest(
+            transcript=req.transcript,
+            previous_report=(previous + steer_text)[-6000:],
+            model=str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
+            max_tokens=int(config.get('agent_max_tokens') or 512),
+        )
+        report = generate_agent_state_report(state_req)
+        priority = classify_agent_priority(report)
+        with _agent_lock:
+            _agent_last_report = report
+            _agent_status = 'idle'
+            _agent_last_error = None
+        event_type = 'permission_request' if priority == 'critical' and 'permission' in report.lower() else 'state_report'
+        push_agent_event({
+            'type': event_type,
+            'priority': priority,
+            'report': report,
+            'message': report,
+            'delivery_mode': req.delivery_mode,
+            'reason': req.reason,
+            'turn_count': req.turn_count,
+        })
+    except Exception as e:
+        with _agent_lock:
+            _agent_status = 'idle'
+            _agent_last_error = str(e)
+        push_agent_event({'type': 'agent_error', 'priority': 'important', 'message': str(e)})
+    finally:
+        with _agent_lock:
+            _agent_busy = False
+
+
+def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
+    config = load_config()
+    if str(config.get('agent_enabled') or 'on') == 'off':
+        return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
+    if req.delivery_mode == 'steer':
+        with _agent_lock:
+            _agent_pending_steers.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
+        push_agent_event({'type': 'agent_status', 'status': 'steer_received', 'priority': 'low', 'message': 'Transcript steering queued for Korina Agent.'})
+        return {'ok': True, 'accepted': True, 'queued_as': 'steer', 'status': agent_snapshot()}
+    threading.Thread(target=run_agent_transcript_job, args=(req,), daemon=True).start()
+    return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': agent_snapshot()}
+
+
 @app.on_event('startup')
 def startup_generate_default_acks():
     ACK_DIR.mkdir(parents=True, exist_ok=True)
@@ -892,6 +1036,30 @@ def acks_rebuild(payload: dict):
     _ack_current_voice = voice
     missing = enqueue_missing_acks(voice, tag)
     return {'ok': True, 'voice': voice, 'tag': tag, 'removed': removed, 'queued_or_missing': missing, 'status': ack_status(voice)}
+
+
+@app.get('/api/agent/status')
+def agent_status():
+    return {'ok': True, **agent_snapshot()}
+
+
+@app.get('/api/agent/events')
+def agent_events(after: int = Query(0)):
+    with _agent_lock:
+        events = [e for e in _agent_events if int(e.get('id', 0)) > after]
+        last_id = _agent_event_seq
+    return {'ok': True, 'events': events, 'last_event_id': last_id, **agent_snapshot()}
+
+
+@app.post('/api/agent/transcript')
+def agent_transcript(req: AgentTranscriptRequest):
+    return submit_agent_transcript(req)
+
+
+@app.post('/api/agent/permission-answer')
+def agent_permission_answer(req: AgentPermissionAnswer):
+    push_agent_event({'type': 'permission_answer', 'priority': 'normal', 'request_id': req.request_id, 'answer': req.answer, 'transcript': req.transcript})
+    return submit_agent_transcript(AgentTranscriptRequest(transcript=req.transcript, delivery_mode='prompt', reason=f'permission_answer:{req.answer}', turn_count=0))
 
 
 @app.get('/api/agent/models')

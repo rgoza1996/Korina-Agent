@@ -126,7 +126,7 @@ The settings modal has two tabs:
 - **Korina Converse** — live voice conversation, STT/TTS/LLM, endpointing, and provider settings.
 - **Korina Agent** — agentic state-report settings.
 
-Korina Agent is a lightweight agentic layer inspired by Pi Agent Harness / Pi Coding Agent concepts. After conversation turns, the recent transcript is sent to `/api/agent/state-report`; the model produces a compact state report containing user intent, relevant facts, unresolved questions, and next-response steering. That report is then injected into Korina Converse on the next response as a hidden `/steer`-style prefix, so the two layers exchange state without interrupting each other.
+Korina Agent is a lightweight agentic layer inspired by Pi Agent Harness / Pi Coding Agent concepts. Korina Converse and Korina Agent run as independent loops: Converse stays focused on real-time voice while Agent receives transcript deliveries through `/api/agent/transcript`, works in the background, and emits events through `/api/agent/events`. The frontend polls those events and either stores normal reports as hidden next-reply `/steer` injections or routes important/critical reports through Converse as voice interrupts. Permission requests are spoken by Converse and answered through `/api/agent/permission-answer`, so Converse remains the human-facing permission UX while Agent remains the background worker.
 
 Korina Agent can use a separate vendor-agnostic endpoint from Korina Converse. The Agent tab supports:
 
