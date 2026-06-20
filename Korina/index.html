@@ -211,7 +211,7 @@ function applyConfig(c={}){
   if(c.endpoint_mode && $('endpointMode')) $('endpointMode').value=c.endpoint_mode;
   if(c.final_stt_mode && $('finalSttMode')) $('finalSttMode').value=c.final_stt_mode;
   if(c.silence_ms){ endSilenceMs=parseInt(c.silence_ms,10); $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; }
-  if(c.mode){ mode=c.mode; document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.mode===mode)); }
+  if(c.mode){ mode=c.mode; document.querySelectorAll('.tab[data-mode]').forEach(x=>x.classList.toggle('active',x.dataset.mode===mode)); }
   $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`;
 }
 async function loadConfig(){
@@ -320,7 +320,7 @@ $('voice').onchange=async()=>{
   setTimeout(()=>loadAcks('global'),1500);
 };
 $('finalSttMode').onchange=()=>{ status($('sttStatus'),`Finalization mode: ${finalSttMode()==='chunks'?'live chunks only':'full utterance final pass'}.`, 'warn'); saveConfigSoon(); };
-document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{mode=t.dataset.mode;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t)); saveConfigSoon();});
+document.querySelectorAll('.tab[data-mode]').forEach(t=>t.onclick=()=>{mode=t.dataset.mode;document.querySelectorAll('.tab[data-mode]').forEach(x=>x.classList.toggle('active',x===t)); saveConfigSoon();});
 
 
 async function initApp(){
