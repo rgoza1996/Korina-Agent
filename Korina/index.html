@@ -175,16 +175,19 @@ function setDot(id,state){$(id).className='dot '+state}
 function log(role,text){ const p=document.createElement('p'); p.className='msg'; p.innerHTML=`<b>${role}:</b> ${String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}`; $('log').appendChild(p); $('log').scrollTop=$('log').scrollHeight; }
 function stripTranscriptLabels(text){
   return String(text||'')
+    .replace(/<think>[\s\S]*?<\/think>/gi,'')
+    .replace(/<think>[\s\S]*/gi,'')
     .replace(/\[\s*Ack Phrase\s*\]\s*[^.?!]*(?:[.?!]\s*)?/gi,'')
     .replace(/\bAck Phrase\b\s*/gi,'')
-    .replace(/\[\s*Korina Agent Interrupt\s*\]\s*/gi,'')
-    .replace(/\bKorina Agent Interrupt\s*:\s*/gi,'')
+    .replace(/\[\s*Korina Agent Interrupt\s*\]\s*[^\n]*/gi,'')
+    .replace(/\bKorina Agent Interrupt\s*:\s*[^\n]*/gi,'')
+    .replace(/^\s*Priority\s*:\s*(low|normal|important|critical)\s*$/gim,'')
     .replace(/\s{2,}/g,' ')
     .trim();
 }
 function cleanHistoryForModel(){
   return history
-    .filter(m=>!(m.role==='assistant' && /^\s*\[\s*Ack Phrase\s*\]/i.test(m.content||'')))
+    .filter(m=>!(m.role==='assistant' && /^\s*\[\s*(Ack Phrase|Korina Agent Interrupt)\s*\]/i.test(m.content||'')))
     .map(m=>({role:m.role,content:stripTranscriptLabels(m.content)}))
     .filter(m=>m.content);
 }
@@ -518,7 +521,7 @@ async function pollAgentEvents(){
     for(const ev of (j.events||[])){ agentEventCursor=Math.max(agentEventCursor, ev.id||0); agentDebug(`Agent event ${ev.type||''} #${ev.id||''}`, ev); handleAgentEvent(ev); }
   }catch(e){ console.warn('agent event poll failed', e); }
 }
-function conciseAgentMessage(ev){ const msg=(ev.report||ev.message||'').replace(/\s+/g,' ').trim(); return msg.length>520?msg.slice(0,520)+'…':msg; }
+function conciseAgentMessage(ev){ const msg=stripTranscriptLabels(ev.report||ev.message||'').replace(/\s+/g,' ').trim(); return msg.length>520?msg.slice(0,520)+'…':msg; }
 function handleAgentEvent(ev){
   if(ev.type==='agent_status') return;
   if(ev.type==='agent_error'){ pendingAgentStateReport=`Korina Agent error: ${ev.message}`; return; }
@@ -529,7 +532,8 @@ function handleAgentEvent(ev){
     return;
   }
   if(ev.type==='state_report'){
-    agentStateReport=ev.report||ev.message||'';
+    agentStateReport=stripTranscriptLabels(ev.report||ev.message||'');
+    if(!agentStateReport) return;
     const priority=ev.priority||'normal';
     if(($('agentInterruptsEnabled')?.value||'on')==='on' && priorityAtLeast(priority,$('agentInterruptMinPriority')?.value||'important')){
       const hard=priorityAtLeast(priority,$('agentHardInterruptMinPriority')?.value||'critical');

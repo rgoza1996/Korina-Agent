@@ -832,6 +832,18 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
         raise RuntimeError(f'Unexpected Korina Agent response: {body!r}')
 
 
+def sanitize_agent_report(report: str) -> str:
+    text = report or ''
+    text = re.sub(r'<think>[\s\S]*?</think>', '', text, flags=re.I)
+    text = re.sub(r'<think>[\s\S]*', '', text, flags=re.I)
+    text = re.sub(r'\[\s*Ack Phrase\s*\]\s*[^.?!]*(?:[.?!]\s*)?', '', text, flags=re.I)
+    text = re.sub(r'\bAck Phrase\b\s*', '', text, flags=re.I)
+    text = re.sub(r'\[\s*Korina Agent Interrupt\s*\]\s*[^\n]*', '', text, flags=re.I)
+    text = re.sub(r'\bKorina Agent Interrupt\s*:\s*[^\n]*', '', text, flags=re.I)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
 PRIORITY_ORDER = {'low': 0, 'normal': 1, 'important': 2, 'critical': 3}
 
 
@@ -841,8 +853,9 @@ def classify_agent_priority(report: str) -> str:
     explicit = m.group(1).lower() if m else None
     critical_cues = ['permission request:', 'explicit permission', 'approve this command', 'authorization required', 'destructive command', 'delete data', 'data loss', 'secret leaked', 'credential exposed']
     garbled_cues = ['garbled', 'whisper', 'transcription uncertainty', 'stt', 'unclear transcript']
-    # Guardrail: even if the model says critical, garbled STT alone is not critical.
-    if explicit == 'critical' and any(word in text for word in garbled_cues) and not any(word in text for word in critical_cues):
+    self_loop_cues = ['<think>', 'state report', 'korina agent interrupt', 'acknowledgment loop', 'ack phrase']
+    # Guardrail: even if the model says critical/important, garbled STT or self-referential reporting alone is not interrupt-worthy.
+    if explicit in ('critical', 'important') and any(word in text for word in garbled_cues + self_loop_cues) and not any(word in text for word in critical_cues):
         return 'normal'
     if explicit:
         return explicit
@@ -924,8 +937,12 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
             'transcript': state_req.transcript,
             'model': state_req.model,
         }
-        report = generate_agent_state_report(state_req)
-        priority = classify_agent_priority(report)
+        raw_report = generate_agent_state_report(state_req)
+        report = sanitize_agent_report(raw_report)
+        if not report:
+            push_agent_event({'type': 'agent_status', 'status': 'empty_report_suppressed', 'priority': 'low', 'message': 'Empty/internal Korina Agent report suppressed.', 'agent_input': agent_input})
+            return
+        priority = classify_agent_priority(raw_report + '\n' + report)
         report_hash = hashlib.sha256(report.encode('utf-8')).hexdigest()
         now = time.time()
         duplicate_recent = report_hash == _agent_last_emitted_report_hash and (now - _agent_last_emitted_report_at) < 60 and priority != 'critical'
