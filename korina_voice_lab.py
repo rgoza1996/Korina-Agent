@@ -1116,6 +1116,22 @@ def agent_permission_answer(req: AgentPermissionAnswer):
     return submit_agent_transcript(AgentTranscriptRequest(transcript=req.transcript, delivery_mode='prompt', reason=f'permission_answer:{req.answer}', turn_count=0))
 
 
+@app.post('/api/agent/reset')
+def agent_reset():
+    global _agent_event_seq, _agent_busy, _agent_status, _agent_last_report, _agent_last_error, _agent_last_emitted_report_hash, _agent_last_emitted_report_at
+    with _agent_lock:
+        _agent_events.clear()
+        _agent_event_seq = 0
+        _agent_pending_steers.clear()
+        _agent_busy = False
+        _agent_status = 'idle'
+        _agent_last_report = ''
+        _agent_last_error = None
+        _agent_last_emitted_report_hash = ''
+        _agent_last_emitted_report_at = 0.0
+    return {'ok': True, 'status': agent_snapshot()}
+
+
 @app.get('/api/agent/models')
 def agent_models():
     try:

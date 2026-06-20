@@ -18,6 +18,7 @@
     <span class="pill"><span id="pageDot" class="dot"></span><span id="pageHealth">page server…</span></span>
     <span class="pill"><span id="ttsDot" class="dot"></span><span id="ttsHealth">kokoro…</span></span>
     <span class="pill mono" id="hostInfo"></span>
+    <button id="clearSessionBtn" class="secondary">Clear Session</button>
     <button id="settingsBtn" class="secondary settingsBtn">⚙ Settings</button>
   </div>
 
@@ -444,6 +445,25 @@ async function initApp(){
   setInterval(()=>maybeReleaseDeferredAgentInterrupt(),500);
 }
 initApp();
+
+async function clearSession(){
+  try{ stopTtsNow(); }catch{}
+  history=[];
+  agentStateReport=''; agentLastTranscriptHash=''; pendingAgentStateReport=''; pendingImportantAgentMessage=''; awaitingAgentPermission=null;
+  agentEventCursor=0; agentTurnCount=0; agentLastDeliveredTurn=0; agentFirstDelivered=false; agentStartedAt=performance.now(); agentLastDeliveryAt=0;
+  suppressAckUntil=0; agentInterruptCooldownUntil=0; deferredAgentInterrupt=null; agentInterruptInProgress=false;
+  latestPartialText=''; latestPartialAt=0; partialQueue=[];
+  $('log').innerHTML='';
+  $('agentDebug').textContent='Session cleared. Agent prompts, /steer deliveries, and outputs will appear here.';
+  $('transcript').value='';
+  $('text').value='';
+  $('transcriptInfo').textContent='Session cleared. Korina writes the transcript here. This box is read-only; queued live chunks append while you speak.';
+  $('chunkInfo').textContent='';
+  status($('sttStatus'),'Session cleared. Live mode can continue with fresh context.','good');
+  try{ await fetch('/api/agent/reset',{method:'POST'}); agentDebug('Agent backend reset',{ok:true}); }catch(e){ agentDebug('Agent backend reset failed', String(e)); }
+  markActivity('session-clear');
+}
+$('clearSessionBtn').onclick=()=>clearSession();
 
 function ensureAudio(){ if(!audioCtx){audioCtx=new (window.AudioContext||window.webkitAudioContext)(); gain=audioCtx.createGain(); gain.connect(audioCtx.destination);} if(audioCtx.state==='suspended') audioCtx.resume(); }
 async function preloadAckBuffers(tag='global'){
