@@ -79,7 +79,7 @@
         </details>
       </div>
       <div id="settingsAgent" class="grid settingsPanel">
-        <div class="secretNote"><label>Korina Agent</label><div class="toggleLine"><input id="agentEnabled" type="checkbox" checked><span>Enable hidden state reports and /steer injection</span></div></div>
+        <div class="secretNote"><label>Korina Agent</label><div class="toggleLine"><input id="agentEnabled" type="checkbox" checked><span>Enable hidden state reports and injection</span></div></div>
         <div><label for="agentProvider">Agent endpoint type</label><select id="agentProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="anthropic">Anthropic-compatible</option></select></div>
         <div><label for="agentBaseUrl">Agent API base URL</label><input id="agentBaseUrl" type="text" value="http://127.0.0.1:1234/v1" placeholder="OpenAI: .../v1 · Anthropic: .../v1"></div>
         <div><label for="agentApiKey">Agent API key</label><input id="agentApiKey" type="password" autocomplete="off" placeholder="Optional; saved locally in config.json"></div>
@@ -92,8 +92,8 @@
         <div><label for="agentFirstDeliverySeconds">First delivery seconds</label><input id="agentFirstDeliverySeconds" type="number" min="1" value="20"></div>
         <div><label for="agentPeriodicDeliveryTurns">Periodic delivery turns</label><input id="agentPeriodicDeliveryTurns" type="number" min="1" value="2"></div>
         <div><label for="agentPeriodicDeliverySeconds">Periodic delivery seconds</label><input id="agentPeriodicDeliverySeconds" type="number" min="5" value="45"></div>
-        <div><label for="agentBusyDeliveryMode">When Agent busy</label><select id="agentBusyDeliveryMode"><option value="steer" selected>Deliver as /steer</option><option value="prompt">Deliver as prompt</option></select></div>
-        <div><label for="agentIdleDeliveryMode">When Agent idle</label><select id="agentIdleDeliveryMode"><option value="prompt" selected>Deliver as prompt</option><option value="steer">Deliver as /steer</option></select></div>
+        <div><label for="agentBusyDeliveryMode">When Agent busy</label><select id="agentBusyDeliveryMode"><option value="injection" selected>Deliver as injection</option><option value="prompt">Deliver as prompt</option></select></div>
+        <div><label for="agentIdleDeliveryMode">When Agent idle</label><select id="agentIdleDeliveryMode"><option value="prompt" selected>Deliver as prompt</option><option value="injection">Deliver as injection</option></select></div>
         <div><label for="agentInterruptsEnabled">Agent interrupts</label><select id="agentInterruptsEnabled"><option value="on" selected>On</option><option value="off">Off</option></select></div>
         <div><label for="agentInterruptMinPriority">Soft interrupt at</label><select id="agentInterruptMinPriority"><option value="normal">Normal</option><option value="important" selected>Important</option><option value="critical">Critical only</option></select></div>
         <div><label for="agentHardInterruptMinPriority">Hard interrupt at</label><select id="agentHardInterruptMinPriority"><option value="important">Important</option><option value="critical" selected>Critical only</option></select></div>
@@ -170,7 +170,7 @@
   </section>
 
   <section class="card"><label>Conversation</label><div class="log" id="log"></div></section>
-  <section class="card"><label>Korina Agent Debug</label><div class="debugLog" id="agentDebug">Agent prompts, /steer deliveries, and outputs will appear here.</div></section>
+  <section class="card"><label>Korina Agent Debug</label><div class="debugLog" id="agentDebug">Agent prompts, injection deliveries, and outputs will appear here.</div></section>
 </main>
 <script>
 function ttsPort(){return parseInt($('ttsPort')?.value||'8880',10)||8880}
@@ -312,7 +312,7 @@ function collectConfig(){
     agent_first_delivery_seconds:parseInt($('agentFirstDeliverySeconds')?.value||'20',10)||20,
     agent_periodic_delivery_turns:parseInt($('agentPeriodicDeliveryTurns')?.value||'2',10)||2,
     agent_periodic_delivery_seconds:parseInt($('agentPeriodicDeliverySeconds')?.value||'45',10)||45,
-    agent_busy_delivery_mode:$('agentBusyDeliveryMode')?.value||'steer',
+    agent_busy_delivery_mode:$('agentBusyDeliveryMode')?.value||'injection',
     agent_idle_delivery_mode:$('agentIdleDeliveryMode')?.value||'prompt',
     agent_interrupts_enabled:$('agentInterruptsEnabled')?.value||'on',
     agent_interrupt_min_priority:$('agentInterruptMinPriority')?.value||'important',
@@ -587,7 +587,7 @@ async function clearSession(){
   suppressAckUntil=0; agentInterruptCooldownUntil=0; deferredAgentInterrupt=null; agentInterruptInProgress=false;
   latestPartialText=''; latestPartialAt=0; partialQueue=[];
   $('log').innerHTML='';
-  $('agentDebug').textContent='Session cleared. Agent prompts, /steer deliveries, and outputs will appear here.';
+  $('agentDebug').textContent='Session cleared. Agent prompts, injection deliveries, and outputs will appear here.';
   $('transcript').value='';
   $('text').value='';
   $('transcriptInfo').textContent='Session cleared. Korina writes the transcript here. This box is read-only; queued live chunks append while you speak.';
@@ -653,7 +653,7 @@ function agentTranscriptSlice(){ const max=parseInt($('agentMaxTurns')?.value||'
 async function deliverTranscriptToAgent(reason='turn'){
   if(agentEnabled()!=='on') return;
   const statusResp=await fetch('/api/agent/status').then(r=>r.json()).catch(()=>({busy:false}));
-  const mode=statusResp.busy ? ($('agentBusyDeliveryMode')?.value||'steer') : ($('agentIdleDeliveryMode')?.value||'prompt');
+  const mode=statusResp.busy ? ($('agentBusyDeliveryMode')?.value||'injection') : ($('agentIdleDeliveryMode')?.value||'prompt');
   const payload={transcript:agentTranscriptSlice(),delivery_mode:mode,reason,turn_count:agentTurnCount};
   agentDebug(`Transcript delivery (${mode})`, payload);
   await fetch('/api/agent/transcript',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).catch(e=>console.warn('agent transcript delivery failed', e));
@@ -737,13 +737,13 @@ async function handlePermissionAnswerIfAny(message){
   return true;
 }
 async function askLM(message){
-  let steer='';
+  let injection='';
   if(pendingAgentStateReport){
-    steer=`/steer Korina Agent state report for this next reply:\n${pendingAgentStateReport}\n\n`;
+    injection=`Injection: Korina Agent state report for this next reply:\n${pendingAgentStateReport}\n\n`;
     pendingAgentStateReport='';
   }
   status($('sttStatus'),'Sending transcript to configured LLM…','warn');
-  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:stripTranscriptLabels(steer+message),history:cleanHistoryForModel(),max_tokens:180,temperature:0.7,model:lmModel(),reasoning:llmReasoningEnabled()})});
+  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:stripTranscriptLabels(injection+message),history:cleanHistoryForModel(),max_tokens:180,temperature:0.7,model:lmModel(),reasoning:llmReasoningEnabled()})});
   const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||'';
 }
 async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:stripTranscriptLabels(message)}); const lmMessage=context ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}` : stripTranscriptLabels(message); const reply=stripTranscriptLabels(await askLM(lmMessage)); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LLM replied ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; addTranscriptEntry('Korina Agent Interrupt', msg,{includeInHistory:false}); agentInterruptInProgress=true; await speakText(msg,true).catch(()=>{}); setAgentInterruptCooldown(); agentInterruptInProgress=false; } maybeDeliverTranscriptToAgent('turn'); }

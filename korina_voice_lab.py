@@ -123,7 +123,7 @@ DEFAULT_CONFIG = {
     'agent_first_delivery_seconds': 20,
     'agent_periodic_delivery_turns': 2,
     'agent_periodic_delivery_seconds': 45,
-    'agent_busy_delivery_mode': 'steer',
+    'agent_busy_delivery_mode': 'injection',
     'agent_idle_delivery_mode': 'prompt',
     'agent_interrupts_enabled': 'on',
     'agent_interrupt_min_priority': 'important',
@@ -594,7 +594,7 @@ _agent_event_seq = 0
 _agent_busy = False
 _agent_status = 'idle'
 _agent_last_report = ''
-_agent_pending_steers: list[dict] = []
+_agent_pending_injections: list[dict] = []
 _agent_last_error: Optional[str] = None
 _agent_last_emitted_report_hash = ''
 _agent_last_emitted_report_at = 0.0
@@ -1240,7 +1240,7 @@ def agent_snapshot() -> dict:
             'busy': _agent_busy,
             'status': _agent_status,
             'last_report': _agent_last_report,
-            'pending_steers': len(_agent_pending_steers),
+            'pending_injections': len(_agent_pending_injections),
             'last_error': _agent_last_error,
             'last_event_id': _agent_event_seq,
         }
@@ -1251,7 +1251,7 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
     config = load_config()
     with _agent_lock:
         if _agent_busy:
-            _agent_pending_steers.append({
+            _agent_pending_injections.append({
                 'transcript': req.transcript,
                 'reason': req.reason,
                 'turn_count': req.turn_count,
@@ -1264,20 +1264,20 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
             _agent_busy = True
             _agent_status = 'working'
     if queued_busy:
-        push_agent_event({'type': 'agent_status', 'status': 'busy_queued_steer', 'priority': 'low', 'message': 'Korina Agent is busy; transcript delta queued as steering.'})
+        push_agent_event({'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; transcript delta queued as injection.'})
         return
     push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'})
     try:
         previous = _agent_last_report
         with _agent_lock:
-            if _agent_pending_steers:
-                steer_text = '\n\nQueued steering while busy:\n' + json.dumps(_agent_pending_steers[-5:], ensure_ascii=False)
-                _agent_pending_steers.clear()
+            if _agent_pending_injections:
+                injection_text = '\n\nQueued injection while busy:\n' + json.dumps(_agent_pending_injections[-5:], ensure_ascii=False)
+                _agent_pending_injections.clear()
             else:
-                steer_text = ''
+                injection_text = ''
         state_req = AgentStateRequest(
             transcript=req.transcript,
-            previous_report=(previous + steer_text)[-6000:],
+            previous_report=(previous + injection_text)[-6000:],
             model=str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
             max_tokens=int(config.get('agent_max_tokens') or 512),
         )
@@ -1333,11 +1333,11 @@ def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
     config = load_config()
     if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
-    if req.delivery_mode == 'steer':
+    if req.delivery_mode in ('injection', 'steer'):
         with _agent_lock:
-            _agent_pending_steers.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
-        push_agent_event({'type': 'agent_status', 'status': 'steer_received', 'priority': 'low', 'message': 'Transcript steering queued for Korina Agent.'})
-        return {'ok': True, 'accepted': True, 'queued_as': 'steer', 'status': agent_snapshot()}
+            _agent_pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
+        push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
+        return {'ok': True, 'accepted': True, 'queued_as': 'injection', 'status': agent_snapshot()}
     threading.Thread(target=run_agent_transcript_job, args=(req,), daemon=True).start()
     return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': agent_snapshot()}
 
@@ -1541,7 +1541,7 @@ def agent_reset():
     with _agent_lock:
         _agent_events.clear()
         _agent_event_seq = 0
-        _agent_pending_steers.clear()
+        _agent_pending_injections.clear()
         _agent_busy = False
         _agent_status = 'idle'
         _agent_last_report = ''
