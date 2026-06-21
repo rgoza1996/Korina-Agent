@@ -321,34 +321,71 @@ def stop_llama_server() -> None:
     subprocess.run(['systemctl', '--user', 'stop', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def _resolve_llama_cpp_model_id(value: str) -> str:
+    """Resolve a configured llama.cpp model to an absolute GGUF path on disk.
+
+    Accepts:
+    - an absolute path to a .gguf file
+    - a bare model id like 'qwen3.5-2b-uncensored-hauhaucs-aggressive' that
+      matches the basename of a discovered GGUF
+
+    Returns the resolved absolute path, or the original string if it already
+    looks like an absolute path (so write_llama_server_unit can raise its
+    own clearer error). Returns '' if the input is empty.
+    """
+    v = str(value or '').strip()
+    if not v:
+        return ''
+    p = Path(v)
+    if p.is_absolute():
+        return str(p)
+    candidates = [str(g) for g in discover_local_gguf_models()]
+    # Exact filename match first
+    for g in candidates:
+        if Path(g).name == v or Path(g).stem == v:
+            return g
+    # Suffix match (e.g. 'gemma-4-e2b' should match 'gemma-4-E2B_q4_0-it.gguf')
+    lv = v.lower()
+    for g in candidates:
+        if lv in Path(g).name.lower():
+            return g
+    return v
+
+
 def activate_llm_provider(provider: str, config: Optional[dict] = None, model: Optional[str] = None) -> dict:
     config = dict(config or load_config())
     provider = str(provider or config.get('llm_provider') or '').strip().lower()
     if provider == 'llama.cpp':
-        selected = str(model or config.get('lm_model') or '').strip()
-        if not selected:
+        raw_selected = str(model or config.get('lm_model') or '').strip()
+        selected = _resolve_llama_cpp_model_id(raw_selected)
+        if not selected or not Path(selected).exists():
             discovered = discover_local_gguf_models()
-            if not discovered:
+            if discovered:
+                selected = discovered[0]
+            else:
                 raise RuntimeError('No local GGUF models found for llama.cpp')
-            selected = discovered[0]
         stop_lmstudio()
         stop_ollama()
         start_llama_server(selected, config=config)
-        return {'provider': provider, 'model': selected, 'base_url': provider_preset_base_url(provider), 'stopped': ['lmstudio', 'ollama'], 'started': ['llama-server.service']}
+        preset = provider_preset_base_url(provider)
+        return {'provider': provider, 'model': selected, 'base_url': preset or 'http://127.0.0.1:8080/v1', 'stopped': ['lmstudio', 'ollama'], 'started': ['llama-server.service']}
     if provider == 'lmstudio':
         stop_llama_server()
         stop_ollama()
         start_lmstudio()
-        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': provider_preset_base_url(provider), 'stopped': ['llama-server.service', 'ollama'], 'started': ['lm-studio']}
+        preset = provider_preset_base_url(provider)
+        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:1234/v1', 'stopped': ['llama-server.service', 'ollama'], 'started': ['lm-studio']}
     if provider == 'ollama':
         stop_llama_server()
         stop_lmstudio()
         start_ollama()
-        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': provider_preset_base_url(provider), 'stopped': ['llama-server.service', 'lmstudio'], 'started': ['ollama']}
+        preset = provider_preset_base_url(provider)
+        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:11434/v1', 'stopped': ['llama-server.service', 'lmstudio'], 'started': ['ollama']}
     stop_llama_server()
     stop_lmstudio()
     stop_ollama()
-    return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': str(config.get('llm_base_url') or ''), 'stopped': ['llama-server.service', 'lmstudio', 'ollama'], 'started': []}
+    saved_base = str(config.get('llm_base_url') or '').strip()
+    return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': saved_base, 'stopped': ['llama-server.service', 'lmstudio', 'ollama'], 'started': []}
 
 
 class ProviderActivateRequest(BaseModel):
