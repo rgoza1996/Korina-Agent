@@ -31,7 +31,6 @@
   "agent_report_injection_mode": "next_reply",
   "agent_retry_base_delay_ms": 2000,
   "agent_retry_enabled": "on",
-  "agent_steering_mode": "one-at-a-time",
   "agent_thinking_level": "low",
   "agent_transport": "auto",
   "agent_yolo_mode": "off",
@@ -66,5 +65,6 @@
   "tts_provider": "kokoro",
   "voice": "af_heart",
   "llm_reasoning": "off",
-  "stt_llm_reasoning": "off"
+  "stt_llm_reasoning": "off",
+  "agent_injection_mode": "one-at-a-time"
 }
