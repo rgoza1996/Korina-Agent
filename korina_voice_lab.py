@@ -81,6 +81,7 @@ DEFAULT_CONFIG = {
     'stt_llm_base_url': '',
     'stt_llm_api_key_env': '',
     'stt_llm_model': '',
+    'stt_llm_reasoning': 'off',
     'lm_model': LMSTUDIO_MODEL,
     'tts_device': 'cpu',
     'tts_provider': 'kokoro',
@@ -90,6 +91,7 @@ DEFAULT_CONFIG = {
     'llm_provider': 'llama.cpp',
     'llm_base_url': 'http://127.0.0.1:8080/v1',
     'llm_api_key_env': '',
+    'llm_reasoning': 'off',
     'stt_cloud_provider': '',
     'stt_cloud_base_url': '',
     'stt_cloud_model': '',
@@ -275,7 +277,8 @@ def start_ollama() -> None:
         subprocess.Popen(['ollama', 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
-def write_llama_server_unit(model_path: str) -> None:
+def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> None:
+    config = dict(config or load_config())
     model = Path(str(model_path or '').strip())
     if not model.exists():
         raise RuntimeError(f'llama.cpp model not found: {model}')
@@ -296,7 +299,7 @@ def write_llama_server_unit(model_path: str) -> None:
     exec_parts = [str(LLAMA_SERVER_BIN), '-m', str(model)]
     if mmproj:
         exec_parts += ['--mmproj', mmproj]
-    exec_parts += ['--reasoning', 'off', '--host', '0.0.0.0', '--port', '8080', '--media-path', LLAMA_SERVER_MEDIA_PATH, '-ngl', '99', '-t', '4']
+    exec_parts += ['--reasoning', config_llm_reasoning(config), '--host', '0.0.0.0', '--port', '8080', '--media-path', LLAMA_SERVER_MEDIA_PATH, '-ngl', '99', '-t', '4']
     unit.append('ExecStart=' + ' '.join(exec_parts))
     unit.append(f'WorkingDirectory={LLAMA_SERVER_BIN.parent}')
     unit += ['', '[Install]', 'WantedBy=default.target', '']
@@ -305,8 +308,8 @@ def write_llama_server_unit(model_path: str) -> None:
     service_path.write_text('\n'.join(unit))
 
 
-def start_llama_server(model_path: str) -> None:
-    write_llama_server_unit(model_path)
+def start_llama_server(model_path: str, config: Optional[dict] = None) -> None:
+    write_llama_server_unit(model_path, config=config)
     subprocess.run(['systemctl', '--user', 'daemon-reload'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(['systemctl', '--user', 'enable', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(['systemctl', '--user', 'restart', 'llama-server.service'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -328,7 +331,7 @@ def activate_llm_provider(provider: str, config: Optional[dict] = None, model: O
             selected = discovered[0]
         stop_lmstudio()
         stop_ollama()
-        start_llama_server(selected)
+        start_llama_server(selected, config=config)
         return {'provider': provider, 'model': selected, 'base_url': provider_preset_base_url(provider), 'stopped': ['lmstudio', 'ollama'], 'started': ['llama-server.service']}
     if provider == 'lmstudio':
         stop_llama_server()
@@ -490,6 +493,16 @@ def llm_models_for(base_url: str, api_env: str) -> list[str]:
             if discovered not in models:
                 models.append(discovered)
     return models
+
+
+def config_llm_reasoning(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    return 'on' if str(config.get('llm_reasoning') or 'off').strip().lower() == 'on' else 'off'
+
+
+def config_stt_llm_reasoning(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    return 'on' if str(config.get('stt_llm_reasoning') or 'off').strip().lower() == 'on' else 'off'
 
 
 def auth_headers_from_env(env_name: str) -> dict:
@@ -775,6 +788,7 @@ class ChatRequest(BaseModel):
     temperature: float = 0.7
     max_tokens: int = 180
     model: str | None = None
+    reasoning: str | None = None
 
 
 class AgentStateRequest(BaseModel):
@@ -1000,6 +1014,7 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
         'temperature': 0,
         'max_tokens': 512,
         'stream': False,
+        'reasoning': config_stt_llm_reasoning(config),
     }
     headers = {'Content-Type': 'application/json'} | auth_headers_from_env(resolved_api_env)
     http_req = urllib.request.Request(
@@ -1062,15 +1077,16 @@ def response_llm_chat(req: ChatRequest) -> str:
             messages.append({'role': role, 'content': content.strip()})
     messages.append({'role': 'user', 'content': req.message.strip()})
 
+    config = load_config()
     payload = {
-        'model': (req.model or str(load_config().get('lm_model') or LMSTUDIO_MODEL)),
+        'model': (req.model or str(config.get('lm_model') or LMSTUDIO_MODEL)),
         'messages': messages,
         'temperature': req.temperature,
         'max_tokens': req.max_tokens,
         'stream': False,
+        'reasoning': (str(req.reasoning).strip().lower() if req.reasoning else config_llm_reasoning(config)),
     }
     data = json.dumps(payload).encode('utf-8')
-    config = load_config()
     headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
     http_req = urllib.request.Request(
         config_llm_chat_url(config),
@@ -1392,7 +1408,19 @@ def update_config(payload: dict):
             if key in CONFIG_KEYS:
                 current[key] = value
     current = synchronize_llm_dependents(current, previous)
-    return save_config(current)
+    saved = save_config(current)
+    try:
+        llm_provider_now = str(saved.get('llm_provider') or '').strip().lower()
+        llm_provider_before = str(previous.get('llm_provider') or '').strip().lower()
+        if llm_provider_now == 'llama.cpp' and (
+            str(saved.get('lm_model') or '') != str(previous.get('lm_model') or '')
+            or config_llm_reasoning(saved) != config_llm_reasoning(previous)
+            or llm_provider_before != 'llama.cpp'
+        ):
+            activate_llm_provider('llama.cpp', saved, model=str(saved.get('lm_model') or ''))
+    except Exception:
+        pass
+    return saved
 
 
 @app.get('/api/models')

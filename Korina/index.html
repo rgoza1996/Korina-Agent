@@ -40,6 +40,7 @@
             <div id="sttMultimodalModelWrap" class="settingsHidden"><label for="sttLlmModel">Model</label><select id="sttLlmModel"><option value="">Inherit from LLM Response</option></select></div>
             <div id="sttMultimodalBaseUrlWrap"><label for="sttLlmBaseUrl">Base URL</label><input id="sttLlmBaseUrl" type="text" placeholder="blank = inherit from LLM Response"></div>
             <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit from LLM Response"></div>
+            <div id="sttMultimodalReasoningWrap" class="secretNote settingsHidden"><label>Advanced</label><div class="toggleLine"><input id="sttLlmReasoningEnabled" type="checkbox"><span>Allow multimodal STT model reasoning / thinking</span></div></div>
             <div><label for="finalSttMode">End-of-speech finalization</label><select id="finalSttMode"><option value="chunks" selected>Use live chunks — no full paragraph retranscribe</option><option value="full">Full utterance final pass</option></select></div>
             <div><label for="partialWindowMs">Live partial transcript window</label><input id="partialWindowMs" type="range" min="800" max="3200" step="100" value="1800"><div class="fieldHint"><span id="partialWindowMsDisplay">1.8s</span> audio per rolling partial STT window while you are still speaking.</div></div>
             <div><label for="sttCloudBaseUrl">Cloud STT base URL</label><input id="sttCloudBaseUrl" type="text" placeholder="optional future STT endpoint"></div>
@@ -55,6 +56,7 @@
             <div><label for="lmModel">Model</label><select id="lmModel"><option value="qwen3.5-2b-uncensored-hauhaucs-aggressive">qwen3.5-2b-uncensored-hauhaucs-aggressive</option></select></div>
             <div><label for="llmBaseUrl">Base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:8080/v1"></div>
             <div><label for="llmApiKeyEnv">API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
+            <div class="secretNote"><label>Advanced</label><div class="toggleLine"><input id="llmReasoningEnabled" type="checkbox"><span>Allow response model reasoning / thinking</span></div></div>
           </div>
         </details>
         <details class="settingsGroup" id="ttsSection" open>
@@ -201,6 +203,8 @@ function sttLlmProvider(){return String($('sttLlmProvider')?.value||'').trim()}
 function sttLlmBaseUrl(){return String($('sttLlmBaseUrl')?.value||'').trim()}
 function sttLlmApiKeyEnv(){return String($('sttLlmApiKeyEnv')?.value||'').trim()}
 function sttLlmModel(){return String($('sttLlmModel')?.value||'').trim()}
+function llmReasoningEnabled(){return $('llmReasoningEnabled')?.checked?'on':'off'}
+function sttLlmReasoningEnabled(){return $('sttLlmReasoningEnabled')?.checked?'on':'off'}
 function effectiveSttLlmProvider(){return sttLlmProvider()||llmProvider()}
 function effectiveSttLlmBaseUrl(){return sttLlmBaseUrl()||llmBaseUrl()}
 function effectiveSttLlmApiKeyEnv(){return sttLlmApiKeyEnv()||String($('llmApiKeyEnv')?.value||'').trim()}
@@ -265,6 +269,7 @@ function collectConfig(){
     stt_llm_base_url:sttLlmBaseUrl(),
     stt_llm_api_key_env:sttLlmApiKeyEnv(),
     stt_llm_model:sttLlmModel(),
+    stt_llm_reasoning:sttLlmReasoningEnabled(),
     lm_model:lmModel(),
     tts_device:ttsDevice(),
     tts_provider:ttsProvider(),
@@ -274,6 +279,7 @@ function collectConfig(){
     llm_provider:llmProvider(),
     llm_base_url:llmBaseUrl(),
     llm_api_key_env:String($('llmApiKeyEnv')?.value||'').trim(),
+    llm_reasoning:llmReasoningEnabled(),
     stt_cloud_base_url:String($('sttCloudBaseUrl')?.value||'').trim(),
     stt_cloud_model:String($('sttCloudModel')?.value||'').trim(),
     stt_api_key_env:String($('sttApiKeyEnv')?.value||'').trim(),
@@ -332,6 +338,7 @@ function applyConfig(c={}){
   if(c.stt_llm_provider!==undefined && $('sttLlmProvider')) $('sttLlmProvider').value=c.stt_llm_provider||'';
   if(c.stt_llm_base_url!==undefined && $('sttLlmBaseUrl')) $('sttLlmBaseUrl').value=c.stt_llm_base_url||'';
   if(c.stt_llm_api_key_env!==undefined && $('sttLlmApiKeyEnv')) $('sttLlmApiKeyEnv').value=c.stt_llm_api_key_env||'';
+  if($('sttLlmReasoningEnabled')) $('sttLlmReasoningEnabled').checked=String(c.stt_llm_reasoning||'off')==='on';
   if($('sttLlmModel')){
     const sttModelValue = c.stt_llm_model!==undefined ? c.stt_llm_model : '';
     if(sttModelValue && !$('sttLlmModel').querySelector(`option[value="${CSS.escape(sttModelValue)}"]`)){ const o=document.createElement('option'); o.value=sttModelValue; o.textContent=sttModelValue; $('sttLlmModel').appendChild(o); }
@@ -346,6 +353,7 @@ function applyConfig(c={}){
   if(c.llm_provider && $('llmProvider')) $('llmProvider').value=c.llm_provider;
   if(c.llm_base_url && $('llmBaseUrl')) $('llmBaseUrl').value=c.llm_base_url;
   if(c.llm_api_key_env!==undefined && $('llmApiKeyEnv')) $('llmApiKeyEnv').value=c.llm_api_key_env||'';
+  if($('llmReasoningEnabled')) $('llmReasoningEnabled').checked=String(c.llm_reasoning||'off')==='on';
   if(c.stt_cloud_base_url!==undefined && $('sttCloudBaseUrl')) $('sttCloudBaseUrl').value=c.stt_cloud_base_url||'';
   if(c.stt_cloud_model!==undefined && $('sttCloudModel')) $('sttCloudModel').value=c.stt_cloud_model||'';
   if(c.stt_api_key_env!==undefined && $('sttApiKeyEnv')) $('sttApiKeyEnv').value=c.stt_api_key_env||'';
@@ -423,7 +431,7 @@ function setSectionHidden(id, hidden){ const el=$(id); if(el) el.classList.toggl
 function syncConverseSettingsUI(){
   const multimodal = sttBackend()==='llm';
   ['sttWhisperDeviceWrap','sttWhisperModelWrap'].forEach(id=>setSectionHidden(id, multimodal));
-  ['sttMultimodalProviderWrap','sttMultimodalModelWrap','sttMultimodalBaseUrlWrap','sttMultimodalApiKeyWrap'].forEach(id=>setSectionHidden(id, !multimodal));
+  ['sttMultimodalProviderWrap','sttMultimodalModelWrap','sttMultimodalBaseUrlWrap','sttMultimodalApiKeyWrap','sttMultimodalReasoningWrap'].forEach(id=>setSectionHidden(id, !multimodal));
   $('llmResponseSection')?.classList.toggle('settingsDisabled', multimodal);
   if($('llmResponseSection')) $('llmResponseSection').open = !multimodal;
   $('settingsInfo').textContent = multimodal
@@ -431,7 +439,7 @@ function syncConverseSettingsUI(){
     : 'Whisper is built into Korina. Open a model picker to query its current /v1/models endpoint or the local llama.cpp model catalog.';
 }
 async function health(){
-  try{let j=await (await fetch('/api/health')).json(); setDot('pageDot',j.whisper_loaded?'good':'warn'); const sttSummary=sttBackend()==='llm'?`multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()}`:`built-in Whisper ${sttDevice()}/${sttModel()}`; const responseSummary=`${j.response_llm_provider||llmProvider()} ${j.response_llm_model||lmModel()}`; $('pageHealth').textContent=`${j.whisper_backend||'Whisper'} ${j.whisper_loaded?'loaded':'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url||llmBaseUrl()} · partial ${(Number(j.partial_window_ms||partialWindowMs)/1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('pageDot','bad');$('pageHealth').textContent='page server offline'}
+  try{let j=await (await fetch('/api/health')).json(); setDot('pageDot',j.whisper_loaded?'good':'warn'); const sttSummary=sttBackend()==='llm'?`multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()} (${sttLlmReasoningEnabled()==='on'?'reasoning on':'reasoning off'})`:`built-in Whisper ${sttDevice()}/${sttModel()}`; const responseSummary=`${j.response_llm_provider||llmProvider()} ${j.response_llm_model||lmModel()} (${llmReasoningEnabled()==='on'?'reasoning on':'reasoning off'})`; $('pageHealth').textContent=`${j.whisper_backend||'Whisper'} ${j.whisper_loaded?'loaded':'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url||llmBaseUrl()} · partial ${(Number(j.partial_window_ms||partialWindowMs)/1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('pageDot','bad');$('pageHealth').textContent='page server offline'}
   try{let j=await (await fetch(`${ttsBaseUrl()}/health`)).json(); setDot('ttsDot',j.loaded?'good':'warn'); $('ttsHealth').textContent=`Kokoro ${j.loaded?'ready':'lazy'} · selected TTS ${ttsProvider()} ${ttsDevice()} @ ${ttsBaseUrl()} · last ${j.device||'none'} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('ttsDot','bad');$('ttsHealth').textContent='Kokoro offline'}
 }
 setInterval(health,10000);
@@ -726,7 +734,7 @@ async function askLM(message){
     pendingAgentStateReport='';
   }
   status($('sttStatus'),'Sending transcript to configured LLM…','warn');
-  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:stripTranscriptLabels(steer+message),history:cleanHistoryForModel(),max_tokens:180,temperature:0.7,model:lmModel()})});
+  const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:stripTranscriptLabels(steer+message),history:cleanHistoryForModel(),max_tokens:180,temperature:0.7,model:lmModel(),reasoning:llmReasoningEnabled()})});
   const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||'';
 }
 async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:stripTranscriptLabels(message)}); const lmMessage=context ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}` : stripTranscriptLabels(message); const reply=stripTranscriptLabels(await askLM(lmMessage)); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LLM replied ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; addTranscriptEntry('Korina Agent Interrupt', msg,{includeInHistory:false}); agentInterruptInProgress=true; await speakText(msg,true).catch(()=>{}); setAgentInterruptCooldown(); agentInterruptInProgress=false; } maybeDeliverTranscriptToAgent('turn'); }
