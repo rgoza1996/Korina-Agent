@@ -105,7 +105,7 @@ DEFAULT_CONFIG = {
     'agent_max_tokens': 512,
     'agent_yolo_mode': 'off',
     'agent_project_trust': 'ask',
-    'agent_steering_mode': 'one-at-a-time',
+    'agent_injection_mode': 'one-at-a-time',
     'agent_follow_up_mode': 'one-at-a-time',
     'agent_thinking_level': 'low',
     'agent_auto_compact': 'on',
@@ -158,6 +158,8 @@ def load_config() -> dict:
     for key, value in data.items():
         if key in CONFIG_KEYS:
             merged[key] = value
+    if 'agent_steering_mode' in data and 'agent_injection_mode' not in data:
+        merged['agent_injection_mode'] = data['agent_steering_mode']
     return merged
 
 
@@ -1120,19 +1122,19 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
             turns.append({'role': role, 'content': content.strip()[:2000]})
     autonomy_note = (
         f"Pi-style settings: yolo_mode={config.get('agent_yolo_mode')}, project_trust={config.get('agent_project_trust')}, "
-        f"steering_mode={config.get('agent_steering_mode')}, follow_up_mode={config.get('agent_follow_up_mode')}, "
+        f"injection_mode={config.get('agent_injection_mode')}, follow_up_mode={config.get('agent_follow_up_mode')}, "
         f"thinking_level={config.get('agent_thinking_level')}, auto_compact={config.get('agent_auto_compact')}."
     )
     system = (
-        'You are Korina Agent, an agentic state tracker inspired by Pi Agent Harness concepts: maintain compact state, infer next useful steering, and do not chat with the user.\n'
+        'You are Korina Agent, an agentic state tracker inspired by Pi Agent Harness concepts: maintain compact state, infer next useful injection, and do not chat with the user.\n'
         'Create a concise state report for Korina Converse to inject into its next spoken reply. Do not write the spoken reply. Do not use emojis.\n'
         'Start with exactly one line: Priority: low|normal|important|critical.\n'
         'Priority rules: low = bookkeeping/debug/no user-facing update. normal = useful state for the next reply only. important = user should hear this soon, but it can wait for a sentence boundary. critical = immediate safety/security/data-loss risk, time-sensitive blocking result, or explicit permission required before a tool call.\n'
         'Do NOT mark garbled STT/Whisper output, uncertain transcript text, routine model errors, repeated observations, or general warnings as critical. Treat transcript uncertainty as low or normal unless it creates an immediate unsafe action.\n'
         'If permission is required, include the exact phrase Permission request: followed by the requested action, risk, and yes/no question.\n'
-        'Include: current user intent, relevant facts, unresolved tasks/questions, emotional/interaction notes, and suggested next-response steering.\n'
+        'Include: current user intent, relevant facts, unresolved tasks/questions, emotional/interaction notes, and suggested next-response injection.\n'
         'Korina Agent and Korina Converse exchange hidden state. Never speak directly to the user except by emitting important/critical reports for Converse to relay.\n'
-        'If yolo_mode is on, be more decisive in suggested steering, but still never perform external side effects from this state-report endpoint.\n'
+        'If yolo_mode is on, be more decisive in suggested injection, but still never perform external side effects from this state-report endpoint.\n'
         f'{autonomy_note}\n'
         'Use compact plain text with short headings.'
     )

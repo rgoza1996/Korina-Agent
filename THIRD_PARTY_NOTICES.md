@@ -2,7 +2,7 @@
 
 ## Pi Agent Harness / Pi Coding Agent
 
-Korina Agent's state-report feature is architecturally inspired by Pi Agent Harness / Pi Coding Agent concepts: compact state tracking, agent-loop separation, and steering a conversational front-end from an agentic state layer.
+Korina Agent's state-report feature is architecturally inspired by Pi Agent Harness / Pi Coding Agent concepts: compact state tracking, agent-loop separation, and injecting state into a conversational front-end from an agentic state layer.
 
 No Pi source code is vendored in this repository at this time. This notice is included to preserve attribution if future Korina Agent work incorporates Pi-compatible code or concepts more directly.
 
