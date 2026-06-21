@@ -32,6 +32,7 @@
           <summary>Speech to Text</summary>
           <div class="settingsGroupBody">
             <p class="sectionLead">Whisper is built into Korina. Multimodal STT can borrow the LLM Response settings unless you override them here.</p>
+            <p class="small mono" id="sttReasoningHint">Reasoning: built-in Whisper does not use this toggle.</p>
             <div><label for="sttBackend">Speech-to-text backend</label><select id="sttBackend"><option value="whisper" selected>Built-in Whisper</option><option value="llm">Multimodal model</option></select></div>
             <div><label for="endpointMode">Endpointing mode</label><select id="endpointMode"><option value="reading" selected>Reading/dictation — wait longer</option><option value="conversation">Conversation — quicker turns</option></select></div>
             <div id="sttWhisperDeviceWrap"><label for="sttDevice">Whisper device</label><select id="sttDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
@@ -52,6 +53,7 @@
           <summary>LLM Response</summary>
           <div class="settingsGroupBody">
             <p class="sectionLead">Standard response model settings for Korina Converse.</p>
+            <p class="small mono" id="llmReasoningHint">Reasoning: off.</p>
             <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
             <div><label for="lmModel">Model</label><select id="lmModel"><option value="qwen3.5-2b-uncensored-hauhaucs-aggressive">qwen3.5-2b-uncensored-hauhaucs-aggressive</option></select></div>
             <div><label for="llmBaseUrl">Base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:8080/v1"></div>
@@ -428,12 +430,19 @@ function nextIdleDelayMs(){
   return initial + (idleAckCount * step);
 }
 function setSectionHidden(id, hidden){ const el=$(id); if(el) el.classList.toggle('settingsHidden', !!hidden); }
+function syncReasoningHints(){
+  if($('llmReasoningHint')) $('llmReasoningHint').textContent = `Reasoning: ${llmReasoningEnabled()==='on'?'on':'off'}.`;
+  if($('sttReasoningHint')) $('sttReasoningHint').textContent = sttBackend()==='llm'
+    ? `Reasoning: ${sttLlmReasoningEnabled()==='on'?'on':'off'} for multimodal STT.`
+    : 'Reasoning: built-in Whisper does not use this toggle.';
+}
 function syncConverseSettingsUI(){
   const multimodal = sttBackend()==='llm';
   ['sttWhisperDeviceWrap','sttWhisperModelWrap'].forEach(id=>setSectionHidden(id, multimodal));
   ['sttMultimodalProviderWrap','sttMultimodalModelWrap','sttMultimodalBaseUrlWrap','sttMultimodalApiKeyWrap','sttMultimodalReasoningWrap'].forEach(id=>setSectionHidden(id, !multimodal));
   $('llmResponseSection')?.classList.toggle('settingsDisabled', multimodal);
   if($('llmResponseSection')) $('llmResponseSection').open = !multimodal;
+  syncReasoningHints();
   $('settingsInfo').textContent = multimodal
     ? `Multimodal STT selected. STT model endpoint resolves to ${effectiveSttLlmBaseUrl()||'the LLM Response base URL'} and falls back to the LLM Response section when STT-specific fields are blank.`
     : 'Whisper is built into Korina. Open a model picker to query its current /v1/models endpoint or the local llama.cpp model catalog.';
