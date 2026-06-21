@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Korina Voice Lab — Kokoro + Whisper Turbo + LM Studio</title>
+  <title>Korina Voice Lab — Built-in Whisper, multimodal STT, llama.cpp, and Kokoro</title>
   <style>
     :root { --bg:#0d0f14; --card:#171a22; --card2:#10131a; --line:#2a3040; --text:#edf1ff; --muted:#95a0b8; --accent:#8b7cff; --good:#4ade80; --warn:#fbbf24; --bad:#fb7185; }
     *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 20% 0%,#22244a 0,#0d0f14 38rem);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,Segoe UI,sans-serif;padding:28px 14px;display:flex;justify-content:center}
     main{width:min(920px,100%);display:grid;gap:16px} h1{font-size:28px;margin:0;text-align:center;letter-spacing:-.03em}.sub{text-align:center;color:var(--muted);margin-top:-8px}.card{background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 20px 60px #0006} label{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;margin-bottom:8px} textarea{width:100%;min-height:130px;border:1px solid var(--line);border-radius:12px;background:#080a0f;color:var(--text);font:15px/1.45 inherit;padding:12px;resize:vertical} textarea:focus,select:focus{outline:none;border-color:var(--accent)} .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.grid{grid-template-columns:1fr}} select,input[type=range],input[type=text],input[type=number],input[type=password]{width:100%;background:#080a0f;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:10px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}@media(max-width:700px){.btns{grid-template-columns:1fr}}button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;color:white;background:var(--accent);cursor:pointer}button.secondary{background:#2b3142}button.danger{background:#8f2638}button.live{background:#138a54}button.live.on{background:#b45309}button:disabled{opacity:.45;cursor:not-allowed}.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--muted);font-size:13px;background:#090b11}.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.dot.good{background:var(--good);box-shadow:0 0 10px var(--good)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn)}.tabs{display:flex;background:#080a0f;border:1px solid var(--line);border-radius:12px;overflow:hidden}.tab{flex:1;text-align:center;padding:10px;color:var(--muted);font-weight:800;font-size:13px;cursor:pointer}.tab.active{background:var(--accent);color:white}.meter{height:6px;background:#080a0f;border:1px solid var(--line);border-radius:999px;overflow:hidden}.meter>div{height:100%;width:0;background:linear-gradient(90deg,var(--accent),#55d6ff);transition:width .12s}.status{min-height:22px;text-align:center;color:var(--muted);font-size:14px}.status.good{color:var(--good)}.status.bad{color:var(--bad)}.status.warn{color:var(--warn)}audio{width:100%;margin-top:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.wave{height:54px;border:1px solid var(--line);border-radius:12px;background:#080a0f;display:flex;align-items:end;justify-content:center;gap:2px;padding:8px;overflow:hidden}.bar{width:3px;min-height:2px;background:var(--accent);opacity:.9;border-radius:2px}.log{max-height:190px;overflow:auto;border:1px solid var(--line);background:#080a0f;border-radius:12px;padding:10px;font-size:13px;line-height:1.35}.msg{margin:0 0 8px}.msg b{color:var(--accent)}
-  .modalBackdrop{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBackdrop.open{display:flex}.modal{width:min(760px,100%);max-height:88vh;overflow:auto;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 30px 90px #000}.modal h2{margin:0 0 12px}.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.settingsBtn{background:#2b3142}.settingsTabs{margin:10px 0 14px}.settingsPanel{display:none}.settingsPanel.active{display:grid}.toggleLine{display:flex;align-items:center;gap:10px;background:#080a0f;border:1px solid var(--line);border-radius:10px;padding:10px}.toggleLine input{width:auto}.secretNote{grid-column:1/-1}.debugLog{max-height:280px;overflow:auto;background:#080a0f;border:1px solid var(--line);border-radius:12px;padding:10px;white-space:pre-wrap;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cbd5e1}
+  .modalBackdrop{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBackdrop.open{display:flex}.modal{width:min(760px,100%);max-height:88vh;overflow:auto;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 30px 90px #000}.modal h2{margin:0 0 12px}.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.settingsBtn{background:#2b3142}.settingsTabs{margin:10px 0 14px}.settingsPanel{display:none}.settingsPanel.active{display:grid}.settingsPanel.active.sectioned{grid-template-columns:1fr}.settingsGroup{grid-column:1/-1;border:1px solid var(--line);border-radius:14px;background:#0b0e15;overflow:hidden}.settingsGroup summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:10px}.settingsGroup summary::-webkit-details-marker{display:none}.settingsGroup summary::after{content:'▾';color:var(--muted);transition:transform .15s ease}.settingsGroup[open] summary::after{transform:rotate(180deg)}.settingsGroupBody{padding:0 16px 16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.settingsGroupBody{grid-template-columns:1fr}}.settingsGroupNote,.sectionLead,.fieldHint{grid-column:1/-1}.settingsGroupNote{padding:0 16px 16px;color:var(--muted)}.sectionLead{margin:-2px 0 2px;color:var(--muted);font-size:13px}.fieldHint{margin:-4px 0 2px;color:var(--muted);font-size:12px}.settingsHidden{display:none !important}.settingsDisabled{opacity:.5;pointer-events:none}.toggleLine{display:flex;align-items:center;gap:10px;background:#080a0f;border:1px solid var(--line);border-radius:10px;padding:10px}.toggleLine input{width:auto}.secretNote{grid-column:1/-1}.debugLog{max-height:280px;overflow:auto;background:#080a0f;border:1px solid var(--line);border-radius:12px;padding:10px;white-space:pre-wrap;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cbd5e1}
   </style>
 </head>
 <body>
 <main>
-  <div><h1>Korina Voice Lab</h1><p class="sub">Auto-VAD + queued clause chunks → faster-whisper → LM Studio → Kokoro SSE TTS</p></div>
+  <div><h1>Korina Voice Lab</h1><p class="sub">Auto-VAD + built-in Whisper or multimodal STT → local response LLM → Kokoro SSE TTS</p></div>
   <div class="row between">
     <span class="pill"><span id="pageDot" class="dot"></span><span id="pageHealth">page server…</span></span>
     <span class="pill"><span id="ttsDot" class="dot"></span><span id="ttsHealth">kokoro…</span></span>
@@ -27,24 +27,52 @@
     <div class="modal">
       <div class="row between"><h2 id="settingsTitle">Korina settings</h2><button id="closeSettingsBtn" class="secondary">Close</button></div>
       <div class="tabs settingsTabs"><div class="tab settingsTab active" data-settings-tab="converse">Korina Converse</div><div class="tab settingsTab" data-settings-tab="agent">Korina Agent</div></div>
-      <div id="settingsConverse" class="grid settingsPanel active">
-        <div><label for="sttBackend">Speech-to-text backend</label><select id="sttBackend"><option value="whisper" selected>faster-whisper</option><option value="llm">LM Studio multimodal/audio LLM — experimental</option></select></div>
-        <div><label for="lmModel">LM Studio model</label><select id="lmModel"><option value="qwen3.5-2b-uncensored-hauhaucs-aggressive">qwen3.5-2b-uncensored-hauhaucs-aggressive</option></select></div>
-        <div><label for="sttDevice">Whisper device</label><select id="sttDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
-        <div><label for="sttModel">Whisper model</label><select id="sttModel"><option value="tiny.en">tiny.en — fastest CPU</option><option value="base.en" selected>base.en — CPU balanced</option><option value="small.en">small.en — better, slower</option><option value="turbo">turbo — quality, slow CPU</option><option value="distil-large-v3">distil-large-v3 — faster large English</option></select></div>
-        <div><label for="ttsDevice">Text-to-speech device</label><select id="ttsDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
-        <div><label for="ttsProvider">TTS provider</label><select id="ttsProvider"><option value="kokoro" selected>Kokoro-compatible</option><option value="openai-compatible">OpenAI-compatible / cloud</option><option value="custom">Custom compatible endpoint</option></select></div>
-        <div><label for="ttsPort">TTS port</label><input id="ttsPort" type="number" min="1" max="65535" value="8880"></div>
-        <div><label for="ttsBaseUrl">TTS base URL override</label><input id="ttsBaseUrl" type="text" placeholder="blank = this host + TTS port"></div>
-        <div><label for="ttsModel">TTS model / engine</label><input id="ttsModel" type="text" value="kokoro" placeholder="kokoro, gpt-4o-mini-tts, etc."></div>
-        <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="lmstudio">LM Studio local</option><option value="custom">Custom / cloud</option></select></div>
-        <div><label for="llmBaseUrl">LLM API base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:1234/v1"></div>
-        <div><label for="llmApiKeyEnv">LLM API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
-        <div><label for="sttCloudBaseUrl">Cloud STT base URL</label><input id="sttCloudBaseUrl" type="text" placeholder="optional future STT endpoint"></div>
-        <div><label for="sttCloudModel">Cloud STT model</label><input id="sttCloudModel" type="text" placeholder="e.g. whisper-1"></div>
-        <div><label for="sttApiKeyEnv">STT API key env var</label><input id="sttApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
-        <div><label for="endpointMode">Endpointing mode</label><select id="endpointMode"><option value="reading" selected>Reading/dictation — wait longer</option><option value="conversation">Conversation — quicker turns</option></select></div>
-        <div><label for="finalSttMode">End-of-speech finalization</label><select id="finalSttMode"><option value="chunks" selected>Use live chunks — no full paragraph retranscribe</option><option value="full">Full utterance final pass</option></select></div>
+      <div id="settingsConverse" class="grid settingsPanel active sectioned">
+        <details class="settingsGroup" id="sttSection" open>
+          <summary>Speech to Text</summary>
+          <div class="settingsGroupBody">
+            <p class="sectionLead">Whisper is built into Korina. Multimodal STT can borrow the LLM Response settings unless you override them here.</p>
+            <div><label for="sttBackend">Speech-to-text backend</label><select id="sttBackend"><option value="whisper" selected>Built-in Whisper</option><option value="llm">Multimodal model</option></select></div>
+            <div><label for="endpointMode">Endpointing mode</label><select id="endpointMode"><option value="reading" selected>Reading/dictation — wait longer</option><option value="conversation">Conversation — quicker turns</option></select></div>
+            <div id="sttWhisperDeviceWrap"><label for="sttDevice">Whisper device</label><select id="sttDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
+            <div id="sttWhisperModelWrap"><label for="sttModel">Whisper model</label><select id="sttModel"><option value="tiny.en">tiny.en — fastest CPU</option><option value="base.en" selected>base.en — CPU balanced</option><option value="small.en">small.en — better, slower</option><option value="turbo">turbo — quality, slow CPU</option><option value="distil-large-v3">distil-large-v3 — faster large English</option></select></div>
+            <div id="sttMultimodalProviderWrap" class="settingsHidden"><label for="sttLlmProvider">LLM provider</label><select id="sttLlmProvider"><option value="">Inherit from LLM Response</option><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
+            <div id="sttMultimodalModelWrap" class="settingsHidden"><label for="sttLlmModel">Model</label><select id="sttLlmModel"><option value="">Inherit from LLM Response</option></select></div>
+            <div id="sttMultimodalBaseUrlWrap"><label for="sttLlmBaseUrl">Base URL</label><input id="sttLlmBaseUrl" type="text" placeholder="blank = inherit from LLM Response"></div>
+            <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit from LLM Response"></div>
+            <div><label for="finalSttMode">End-of-speech finalization</label><select id="finalSttMode"><option value="chunks" selected>Use live chunks — no full paragraph retranscribe</option><option value="full">Full utterance final pass</option></select></div>
+            <div><label for="partialWindowMs">Live partial transcript window</label><input id="partialWindowMs" type="range" min="800" max="3200" step="100" value="1800"><div class="fieldHint"><span id="partialWindowMsDisplay">1.8s</span> audio per rolling partial STT window while you are still speaking.</div></div>
+            <div><label for="sttCloudBaseUrl">Cloud STT base URL</label><input id="sttCloudBaseUrl" type="text" placeholder="optional future STT endpoint"></div>
+            <div><label for="sttCloudModel">Cloud STT model</label><input id="sttCloudModel" type="text" placeholder="e.g. whisper-1"></div>
+            <div><label for="sttApiKeyEnv">STT API key env var</label><input id="sttApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
+          </div>
+        </details>
+        <details class="settingsGroup" id="llmResponseSection" open>
+          <summary>LLM Response</summary>
+          <div class="settingsGroupBody">
+            <p class="sectionLead">Standard response model settings for Korina Converse.</p>
+            <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
+            <div><label for="lmModel">Model</label><select id="lmModel"><option value="qwen3.5-2b-uncensored-hauhaucs-aggressive">qwen3.5-2b-uncensored-hauhaucs-aggressive</option></select></div>
+            <div><label for="llmBaseUrl">Base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:8080/v1"></div>
+            <div><label for="llmApiKeyEnv">API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
+          </div>
+        </details>
+        <details class="settingsGroup" id="ttsSection" open>
+          <summary>Text to Speech</summary>
+          <div class="settingsGroupBody">
+            <p class="sectionLead">Current TTS controls stay the same. The slider below controls how much continuous speech counts as a real turn before Korina answers.</p>
+            <div><label for="ttsDevice">Text-to-speech device</label><select id="ttsDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
+            <div><label for="ttsProvider">TTS provider</label><select id="ttsProvider"><option value="kokoro" selected>Kokoro-compatible</option><option value="openai-compatible">OpenAI-compatible / cloud</option><option value="custom">Custom compatible endpoint</option></select></div>
+            <div><label for="ttsPort">TTS port</label><input id="ttsPort" type="number" min="1" max="65535" value="8880"></div>
+            <div><label for="ttsBaseUrl">TTS base URL override</label><input id="ttsBaseUrl" type="text" placeholder="blank = this host + TTS port"></div>
+            <div><label for="ttsModel">TTS model / engine</label><input id="ttsModel" type="text" value="kokoro" placeholder="kokoro, gpt-4o-mini-tts, etc."></div>
+            <div>
+              <label for="minSpeechMs">Minimum continuous speech before accepting voice input</label>
+              <input id="minSpeechMs" type="range" min="600" max="3000" step="100" value="1200">
+              <div class="fieldHint"><span id="minSpeechMsDisplay">1.2s</span> continuous speech required before Korina treats a live utterance as a real turn.</div>
+            </div>
+          </div>
+        </details>
       </div>
       <div id="settingsAgent" class="grid settingsPanel">
         <div class="secretNote"><label>Korina Agent</label><div class="toggleLine"><input id="agentEnabled" type="checkbox" checked><span>Enable hidden state reports and /steer injection</span></div></div>
@@ -86,8 +114,8 @@
         <div><label for="agentEnableSkillCommands">Skill commands</label><select id="agentEnableSkillCommands"><option value="on" selected>On</option><option value="off">Off</option></select></div>
         <div><label for="agentBlockImages">Block images</label><select id="agentBlockImages"><option value="off" selected>Off</option><option value="on">On</option></select></div>
       </div>
-      <p class="small mono" id="settingsInfo">Model list loads from the configured LLM /models endpoint via /api/models. Endpoint and port settings save to config.json.</p>
-      <div class="actions"><button id="refreshModelsBtn" class="secondary">Refresh models</button><button id="saveSettingsBtn">Done</button></div>
+      <p class="small mono" id="settingsInfo">Model pickers query the currently configured /v1/models endpoints when you open them. Endpoint and timing settings save to config.json.</p>
+      <div class="actions"><button id="saveSettingsBtn">Done</button></div>
     </div>
   </div>
 
@@ -155,24 +183,52 @@ let ackFiles=[], ackBuffers=[], ackBuffersByTag={}, ackSource=null, ackPlayingUn
 let appConfig={idle_ack_initial_ms:5000,idle_ack_step_ms:5000};
 let agentStateReport='', agentLastTranscriptHash='', pendingAgentStateReport='', pendingImportantAgentMessage='', awaitingAgentPermission=null;
 let agentEventCursor=0, agentTurnCount=0, agentLastDeliveredTurn=0, agentFirstDelivered=false, agentStartedAt=performance.now(), agentLastDeliveryAt=0, suppressAckUntil=0, agentInterruptCooldownUntil=0, deferredAgentInterrupt=null, agentInterruptInProgress=false;
-const VAD_BASE_SPEECH_THRESHOLD=0.035, VAD_BASE_SILENCE_THRESHOLD=0.022, MIN_SPEECH_MS=1200, VAD_SPEECH_FRAMES=8, VAD_SILENCE_FRAMES=10;
+const VAD_BASE_SPEECH_THRESHOLD=0.035, VAD_BASE_SILENCE_THRESHOLD=0.022, DEFAULT_MIN_SPEECH_MS=1200, VAD_SPEECH_FRAMES=8, VAD_SILENCE_FRAMES=10;
 let endSilenceMs=3200;
 const $=id=>document.getElementById(id);
-$('hostInfo').textContent=`${location.hostname}:8001 → LLM ${$('llmBaseUrl')?.value||'http://127.0.0.1:1234/v1'} → TTS ${ttsBaseUrl()}`;
+$('hostInfo').textContent=`${location.hostname}:8001 → LLM ${$('llmBaseUrl')?.value||'http://127.0.0.1:8080/v1'} → TTS ${ttsBaseUrl()}`;
 function status(el,msg,cls=''){el.textContent=msg;el.className='status '+cls}
 function sttDevice(){return $('sttDevice')?.value||'cpu'}
 function ttsDevice(){return $('ttsDevice')?.value||'cpu'}
 function ttsProvider(){return $('ttsProvider')?.value||'kokoro'}
 function ttsModel(){return $('ttsModel')?.value||'kokoro'}
-function llmProvider(){return $('llmProvider')?.value||'openai-compatible'}
-function llmBaseUrl(){return $('llmBaseUrl')?.value||'http://127.0.0.1:1234/v1'}
+function llmProvider(){return $('llmProvider')?.value||'llama.cpp'}
+function llmBaseUrl(){return $('llmBaseUrl')?.value||'http://127.0.0.1:8080/v1'}
 function sttModel(){return $('sttModel')?.value||'base.en'}
 function sttBackend(){return $('sttBackend')?.value||'whisper'}
 function lmModel(){return $('lmModel')?.value||'qwen3.5-2b-uncensored-hauhaucs-aggressive'}
+function sttLlmProvider(){return String($('sttLlmProvider')?.value||'').trim()}
+function sttLlmBaseUrl(){return String($('sttLlmBaseUrl')?.value||'').trim()}
+function sttLlmApiKeyEnv(){return String($('sttLlmApiKeyEnv')?.value||'').trim()}
+function sttLlmModel(){return String($('sttLlmModel')?.value||'').trim()}
+function effectiveSttLlmProvider(){return sttLlmProvider()||llmProvider()}
+function effectiveSttLlmBaseUrl(){return sttLlmBaseUrl()||llmBaseUrl()}
+function effectiveSttLlmApiKeyEnv(){return sttLlmApiKeyEnv()||String($('llmApiKeyEnv')?.value||'').trim()}
+function effectiveSttLlmModel(){ const explicit=sttLlmModel(); if(explicit) return explicit; if(sttLlmProvider()||sttLlmBaseUrl()) return ''; return lmModel(); }
+function minSpeechMs(){return parseInt($('minSpeechMs')?.value||'1200',10)||1200}
+function partialWindowMsSetting(){return parseInt($('partialWindowMs')?.value||String(partialWindowMs),10)||1800}
 function agentEnabled(){return $('agentEnabled')?.checked?'on':'off'}
 function agentModel(){return $('agentModel')?.value||lmModel()}
 function finalSttMode(){return $('finalSttMode')?.value||'chunks'}
 function endpointMode(){return $('endpointMode')?.value||'reading'}
+const PROVIDER_BASE_URL_PRESETS={
+  'llama.cpp':'http://127.0.0.1:8080/v1',
+  'lmstudio':'http://127.0.0.1:1234/v1',
+  'ollama':'http://127.0.0.1:11434/v1',
+};
+function providerPresetBaseUrl(provider){ return PROVIDER_BASE_URL_PRESETS[String(provider||'').trim()]||''; }
+function maybeApplyProviderPreset(providerId, baseUrlId, {clearWhenBlank=false}={}){
+  const provider=$(providerId)?.value||'';
+  const input=$(baseUrlId);
+  if(!input) return false;
+  const preset=providerPresetBaseUrl(provider);
+  if(preset){ input.value=preset; return true; }
+  if(clearWhenBlank && !provider){ input.value=''; return true; }
+  return false;
+}
+function prettyModelLabel(modelId){ const text=String(modelId||'').trim(); if(!text) return ''; if(text.includes('/') || text.endsWith('.gguf')){ const parts=text.split('/').filter(Boolean); const tail=parts[parts.length-1]||text; const parent=parts.length>1 ? parts[parts.length-2] : ''; return parent ? `${tail} — ${parent}` : tail; } return text; }
+function setBaseUrlEditability(){ const llmEditable=llmProvider()==='openai-compatible'; if($('llmBaseUrl')) $('llmBaseUrl').disabled=!llmEditable; const sttProviderValue=String($('sttLlmProvider')?.value||'').trim(); const sttEditable=sttProviderValue==='openai-compatible'; if($('sttLlmBaseUrl')) $('sttLlmBaseUrl').disabled=!sttEditable; }
+async function activateSelectedProvider(provider, model=''){ const r=await fetch('/api/llm/provider/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider,model:model||''})}); const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); if(j.saved) applyConfig(j.saved); return j; }
 function setDot(id,state){$(id).className='dot '+state}
 function log(role,text){ const p=document.createElement('p'); p.className='msg'; p.innerHTML=`<b>${role}:</b> ${String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}`; $('log').appendChild(p); $('log').scrollTop=$('log').scrollHeight; }
 function stripTranscriptLabels(text){
@@ -205,6 +261,10 @@ function collectConfig(){
     stt_backend:sttBackend(),
     stt_device:sttDevice(),
     stt_model:sttModel(),
+    stt_llm_provider:sttLlmProvider(),
+    stt_llm_base_url:sttLlmBaseUrl(),
+    stt_llm_api_key_env:sttLlmApiKeyEnv(),
+    stt_llm_model:sttLlmModel(),
     lm_model:lmModel(),
     tts_device:ttsDevice(),
     tts_provider:ttsProvider(),
@@ -255,6 +315,8 @@ function collectConfig(){
     endpoint_mode:endpointMode(),
     silence_ms:endSilenceMs,
     final_stt_mode:finalSttMode(),
+    min_speech_ms:minSpeechMs(),
+    partial_window_ms:partialWindowMsSetting(),
     idle_ack_initial_ms:appConfig.idle_ack_initial_ms||5000,
     idle_ack_step_ms:appConfig.idle_ack_step_ms||5000,
   };
@@ -267,6 +329,14 @@ function applyConfig(c={}){
   if(c.stt_backend && $('sttBackend')) $('sttBackend').value=c.stt_backend;
   if(c.stt_device && $('sttDevice')) $('sttDevice').value=c.stt_device;
   if(c.stt_model && $('sttModel')) $('sttModel').value=c.stt_model;
+  if(c.stt_llm_provider!==undefined && $('sttLlmProvider')) $('sttLlmProvider').value=c.stt_llm_provider||'';
+  if(c.stt_llm_base_url!==undefined && $('sttLlmBaseUrl')) $('sttLlmBaseUrl').value=c.stt_llm_base_url||'';
+  if(c.stt_llm_api_key_env!==undefined && $('sttLlmApiKeyEnv')) $('sttLlmApiKeyEnv').value=c.stt_llm_api_key_env||'';
+  if($('sttLlmModel')){
+    const sttModelValue = c.stt_llm_model!==undefined ? c.stt_llm_model : '';
+    if(sttModelValue && !$('sttLlmModel').querySelector(`option[value="${CSS.escape(sttModelValue)}"]`)){ const o=document.createElement('option'); o.value=sttModelValue; o.textContent=sttModelValue; $('sttLlmModel').appendChild(o); }
+    $('sttLlmModel').value=sttModelValue||'';
+  }
   if(c.lm_model && $('lmModel')) $('lmModel').value=c.lm_model;
   if(c.tts_device && $('ttsDevice')) $('ttsDevice').value=c.tts_device;
   if(c.tts_provider && $('ttsProvider')) $('ttsProvider').value=c.tts_provider;
@@ -319,12 +389,15 @@ function applyConfig(c={}){
   if(c.agent_report_injection_mode && $('agentReportInjectionMode')) $('agentReportInjectionMode').value=c.agent_report_injection_mode;
   if(c.endpoint_mode && $('endpointMode')) $('endpointMode').value=c.endpoint_mode;
   if(c.final_stt_mode && $('finalSttMode')) $('finalSttMode').value=c.final_stt_mode;
+  if(c.min_speech_ms!==undefined && $('minSpeechMs')){ $('minSpeechMs').value=c.min_speech_ms; $('minSpeechMsDisplay').textContent=(Number(c.min_speech_ms)/1000).toFixed(1)+'s'; }
+  if(c.partial_window_ms!==undefined && $('partialWindowMs')){ partialWindowMs=parseInt(c.partial_window_ms,10)||1800; $('partialWindowMs').value=partialWindowMs; $('partialWindowMsDisplay').textContent=(partialWindowMs/1000).toFixed(1)+'s'; }
   if(c.silence_ms){ endSilenceMs=parseInt(c.silence_ms,10); $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; }
+  syncConverseSettingsUI();
   if(c.mode){ mode=c.mode; document.querySelectorAll('.tab[data-mode]').forEach(x=>x.classList.toggle('active',x.dataset.mode===mode)); }
   $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`;
 }
 async function loadConfig(){
-  try{ const c=await (await fetch('/api/config')).json(); applyConfig(c); $('settingsInfo').textContent='Loaded saved config.json settings.'; }
+  try{ const c=await (await fetch('/api/config')).json(); applyConfig(c); syncConverseSettingsUI(); $('settingsInfo').textContent='Loaded saved config.json settings.'; }
   catch(e){ console.warn('config load failed', e); }
 }
 function saveConfigNow(){
@@ -346,26 +419,62 @@ function nextIdleDelayMs(){
   const step=Number(appConfig.idle_ack_step_ms||5000);
   return initial + (idleAckCount * step);
 }
+function setSectionHidden(id, hidden){ const el=$(id); if(el) el.classList.toggle('settingsHidden', !!hidden); }
+function syncConverseSettingsUI(){
+  const multimodal = sttBackend()==='llm';
+  ['sttWhisperDeviceWrap','sttWhisperModelWrap'].forEach(id=>setSectionHidden(id, multimodal));
+  ['sttMultimodalProviderWrap','sttMultimodalModelWrap','sttMultimodalBaseUrlWrap','sttMultimodalApiKeyWrap'].forEach(id=>setSectionHidden(id, !multimodal));
+  $('llmResponseSection')?.classList.toggle('settingsDisabled', multimodal);
+  if($('llmResponseSection')) $('llmResponseSection').open = !multimodal;
+  $('settingsInfo').textContent = multimodal
+    ? `Multimodal STT selected. STT model endpoint resolves to ${effectiveSttLlmBaseUrl()||'the LLM Response base URL'} and falls back to the LLM Response section when STT-specific fields are blank.`
+    : 'Whisper is built into Korina. Open a model picker to query its current /v1/models endpoint or the local llama.cpp model catalog.';
+}
 async function health(){
-  try{let j=await (await fetch('/api/health')).json(); setDot('pageDot',j.whisper_loaded?'good':'warn'); $('pageHealth').textContent=`${j.whisper_backend||'Whisper'} ${j.whisper_loaded?'loaded':'lazy'} · selected STT ${sttBackend()} ${sttDevice()}/${sttModel()} · LM ${lmModel()} · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available?'yes':'no'} · ${j.lmstudio_model}`;}catch(e){setDot('pageDot','bad');$('pageHealth').textContent='page server offline'}
+  try{let j=await (await fetch('/api/health')).json(); setDot('pageDot',j.whisper_loaded?'good':'warn'); const sttSummary=sttBackend()==='llm'?`multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()}`:`built-in Whisper ${sttDevice()}/${sttModel()}`; const responseSummary=`${j.response_llm_provider||llmProvider()} ${j.response_llm_model||lmModel()}`; $('pageHealth').textContent=`${j.whisper_backend||'Whisper'} ${j.whisper_loaded?'loaded':'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url||llmBaseUrl()} · partial ${(Number(j.partial_window_ms||partialWindowMs)/1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('pageDot','bad');$('pageHealth').textContent='page server offline'}
   try{let j=await (await fetch(`${ttsBaseUrl()}/health`)).json(); setDot('ttsDot',j.loaded?'good':'warn'); $('ttsHealth').textContent=`Kokoro ${j.loaded?'ready':'lazy'} · selected TTS ${ttsProvider()} ${ttsDevice()} @ ${ttsBaseUrl()} · last ${j.device||'none'} · CUDA ${j.cuda_available?'yes':'no'}`;}catch(e){setDot('ttsDot','bad');$('ttsHealth').textContent='Kokoro offline'}
 }
 setInterval(health,10000);
 
-async function loadModelOptions(){
+let lastModelsQuery='';
+let lastModelsLoadedAt=0;
+let lastModelsPayload=null;
+async function loadModelOptions(force=false){
   try{
-    const j=await (await fetch('/api/models')).json();
+    const params=new URLSearchParams({
+      llm_base_url: llmBaseUrl(),
+      llm_api_key_env: String($('llmApiKeyEnv')?.value||'').trim(),
+      stt_llm_base_url: effectiveSttLlmBaseUrl(),
+      stt_llm_api_key_env: effectiveSttLlmApiKeyEnv(),
+    });
+    const query=params.toString();
+    let j=lastModelsPayload;
+    if(force || !j || query!==lastModelsQuery || (Date.now()-lastModelsLoadedAt)>4000){
+      const r=await fetch(`/api/models?${query}`);
+      j=await r.json();
+      lastModelsQuery=query;
+      lastModelsPayload=j;
+      lastModelsLoadedAt=Date.now();
+    }
     if(Array.isArray(j.whisper_models) && j.whisper_models.length){
       const current=sttModel(); $('sttModel').innerHTML='';
       for(const m of j.whisper_models){ const o=document.createElement('option'); o.value=m; o.textContent=m; $('sttModel').appendChild(o); }
       $('sttModel').value=j.whisper_models.includes(current)?current:(j.whisper_models.includes('base.en')?'base.en':j.whisper_models[0]);
     }
-    if(Array.isArray(j.lmstudio_models) && j.lmstudio_models.length){
+    if(Array.isArray(j.llm_models) && j.llm_models.length){
       const current=lmModel(); $('lmModel').innerHTML='';
-      for(const m of j.lmstudio_models){ const o=document.createElement('option'); o.value=m; o.textContent=m; $('lmModel').appendChild(o); }
-      $('lmModel').value=j.lmstudio_models.includes(current)?current:(j.lmstudio_models.find(m=>m.includes('gemma-4-12b-it-qat'))||j.lmstudio_default||j.lmstudio_models[0]);
+      for(const m of j.llm_models){ const o=document.createElement('option'); o.value=m; o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m); $('lmModel').appendChild(o); }
+      $('lmModel').value=j.llm_models.includes(current)?current:(j.llm_default||j.llm_models[0]);
     }
-    $('settingsInfo').textContent=`Loaded ${(j.lmstudio_models||[]).length} LM Studio models. ${j.lmstudio_error?('Error: '+j.lmstudio_error):''}`;
+    if($('sttLlmModel')){
+      const current=sttLlmModel();
+      $('sttLlmModel').innerHTML='';
+      const blank=document.createElement('option'); blank.value=''; blank.textContent='Inherit from LLM Response'; $('sttLlmModel').appendChild(blank);
+      for(const m of (j.stt_llm_models||[])){ const o=document.createElement('option'); o.value=m; o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m); $('sttLlmModel').appendChild(o); }
+      $('sttLlmModel').value=[...$('sttLlmModel').options].some(o=>o.value===current)?current:'';
+    }
+    syncConverseSettingsUI();
+    $('settingsInfo').textContent=`Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?('LLM error: '+j.llm_error+' '):''}${j.stt_llm_error?('STT multimodal error: '+j.stt_llm_error):''}`.trim();
   }catch(e){ $('settingsInfo').textContent='Model list load failed: '+e.message; }
 }
 async function loadAgentModelOptions(){
@@ -382,10 +491,9 @@ async function loadAgentModelOptions(){
     $('settingsInfo').textContent=`Loaded ${(j.models||[]).length} Korina Agent models from ${j.provider}. ${j.error?('Error: '+j.error):''}`;
   }catch(e){ $('settingsInfo').textContent='Agent model list load failed: '+e.message; }
 }
-$('settingsBtn').onclick=()=>{ $('settingsModal').classList.add('open'); loadModelOptions(); loadAgentModelOptions(); };
+$('settingsBtn').onclick=()=>{ $('settingsModal').classList.add('open'); syncConverseSettingsUI(); setBaseUrlEditability(); loadAgentModelOptions(); };
 $('closeSettingsBtn').onclick=()=>$('settingsModal').classList.remove('open');
 $('saveSettingsBtn').onclick=()=>{ saveConfigNow(); $('settingsModal').classList.remove('open'); };
-$('refreshModelsBtn').onclick=()=>loadModelOptions();
 $('refreshAgentModelsBtn').onclick=()=>loadAgentModelOptions();
 $('settingsModal').onclick=e=>{ if(e.target===$('settingsModal')) $('settingsModal').classList.remove('open'); };
 document.querySelectorAll('.settingsTab').forEach(btn=>btn.onclick=()=>{
@@ -412,10 +520,15 @@ $('silenceMs').oninput=()=>{ endSilenceMs=parseInt($('silenceMs').value,10); $('
 $('endpointMode').onchange=()=>{ endSilenceMs=endpointMode()==='reading'?3200:950; $('silenceMs').value=endSilenceMs; $('silenceDisplay').textContent=endSilenceMs+'ms'; status($('sttStatus'),`Endpointing mode: ${endpointMode()} (${endSilenceMs}ms silence before Korina responds).`, 'warn'); saveConfigSoon(); };
 $('sttDevice').onchange=()=>{ status($('sttStatus'),`STT device set to ${sttDevice()}. Next transcription will use it. First use may load a second model.`, 'warn'); health(); saveConfigSoon(); };
 $('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttModel()}. First use downloads/loads that model.`, 'warn'); health(); saveConfigSoon(); };
-$('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?'LLM audio STT selected. LM Studio /v1/chat currently accepts text/images on many builds; audio may fail unless the selected model/server supports input_audio.':'faster-whisper STT selected.'; status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; saveConfigSoon(); };
-$('lmModel').onchange=()=>{ status($('sttStatus'),`LM Studio model set to ${lmModel()}.`, 'warn'); saveConfigSoon(); };
+$('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?`Multimodal STT selected. Audio transcription now uses ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()}. Blank STT fields inherit from LLM Response.`:'Built-in Whisper selected.'; syncConverseSettingsUI(); status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; health(); saveConfigSoon(); };
+$('llmProvider').onchange=async()=>{ maybeApplyProviderPreset('llmProvider','llmBaseUrl'); setBaseUrlEditability(); syncConverseSettingsUI(); status($('sttStatus'),`Switching response provider to ${llmProvider()}…`,'warn'); await saveConfigNow(); try{ const j=await activateSelectedProvider(llmProvider(), lmModel()); $('settingsInfo').textContent=`Activated ${j.activation.provider}. Started ${j.activation.started.join(', ')||'nothing'}; stopped ${j.activation.stopped.join(', ')||'nothing'}.`; }catch(e){ $('settingsInfo').textContent='Provider activation failed: '+e.message; status($('sttStatus'),'Provider activation failed: '+e.message,'bad'); } await loadModelOptions(true); await loadAgentModelOptions(); health(); saveConfigSoon(); };
+$('lmModel').onchange=async()=>{ if(!sttLlmModel()) syncConverseSettingsUI(); status($('sttStatus'),`LLM response model set to ${prettyModelLabel(lmModel())}.`, 'warn'); await saveConfigNow(); if(llmProvider()==='llama.cpp'){ try{ const j=await activateSelectedProvider('llama.cpp', lmModel()); $('settingsInfo').textContent=`Reloaded llama.cpp with ${prettyModelLabel(j.activation.model)}.`; await loadModelOptions(true); }catch(e){ $('settingsInfo').textContent='llama.cpp reload failed: '+e.message; status($('sttStatus'),'llama.cpp reload failed: '+e.message,'bad'); } } saveConfigSoon(); };
+if($('sttLlmModel')) $('sttLlmModel').onchange=()=>{ status($('sttStatus'),`Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
+if($('sttLlmProvider')) $('sttLlmProvider').onchange=()=>{ maybeApplyProviderPreset('sttLlmProvider','sttLlmBaseUrl',{clearWhenBlank:true}); setBaseUrlEditability(); syncConverseSettingsUI(); health(); saveConfigSoon(); };
+if($('sttLlmBaseUrl')) $('sttLlmBaseUrl').onchange=()=>{ setBaseUrlEditability(); syncConverseSettingsUI(); health(); saveConfigSoon(); };
+if($('sttLlmApiKeyEnv')) $('sttLlmApiKeyEnv').onchange=()=>{ syncConverseSettingsUI(); loadModelOptions(); saveConfigSoon(); };
 $('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
-['ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmProvider','llmBaseUrl','llmApiKeyEnv','sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider','agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens','agentYoloMode','agentProjectTrust','agentSteeringMode','agentFollowUpMode','agentThinkingLevel','agentAutoCompact','agentCompactionReserveTokens','agentCompactionKeepRecentTokens','agentHideThinking','agentTransport','agentRetryEnabled','agentMaxRetries','agentRetryBaseDelayMs','agentHttpIdleTimeoutMs','agentEnableSkillCommands','agentBlockImages','agentFirstDeliveryMode','agentFirstDeliverySeconds','agentPeriodicDeliveryTurns','agentPeriodicDeliverySeconds','agentBusyDeliveryMode','agentIdleDeliveryMode','agentInterruptsEnabled','agentInterruptMinPriority','agentHardInterruptMinPriority','agentInterruptCooldownPaddingMs','agentPermissionInterrupts','agentReportInjectionMode'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`; health(); saveConfigSoon(); }; });
+['ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmBaseUrl','llmApiKeyEnv','sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider','agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens','agentYoloMode','agentProjectTrust','agentSteeringMode','agentFollowUpMode','agentThinkingLevel','agentAutoCompact','agentCompactionReserveTokens','agentCompactionKeepRecentTokens','agentHideThinking','agentTransport','agentRetryEnabled','agentMaxRetries','agentRetryBaseDelayMs','agentHttpIdleTimeoutMs','agentEnableSkillCommands','agentBlockImages','agentFirstDeliveryMode','agentFirstDeliverySeconds','agentPeriodicDeliveryTurns','agentPeriodicDeliverySeconds','agentBusyDeliveryMode','agentIdleDeliveryMode','agentInterruptsEnabled','agentInterruptMinPriority','agentHardInterruptMinPriority','agentInterruptCooldownPaddingMs','agentPermissionInterrupts','agentReportInjectionMode'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`; syncConverseSettingsUI(); health(); saveConfigSoon(); }; });
 $('voice').onchange=async()=>{
   ackFiles=[]; ackBuffers=[]; ackBuffersByTag={};
   status($('sttStatus'),`Voice changed to ${$('voice').value}. Clearing old ack cache and queueing fresh acks for this voice…`,'warn');
@@ -429,12 +542,15 @@ $('voice').onchange=async()=>{
   setTimeout(()=>loadAcks('global'),1500);
 };
 $('finalSttMode').onchange=()=>{ status($('sttStatus'),`Finalization mode: ${finalSttMode()==='chunks'?'live chunks only':'full utterance final pass'}.`, 'warn'); saveConfigSoon(); };
+$('minSpeechMs').oninput=()=>{ $('minSpeechMsDisplay').textContent=(minSpeechMs()/1000).toFixed(1)+'s'; saveConfigSoon(); };
+$('partialWindowMs').oninput=()=>{ partialWindowMs=partialWindowMsSetting(); $('partialWindowMsDisplay').textContent=(partialWindowMs/1000).toFixed(1)+'s'; saveConfigSoon(); };
 document.querySelectorAll('.tab[data-mode]').forEach(t=>t.onclick=()=>{mode=t.dataset.mode;document.querySelectorAll('.tab[data-mode]').forEach(x=>x.classList.toggle('active',x===t)); saveConfigSoon();});
+['lmModel','sttLlmModel'].forEach(id=>{ const el=$(id); if(!el) return; const trigger=()=>loadModelOptions(false).catch(e=>console.warn('model load failed', e)); el.addEventListener('pointerdown', trigger); el.addEventListener('focus', trigger); });
+setBaseUrlEditability();
 
 
 async function initApp(){
   await loadConfig();
-  await loadModelOptions();
   await loadAgentModelOptions();
   await loadConfig(); // Re-apply after model options are populated.
   await loadAcks('global');
@@ -609,11 +725,11 @@ async function askLM(message){
     steer=`/steer Korina Agent state report for this next reply:\n${pendingAgentStateReport}\n\n`;
     pendingAgentStateReport='';
   }
-  status($('sttStatus'),'Sending transcript to LM Studio…','warn');
+  status($('sttStatus'),'Sending transcript to configured LLM…','warn');
   const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:stripTranscriptLabels(steer+message),history:cleanHistoryForModel(),max_tokens:180,temperature:0.7,model:lmModel()})});
   const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||'';
 }
-async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:stripTranscriptLabels(message)}); const lmMessage=context ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}` : stripTranscriptLabels(message); const reply=stripTranscriptLabels(await askLM(lmMessage)); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LM Studio replied in ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; addTranscriptEntry('Korina Agent Interrupt', msg,{includeInHistory:false}); agentInterruptInProgress=true; await speakText(msg,true).catch(()=>{}); setAgentInterruptCooldown(); agentInterruptInProgress=false; } maybeDeliverTranscriptToAgent('turn'); }
+async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:stripTranscriptLabels(message)}); const lmMessage=context ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}` : stripTranscriptLabels(message); const reply=stripTranscriptLabels(await askLM(lmMessage)); $('text').value=reply; log('Korina',reply); history.push({role:'assistant',content:reply}); history=history.slice(-20); agentTurnCount++; status($('sttStatus'),`LLM replied ${reply? 'ok':'empty'}; speaking…`,'good'); await speakText(reply,true); if(pendingImportantAgentMessage && !ttsSpeaking){ const msg=pendingImportantAgentMessage; pendingImportantAgentMessage=''; addTranscriptEntry('Korina Agent Interrupt', msg,{includeInHistory:false}); agentInterruptInProgress=true; await speakText(msg,true).catch(()=>{}); setAgentInterruptCooldown(); agentInterruptInProgress=false; } maybeDeliverTranscriptToAgent('turn'); }
 async function playRandomAck(tag='global'){
   if($('ackEnabled').value!=='on') return;
   if(performance.now()<suppressAckUntil || pendingImportantAgentMessage || awaitingAgentPermission) return;
@@ -689,7 +805,7 @@ function makeRecorder(onstop,timeslice=0){ recChunks=[]; const mime=MediaRecorde
 async function transcribeBlob(blob){
   const fd=new FormData();
   fd.append('audio',blob,'recording.webm');
-  const r=await fetch(`/api/transcribe/stream?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(lmModel())}`,{method:'POST',body:fd});
+  const r=await fetch(`/api/transcribe/stream?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(effectiveSttLlmModel())}`,{method:'POST',body:fd});
   if(!r.ok){
     const j=await r.json().catch(async()=>({detail:await r.text()}));
     throw new Error(j.detail||JSON.stringify(j));
@@ -731,7 +847,7 @@ async function transcribePartialBlob(blob, seq, meta={}){
   fd.append('audio',blob,'partial.webm');
   const ctl=new AbortController();
   partialController=ctl;
-  const r=await fetch(`/api/transcribe/partial?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(lmModel())}`,{method:'POST',body:fd,signal:ctl.signal});
+  const r=await fetch(`/api/transcribe/partial?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(effectiveSttLlmModel())}`,{method:'POST',body:fd,signal:ctl.signal});
   const j=await r.json();
   if(!r.ok) throw new Error(j.detail||JSON.stringify(j));
   if(seq!==partialSeq) return j;
@@ -945,9 +1061,9 @@ function liveMonitor(){
     if(!liveSilenceStart) liveSilenceStart=now;
     const speechMs=liveLastVoice-liveSpeechStart;
     const silenceMs=now-liveSilenceStart;
-    if(speechMs>MIN_SPEECH_MS && silenceMs>endSilenceMs){
+    if(speechMs>minSpeechMs() && silenceMs>endSilenceMs){
       liveBusy=true;
-      status($('sttStatus'),`End of speech after ${Math.round(silenceMs)}ms silence (${endpointMode()}). noise ${vadNoiseFloor.toFixed(3)} · draining STT queue…`,'warn');
+      status($('sttStatus'),`End of speech after ${Math.round(silenceMs)}ms silence (${endpointMode()}) with ${(speechMs/1000).toFixed(1)}s continuous speech. noise ${vadNoiseFloor.toFixed(3)} · draining STT queue…`,'warn');
       stopPartialTranscriptionLoop(false);
       playRandomAck();
       if(mediaRecorder && mediaRecorder.state!=='inactive')mediaRecorder.stop();

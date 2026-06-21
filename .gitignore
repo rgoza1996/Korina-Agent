@@ -45,3 +45,7 @@ tmp_*
 
 # Generated voice-specific ack cache
 Korina/Ack/*.wav
+# Korina live backup snapshots
+Korina/.backup-*/
+Korina/*.bak-*
+Korina-old/

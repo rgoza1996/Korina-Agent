@@ -24,7 +24,9 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-APP_DIR = Path('/home/roggoz/Korina')
+_KORINA_REPO_ROOT = Path(__file__).resolve().parent
+_DEFAULT_APP_DIR = '/home/roggoz/Korina'
+APP_DIR = Path(os.environ.get('KORINA_APP_DIR', _DEFAULT_APP_DIR if (Path(_DEFAULT_APP_DIR) / 'index.html').exists() else str(_KORINA_REPO_ROOT)))
 INDEX_PATH = APP_DIR / 'index.html'
 ACK_DIR = APP_DIR / 'Ack'
 ACK_PHRASES_PATH = ACK_DIR / 'ack_phrases.json'
@@ -37,11 +39,17 @@ WHISPER_COMPUTE_TYPE = os.environ.get('WHISPER_COMPUTE_TYPE')
 WHISPER_CPU_THREADS = int(os.environ.get('WHISPER_CPU_THREADS', '4'))
 WHISPER_BEAM_SIZE = int(os.environ.get('WHISPER_BEAM_SIZE', '1'))
 PARTIAL_MIN_SECONDS = float(os.environ.get('PARTIAL_MIN_SECONDS', '0.6'))
-LMSTUDIO_URL = os.environ.get('LMSTUDIO_URL', 'http://127.0.0.1:1234/v1/chat/completions')
-LMSTUDIO_MODEL = os.environ.get('LMSTUDIO_MODEL', 'qwen3.5-2b-uncensored-hauhaucs-aggressive')
+LMSTUDIO_URL = os.environ.get('LMSTUDIO_URL', 'http://127.0.0.1:8080/v1/chat/completions')
+LMSTUDIO_MODEL = os.environ.get('LMSTUDIO_MODEL', '/home/roggoz/Disks/SN750/models/google/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B_q4_0-it.gguf')
 WHISPER_MODEL_CHOICES = ['tiny.en', 'base.en', 'small.en', 'turbo', 'distil-large-v3']
+LOCAL_MODEL_ROOTS = [Path(p) for p in os.environ.get('KORINA_LOCAL_MODEL_ROOTS', '/home/roggoz/Disks/SN750/models').split(os.pathsep) if p.strip()]
+LMSTUDIO_HUB_ROOT = Path(os.environ.get('KORINA_LMSTUDIO_HUB_ROOT', '/home/roggoz/.lmstudio/hub/models'))
+LLAMA_SERVER_BIN = Path(os.environ.get('KORINA_LLAMA_SERVER_BIN', '/home/roggoz/Disks/SN750/llama.cpp/build/bin/llama-server'))
+LMSTUDIO_BIN = Path(os.environ.get('KORINA_LMSTUDIO_BIN', '/opt/LM-Studio/lm-studio'))
+LLAMA_SERVER_MEDIA_PATH = os.environ.get('KORINA_LLAMA_SERVER_MEDIA_PATH', '/home/roggoz/Disks/SN750')
+LLAMA_SERVER_USER_UNIT = Path(os.environ.get('KORINA_LLAMA_SERVER_USER_UNIT', '/home/roggoz/.config/systemd/user/llama-server.service'))
 
-app = FastAPI(title='Korina Voice Lab: Kokoro + Whisper Turbo + LM Studio')
+app = FastAPI(title='Korina Voice Lab: Built-in Whisper, multimodal STT, llama.cpp, and Kokoro')
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
@@ -69,14 +77,18 @@ DEFAULT_CONFIG = {
     'stt_backend': 'whisper',
     'stt_device': 'cpu',
     'stt_model': 'base.en',
+    'stt_llm_provider': '',
+    'stt_llm_base_url': '',
+    'stt_llm_api_key_env': '',
+    'stt_llm_model': '',
     'lm_model': LMSTUDIO_MODEL,
     'tts_device': 'cpu',
     'tts_provider': 'kokoro',
     'tts_port': 8880,
     'tts_base_url': '',
     'tts_model': 'kokoro',
-    'llm_provider': 'openai-compatible',
-    'llm_base_url': 'http://127.0.0.1:1234/v1',
+    'llm_provider': 'llama.cpp',
+    'llm_base_url': 'http://127.0.0.1:8080/v1',
     'llm_api_key_env': '',
     'stt_cloud_provider': '',
     'stt_cloud_base_url': '',
@@ -84,7 +96,7 @@ DEFAULT_CONFIG = {
     'stt_api_key_env': '',
     'agent_enabled': 'on',
     'agent_provider': 'openai-compatible',
-    'agent_base_url': 'http://127.0.0.1:1234/v1',
+    'agent_base_url': 'http://127.0.0.1:8080/v1',
     'agent_api_key': '',
     'agent_model': '',
     'agent_max_turns': 16,
@@ -120,6 +132,8 @@ DEFAULT_CONFIG = {
     'endpoint_mode': 'reading',
     'silence_ms': 3200,
     'final_stt_mode': 'chunks',
+    'min_speech_ms': 1200,
+    'partial_window_ms': 1800,
     'idle_ack_initial_ms': 5000,
     'idle_ack_step_ms': 5000,
 }
@@ -158,6 +172,221 @@ def save_config(config: dict) -> dict:
 
 
 
+def provider_preset_base_url(provider: str) -> str:
+    provider = str(provider or '').strip().lower()
+    return {
+        'llama.cpp': 'http://127.0.0.1:8080/v1',
+        'lmstudio': 'http://127.0.0.1:1234/v1',
+        'ollama': 'http://127.0.0.1:11434/v1',
+    }.get(provider, '')
+
+
+def is_local_provider_base_url(base_url: str, provider: str = '') -> bool:
+    base = str(base_url or '').strip().rstrip('/')
+    provider = str(provider or '').strip().lower()
+    if provider in {'llama.cpp', 'lmstudio', 'ollama'}:
+        return True
+    return base in {'http://127.0.0.1:8080/v1', 'http://127.0.0.1:1234/v1', 'http://127.0.0.1:11434/v1'}
+
+
+def display_model_label(model_id: str) -> str:
+    text = str(model_id or '').strip()
+    if not text:
+        return ''
+    if '/' in text or text.endswith('.gguf'):
+        p = Path(text)
+        return f'{p.name} — {p.parent.name}' if p.parent.name else p.name
+    return text
+
+
+def discover_local_gguf_models() -> list[str]:
+    found: set[str] = set()
+    for root in LOCAL_MODEL_ROOTS:
+        if not root.exists():
+            continue
+        for path in root.rglob('*.gguf'):
+            lname = path.name.lower()
+            if 'mmproj' in lname or lname.endswith('-assistant.gguf'):
+                continue
+            found.add(str(path))
+    return sorted(found, key=lambda s: display_model_label(s).lower())
+
+
+def discover_lmstudio_catalog_models() -> list[str]:
+    found: set[str] = set()
+    if LMSTUDIO_HUB_ROOT.exists():
+        for manifest in LMSTUDIO_HUB_ROOT.rglob('manifest.json'):
+            try:
+                body = json.loads(manifest.read_text())
+            except Exception:
+                continue
+            owner = body.get('owner')
+            name = body.get('name')
+            if isinstance(owner, str) and isinstance(name, str) and owner and name:
+                found.add(f'{owner}/{name}')
+    return sorted(found)
+
+
+def find_mmproj_for_model(model_path: str) -> str:
+    path = Path(str(model_path or '').strip())
+    if not path.exists():
+        return ''
+    matches = sorted(path.parent.glob('*mmproj*.gguf'))
+    return str(matches[0]) if matches else ''
+
+
+def gui_env() -> dict:
+    env = os.environ.copy()
+    env.setdefault('DISPLAY', ':0')
+    env.setdefault('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus')
+    env.setdefault('XDG_RUNTIME_DIR', '/run/user/1000')
+    if not env.get('XAUTHORITY'):
+        candidates = sorted(Path('/run/user/1000').glob('.mutter-Xwaylandauth.*'))
+        if candidates:
+            env['XAUTHORITY'] = str(candidates[-1])
+        elif Path('/home/roggoz/.Xauthority').exists():
+            env['XAUTHORITY'] = '/home/roggoz/.Xauthority'
+    return env
+
+
+def stop_lmstudio() -> None:
+    subprocess.run(['pkill', '-f', '/opt/LM-Studio/lm-studio'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def start_lmstudio() -> None:
+    if not LMSTUDIO_BIN.exists():
+        raise RuntimeError('LM Studio binary not found at /opt/LM-Studio/lm-studio')
+    already = subprocess.run(['pgrep', '-f', '/opt/LM-Studio/lm-studio'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if already.returncode == 0:
+        return
+    subprocess.Popen([str(LMSTUDIO_BIN)], env=gui_env(), cwd='/opt/LM-Studio', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def stop_ollama() -> None:
+    subprocess.run(['systemctl', '--user', 'stop', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(['pkill', '-f', 'ollama serve'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def start_ollama() -> None:
+    if shutil.which('ollama') is None:
+        raise RuntimeError('Ollama is not installed on roggoz')
+    run = subprocess.run(['systemctl', '--user', 'start', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if run.returncode != 0:
+        subprocess.Popen(['ollama', 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def write_llama_server_unit(model_path: str) -> None:
+    model = Path(str(model_path or '').strip())
+    if not model.exists():
+        raise RuntimeError(f'llama.cpp model not found: {model}')
+    if not LLAMA_SERVER_BIN.exists():
+        raise RuntimeError(f'llama-server binary not found: {LLAMA_SERVER_BIN}')
+    mmproj = find_mmproj_for_model(str(model))
+    unit = [
+        '[Unit]',
+        'Description=Llama.cpp Server (Korina-selected model)',
+        'After=network.target',
+        '',
+        '[Service]',
+        'Type=simple',
+        'Restart=always',
+        'RestartSec=5',
+        'Environment=VK_ICD_FILE=/usr/share/vulkan/icd.d/radeon_icd.json',
+    ]
+    exec_parts = [str(LLAMA_SERVER_BIN), '-m', str(model)]
+    if mmproj:
+        exec_parts += ['--mmproj', mmproj]
+    exec_parts += ['--reasoning', 'off', '--host', '0.0.0.0', '--port', '8080', '--media-path', LLAMA_SERVER_MEDIA_PATH, '-ngl', '99', '-t', '4']
+    unit.append('ExecStart=' + ' '.join(exec_parts))
+    unit.append(f'WorkingDirectory={LLAMA_SERVER_BIN.parent}')
+    unit += ['', '[Install]', 'WantedBy=default.target', '']
+    service_path = LLAMA_SERVER_USER_UNIT
+    service_path.parent.mkdir(parents=True, exist_ok=True)
+    service_path.write_text('\n'.join(unit))
+
+
+def start_llama_server(model_path: str) -> None:
+    write_llama_server_unit(model_path)
+    subprocess.run(['systemctl', '--user', 'daemon-reload'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(['systemctl', '--user', 'enable', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(['systemctl', '--user', 'restart', 'llama-server.service'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def stop_llama_server() -> None:
+    subprocess.run(['systemctl', '--user', 'stop', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def activate_llm_provider(provider: str, config: Optional[dict] = None, model: Optional[str] = None) -> dict:
+    config = dict(config or load_config())
+    provider = str(provider or config.get('llm_provider') or '').strip().lower()
+    if provider == 'llama.cpp':
+        selected = str(model or config.get('lm_model') or '').strip()
+        if not selected:
+            discovered = discover_local_gguf_models()
+            if not discovered:
+                raise RuntimeError('No local GGUF models found for llama.cpp')
+            selected = discovered[0]
+        stop_lmstudio()
+        stop_ollama()
+        start_llama_server(selected)
+        return {'provider': provider, 'model': selected, 'base_url': provider_preset_base_url(provider), 'stopped': ['lmstudio', 'ollama'], 'started': ['llama-server.service']}
+    if provider == 'lmstudio':
+        stop_llama_server()
+        stop_ollama()
+        start_lmstudio()
+        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': provider_preset_base_url(provider), 'stopped': ['llama-server.service', 'ollama'], 'started': ['lm-studio']}
+    if provider == 'ollama':
+        stop_llama_server()
+        stop_lmstudio()
+        start_ollama()
+        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': provider_preset_base_url(provider), 'stopped': ['llama-server.service', 'lmstudio'], 'started': ['ollama']}
+    stop_llama_server()
+    stop_lmstudio()
+    stop_ollama()
+    return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': str(config.get('llm_base_url') or ''), 'stopped': ['llama-server.service', 'lmstudio', 'ollama'], 'started': []}
+
+
+class ProviderActivateRequest(BaseModel):
+    provider: str
+    model: Optional[str] = None
+
+
+def synchronize_llm_dependents(config: dict, previous: Optional[dict] = None) -> dict:
+    config = dict(config or {})
+    previous = previous or {}
+    provider = str(config.get('llm_provider') or '').strip().lower()
+    preset = provider_preset_base_url(provider)
+    prev_provider = str(previous.get('llm_provider') or '').strip().lower()
+    prev_preset = provider_preset_base_url(prev_provider)
+    prev_model = str(previous.get('lm_model') or '').strip()
+    current_model = str(config.get('lm_model') or '').strip()
+
+    if provider and provider != 'openai-compatible' and preset:
+        config['llm_base_url'] = preset
+
+    if str(config.get('stt_backend') or '').strip() == 'llm':
+        config['stt_llm_provider'] = provider or str(config.get('stt_llm_provider') or '').strip()
+        if provider != 'openai-compatible' and preset:
+            config['stt_llm_base_url'] = preset
+        elif not str(config.get('stt_llm_base_url') or '').strip():
+            config['stt_llm_base_url'] = str(config.get('llm_base_url') or '').strip()
+        if current_model:
+            config['stt_llm_model'] = current_model
+
+    agent_provider_value = str(config.get('agent_provider') or 'openai-compatible').strip().lower()
+    if agent_provider_value != 'anthropic':
+        config['agent_provider'] = 'openai-compatible'
+        if provider != 'openai-compatible' and preset:
+            config['agent_base_url'] = preset
+        elif not str(config.get('agent_base_url') or '').strip() or str(config.get('agent_base_url') or '').strip().rstrip('/') == prev_preset.rstrip('/'):
+            config['agent_base_url'] = str(config.get('llm_base_url') or '').strip()
+        agent_model = str(config.get('agent_model') or '').strip()
+        if not agent_model or agent_model == prev_model:
+            config['agent_model'] = current_model
+
+    return config
+
+
 def config_tts_base_url(config: Optional[dict] = None) -> str:
     config = config or load_config()
     explicit = str(config.get('tts_base_url') or '').strip().rstrip('/')
@@ -169,7 +398,7 @@ def config_tts_base_url(config: Optional[dict] = None) -> str:
 
 def config_llm_base_url(config: Optional[dict] = None) -> str:
     config = config or load_config()
-    return str(config.get('llm_base_url') or 'http://127.0.0.1:1234/v1').strip().rstrip('/')
+    return str(config.get('llm_base_url') or 'http://127.0.0.1:8080/v1').strip().rstrip('/')
 
 
 def config_llm_chat_url(config: Optional[dict] = None) -> str:
@@ -182,6 +411,85 @@ def config_llm_models_url(config: Optional[dict] = None) -> str:
     if base.endswith('/chat/completions'):
         base = base.rsplit('/chat/completions', 1)[0]
     return f'{base}/models'
+
+
+def config_stt_llm_provider(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    return str(config.get('stt_llm_provider') or config.get('llm_provider') or 'openai-compatible').strip()
+
+
+def config_stt_llm_base_url(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    explicit = str(config.get('stt_llm_base_url') or '').strip().rstrip('/')
+    if explicit:
+        return explicit
+    return config_llm_base_url(config)
+
+
+def config_stt_llm_chat_url(config: Optional[dict] = None) -> str:
+    base = config_stt_llm_base_url(config)
+    return base if base.endswith('/chat/completions') else f'{base}/chat/completions'
+
+
+def config_stt_llm_models_url(config: Optional[dict] = None) -> str:
+    base = config_stt_llm_base_url(config)
+    if base.endswith('/chat/completions'):
+        base = base.rsplit('/chat/completions', 1)[0]
+    return f'{base}/models'
+
+
+def config_stt_llm_api_env(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    return str(config.get('stt_llm_api_key_env') or config.get('llm_api_key_env') or '').strip()
+
+
+def config_stt_llm_model(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    explicit = str(config.get('stt_llm_model') or '').strip()
+    if explicit:
+        return explicit
+    if str(config.get('stt_llm_provider') or '').strip() or str(config.get('stt_llm_base_url') or '').strip():
+        return ''
+    return str(config.get('lm_model') or LMSTUDIO_MODEL).strip()
+
+
+def config_min_speech_ms(config: Optional[dict] = None) -> int:
+    config = config or load_config()
+    try:
+        return max(300, int(config.get('min_speech_ms') or 1200))
+    except Exception:
+        return 1200
+
+
+def config_partial_window_ms(config: Optional[dict] = None) -> int:
+    config = config or load_config()
+    try:
+        return max(400, int(config.get('partial_window_ms') or 1800))
+    except Exception:
+        return 1800
+
+
+def llm_models_for(base_url: str, api_env: str) -> list[str]:
+    base = str(base_url or '').strip().rstrip('/')
+    if not base:
+        return []
+    if base.endswith('/chat/completions'):
+        base = base.rsplit('/chat/completions', 1)[0]
+    url = f'{base}/models'
+    headers = auth_headers_from_env(api_env)
+    req = urllib.request.Request(url, headers=headers, method='GET')
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        body = json.loads(resp.read().decode('utf-8'))
+    models = []
+    for item in body.get('data', []):
+        mid = item.get('id')
+        if isinstance(mid, str) and mid.strip():
+            models.append(mid.strip())
+    if base == 'http://127.0.0.1:8080/v1':
+        for discovered in discover_local_gguf_models():
+            if discovered not in models:
+                models.append(discovered)
+    return models
 
 
 def auth_headers_from_env(env_name: str) -> dict:
@@ -209,7 +517,7 @@ def agent_provider(config: Optional[dict] = None) -> str:
 
 def agent_base_url(config: Optional[dict] = None) -> str:
     config = config or load_config()
-    return str(config.get('agent_base_url') or config.get('llm_base_url') or 'http://127.0.0.1:1234/v1').strip().rstrip('/')
+    return str(config.get('agent_base_url') or config.get('llm_base_url') or 'http://127.0.0.1:8080/v1').strip().rstrip('/')
 
 
 def agent_models_url(config: Optional[dict] = None) -> str:
@@ -572,14 +880,44 @@ def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, 
             data = np.mean(data, axis=1)
         duration = float(len(data)) / float(sr or 16000)
         if backend == 'llm':
-            result = lmstudio_transcribe_wav(wav, model=llm_model)
-            result.update({
-                'samples': int(len(data)),
-                'sample_rate': int(sr),
-                'duration': duration,
-                'partial_capable': True,
-            })
-            return result
+            config = load_config()
+            try:
+                result = lmstudio_transcribe_wav(wav, model=llm_model, base_url=config_stt_llm_chat_url(config), api_env=config_stt_llm_api_env(config))
+                result.update({
+                    'samples': int(len(data)),
+                    'sample_rate': int(sr),
+                    'duration': duration,
+                    'partial_capable': True,
+                })
+                return result
+            except RuntimeError as e:
+                detail = str(e)
+                unsupported_audio = ('input_audio' in detail or "either 'text' or 'image_url'" in detail or 'No multimodal STT model available' in detail)
+                if not unsupported_audio:
+                    raise
+                started = time.time()
+                parts, info = transcribe_wav_segments(wav, vad_filter=vad_filter, device=device, model_id=model_id)
+                elapsed = time.time() - started
+                text = ''.join(seg.text for seg in parts).strip()
+                return {
+                    'text': text,
+                    'seconds': elapsed,
+                    'samples': int(len(data)),
+                    'sample_rate': int(sr),
+                    'duration': duration,
+                    'model': model_id or config.get('stt_model') or WHISPER_MODEL_ID,
+                    'backend': 'whisper-fallback',
+                    'device': _asr_device,
+                    'requested_device': normalize_device(device, default_env=WHISPER_DEVICE),
+                    'compute_type': _asr_compute_type,
+                    'language': info.language,
+                    'language_probability': info.language_probability,
+                    'warning': detail,
+                    'segments': [
+                        {'start': seg.start, 'end': seg.end, 'text': seg.text.strip()}
+                        for seg in parts
+                    ],
+                }
 
         started = time.time()
         parts, info = transcribe_wav_segments(wav, vad_filter=vad_filter, device=device, model_id=model_id)
@@ -622,28 +960,25 @@ def convert_to_16k_wav(src: Path, dst: Path) -> None:
 
 def lmstudio_models() -> list[str]:
     config = load_config()
-    url = config_llm_models_url(config)
-    headers = auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
-    req = urllib.request.Request(url, headers=headers, method='GET')
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        body = json.loads(resp.read().decode('utf-8'))
-    models = []
-    for item in body.get('data', []):
-        mid = item.get('id')
-        if isinstance(mid, str) and mid.strip():
-            models.append(mid.strip())
-    return models
+    return llm_models_for(config_llm_base_url(config), str(config.get('llm_api_key_env') or ''))
 
 
-def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None) -> dict:
-    """Attempt audio transcription through an LM Studio multimodal/audio model.
+def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url: Optional[str] = None, api_env: Optional[str] = None) -> dict:
+    """Attempt audio transcription through a multimodal STT model endpoint.
 
-    LM Studio's OpenAI-compatible API definitely supports text/images. Audio input
+    OpenAI-compatible multimodal endpoints definitely support text/images. Audio input
     depends on the loaded model + server support, so this endpoint returns a clear
     error if the selected model rejects input_audio.
     """
     config = load_config()
-    selected_model = (model or str(config.get('lm_model') or LMSTUDIO_MODEL)).strip()
+    resolved_base_url = str(base_url or config_stt_llm_chat_url(config)).strip()
+    resolved_api_env = str(api_env or config_stt_llm_api_env(config) or '').strip()
+    selected_model = (model or config_stt_llm_model(config)).strip()
+    if not selected_model:
+        available = llm_models_for(config_stt_llm_base_url(config), resolved_api_env)
+        selected_model = available[0].strip() if available else ''
+    if not selected_model:
+        raise RuntimeError('No multimodal STT model available for the selected endpoint')
     data = wav.read_bytes()
     b64 = base64.b64encode(data).decode('ascii')
     started = time.time()
@@ -666,9 +1001,9 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None) -> dict:
         'max_tokens': 512,
         'stream': False,
     }
-    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
+    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(resolved_api_env)
     http_req = urllib.request.Request(
-        config_llm_chat_url(config),
+        resolved_base_url,
         data=json.dumps(payload).encode('utf-8'),
         headers=headers,
         method='POST',
@@ -679,14 +1014,14 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None) -> dict:
     except urllib.error.HTTPError as e:
         detail = e.read().decode('utf-8', errors='replace')
         raise RuntimeError(
-            f'LM Studio model {selected_model!r} rejected audio transcription request: HTTP {e.code}: {detail}'
+            f'Multimodal STT model {selected_model!r} rejected audio transcription request: HTTP {e.code}: {detail}'
         )
     text = (body.get('choices', [{}])[0].get('message', {}).get('content') or '').strip()
     return {
         'text': text,
         'seconds': time.time() - started,
         'model': selected_model,
-        'backend': 'lmstudio-audio',
+        'backend': 'multimodal-stt',
         'segments': [{'start': None, 'end': None, 'text': text}] if text else [],
     }
 
@@ -707,7 +1042,7 @@ def format_voice_reply(text: str) -> str:
     return '\n'.join(lines)
 
 
-def lmstudio_chat(req: ChatRequest) -> str:
+def response_llm_chat(req: ChatRequest) -> str:
     system = req.system or (
         'You are Korina, a concise real-time voice conversation assistant.\n'
         'Speak in short, natural sentences that are suitable for being heard aloud.\n'
@@ -748,14 +1083,14 @@ def lmstudio_chat(req: ChatRequest) -> str:
             body = json.loads(resp.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         detail = e.read().decode('utf-8', errors='replace')
-        raise RuntimeError(f'LM Studio HTTP {e.code}: {detail}')
+        raise RuntimeError(f'Response LLM HTTP {e.code}: {detail}')
     except Exception as e:
-        raise RuntimeError(f'LM Studio request failed: {e}')
+        raise RuntimeError(f'Response LLM request failed: {e}')
 
     try:
         return format_voice_reply(body['choices'][0]['message']['content'] or '')
     except Exception:
-        raise RuntimeError(f'Unexpected LM Studio response: {body!r}')
+        raise RuntimeError(f'Unexpected response LLM payload: {body!r}')
 
 
 def generate_agent_state_report(req: AgentStateRequest) -> str:
@@ -1006,6 +1341,7 @@ def index():
 
 @app.get('/api/health')
 def health():
+    config = load_config()
     return {
         'ok': True,
         'service': 'korina-voice-lab',
@@ -1021,10 +1357,22 @@ def health():
         'whisper_beam_size': WHISPER_BEAM_SIZE,
         'whisper_cpu_threads': WHISPER_CPU_THREADS,
         'partial_min_seconds': PARTIAL_MIN_SECONDS,
+        'min_speech_ms': config_min_speech_ms(config),
+        'partial_window_ms': config_partial_window_ms(config),
         'cuda': torch.cuda.is_available(),
-        'lmstudio_url': config_llm_chat_url(),
-        'lmstudio_model': str(load_config().get('lm_model') or LMSTUDIO_MODEL),
-        'tts_base_url': config_tts_base_url(),
+        'response_llm_provider': str(config.get('llm_provider') or 'llama.cpp'),
+        'response_llm_base_url': config_llm_base_url(config),
+        'response_llm_chat_url': config_llm_chat_url(config),
+        'response_llm_model': str(config.get('lm_model') or LMSTUDIO_MODEL),
+        'agent_provider': agent_provider(config),
+        'agent_base_url': agent_base_url(config),
+        'agent_chat_url': agent_chat_url(config),
+        'agent_model': str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
+        'multimodal_stt_provider': config_stt_llm_provider(config),
+        'multimodal_stt_base_url': config_stt_llm_base_url(config),
+        'multimodal_stt_chat_url': config_stt_llm_chat_url(config),
+        'multimodal_stt_model': config_stt_llm_model(config),
+        'tts_base_url': config_tts_base_url(config),
         'ack_count': len(ack_files_for(_ack_current_voice)),
         'ack_status': ack_status(_ack_current_voice),
     }
@@ -1038,27 +1386,70 @@ def get_config():
 @app.post('/api/config')
 def update_config(payload: dict):
     current = load_config()
+    previous = dict(current)
     if isinstance(payload, dict):
         for key, value in payload.items():
             if key in CONFIG_KEYS:
                 current[key] = value
+    current = synchronize_llm_dependents(current, previous)
     return save_config(current)
 
 
 @app.get('/api/models')
-def models():
-    lm_error = None
-    lm_models = []
+def models(llm_base_url: Optional[str] = Query(None), llm_api_key_env: Optional[str] = Query(None), stt_llm_base_url: Optional[str] = Query(None), stt_llm_api_key_env: Optional[str] = Query(None)):
+    config = load_config()
+    llm_base = str(llm_base_url or config_llm_base_url(config)).strip().rstrip('/')
+    llm_api_env_name = str(llm_api_key_env or config.get('llm_api_key_env') or '').strip()
+    stt_base = str(stt_llm_base_url or config_stt_llm_base_url(config)).strip().rstrip('/')
+    stt_api_env_name = str(stt_llm_api_key_env or config_stt_llm_api_env(config) or '').strip()
+    llm_error = None
+    llm_models = []
+    stt_llm_error = None
+    stt_llm_models = []
     try:
-        lm_models = lmstudio_models()
+        llm_models = llm_models_for(llm_base, llm_api_env_name)
     except Exception as e:
-        lm_error = str(e)
+        llm_error = str(e)
+    try:
+        stt_llm_models = llm_models_for(stt_base, stt_api_env_name)
+    except Exception as e:
+        stt_llm_error = str(e)
     return {
         'whisper_models': WHISPER_MODEL_CHOICES,
-        'lmstudio_models': lm_models,
-        'lmstudio_default': LMSTUDIO_MODEL,
-        'lmstudio_error': lm_error,
+        'llm_models': llm_models,
+        'llm_default': str(config.get('lm_model') or LMSTUDIO_MODEL),
+        'llm_base_url': llm_base,
+        'llm_error': llm_error,
+        'stt_llm_models': stt_llm_models,
+        'stt_llm_default': config_stt_llm_model(config),
+        'stt_llm_base_url': stt_base,
+        'stt_llm_error': stt_llm_error,
+        'llama_cpp_local_models': discover_local_gguf_models(),
+        'lmstudio_catalog_models': discover_lmstudio_catalog_models(),
+        'labels': {mid: display_model_label(mid) for mid in list(dict.fromkeys(llm_models + stt_llm_models + discover_local_gguf_models()))},
     }
+
+
+@app.post('/api/llm/provider/activate')
+def activate_provider(req: ProviderActivateRequest):
+    config = load_config()
+    provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip()
+    current = dict(config)
+    current['llm_provider'] = provider
+    preset = provider_preset_base_url(provider)
+    if provider == 'openai-compatible':
+        current['llm_base_url'] = str(config.get('llm_base_url') or current.get('llm_base_url') or '').strip()
+    elif preset:
+        current['llm_base_url'] = preset
+    if req.model:
+        current['lm_model'] = str(req.model).strip()
+    current = synchronize_llm_dependents(current, config)
+    saved = save_config(current)
+    try:
+        result = activate_llm_provider(provider, saved, model=req.model)
+        return {'ok': True, 'saved': saved, 'activation': result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get('/api/acks')
@@ -1203,7 +1594,7 @@ async def transcribe_stream(audio: UploadFile = File(...), device: Optional[str]
                     data = np.mean(data, axis=1)
                 yield sse_event('status', {'message': 'transcribing', 'samples': int(len(data)), 'sample_rate': int(sr), 'backend': backend})
                 if backend == 'llm':
-                    result = lmstudio_transcribe_wav(wav, model=llm_model)
+                    result = lmstudio_transcribe_wav(wav, model=llm_model, base_url=config_stt_llm_chat_url(load_config()), api_env=config_stt_llm_api_env(load_config()))
                     text = result.get('text', '')
                     if text:
                         yield sse_event('segment', {'start': None, 'end': None, 'text': text, 'index': 1})
@@ -1214,7 +1605,7 @@ async def transcribe_stream(audio: UploadFile = File(...), device: Optional[str]
                         'samples': int(len(data)),
                         'sample_rate': int(sr),
                         'model': llm_model or LMSTUDIO_MODEL,
-                        'backend': 'lmstudio-audio',
+                        'backend': 'multimodal-stt',
                         'segments': 1 if text else 0,
                     })
                     return
@@ -1258,7 +1649,7 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=400, detail='No message provided')
     started = time.time()
     try:
-        reply = lmstudio_chat(req)
+        reply = response_llm_chat(req)
         return JSONResponse({
             'reply': reply,
             'seconds': time.time() - started,
