@@ -50,6 +50,8 @@ LLAMA_SERVER_MEDIA_PATH = os.environ.get('KORINA_LLAMA_SERVER_MEDIA_PATH', '/hom
 LLAMA_SERVER_USER_UNIT = Path(os.environ.get('KORINA_LLAMA_SERVER_USER_UNIT', '/home/roggoz/.config/systemd/user/llama-server.service'))
 
 app = FastAPI(title='Korina Voice Lab: Built-in Whisper, multimodal STT, llama.cpp, and Kokoro')
+# Backwards-compat alias used by the in-progress EventBus state-report endpoints
+korina_app = app
 app.add_middleware(
     CORSMiddleware,
     allow_origins=['*'],
