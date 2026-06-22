@@ -31,7 +31,7 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
 - `korina_voice_lab.py` — FastAPI server: STT endpoints, chat proxy, settings/config API.
 - `kokoro-streaming-server.py` — Kokoro TTS server: SSE streaming, buffered WAV fallback.
 - `Korina/index.html` — Browser UI: live VAD, partial transcription queue, settings modal, Web Audio playback.
-- `Korina/config.json` — persisted test-site settings.
+- `Korina/config.json` — runtime test-site settings (gitignored). The tracked example is at `Korina/config/config.example.json`.
 - `Korina/start.sh` / `stop.sh` — Service lifecycle.
 - `Korina/Ack/ack_phrases.json` — tagged acknowledgement phrase manifest. Generated WAVs are cache files and are ignored by git.
 
@@ -79,7 +79,8 @@ POST /api/config
 The backing file is:
 
 ```text
-Korina/config.json
+Korina/config/config.example.json   # tracked, ships with the repo
+Korina/config.json                  # runtime, gitignored, written by the UI
 ```
 
 Persisted settings include voice, speed, STT backend/model/device, LLM model/base URL, TTS provider/port/base URL/model, endpointing mode, silence duration, final STT mode, and idle ack cadence.
@@ -90,7 +91,7 @@ For local TTS, leave `tts_base_url` blank and set `tts_port` (default `8880`). T
 ${location.protocol}//${location.hostname}:${tts_port}
 ```
 
-For custom or cloud-compatible endpoints, set the full base URL in the settings modal. API keys are not stored directly in the UI; config stores optional env-var names such as `llm_api_key_env` / `stt_api_key_env` so the server can read secrets from the environment.
+For custom or cloud-compatible endpoints, set the full base URL in the settings modal. For cloud and OpenAI-compatible endpoints, the preferred path is config-stored env-var names such as `llm_api_key_env` / `stt_api_key_env` / `stt_llm_api_key_env` so the server reads secrets from the environment. As a local-dev/test convenience only, `Korina/config.json` may also contain an optional `agent_api_key`; do not use this field in production.
 
 ## STT backends
 
