@@ -184,7 +184,7 @@ const EventBus={
   config:{
     agent_enabled:'off',agent_first_delivery_mode:'first_turn_or_timer',
     agent_first_delivery_seconds:20,agent_periodic_delivery_turns:2,
-    agent_periodic_delivery_seconds:45,agent_busy_delivery_mode:'steer',
+    agent_periodic_delivery_seconds:45,agent_busy_delivery_mode:'injection',
     agent_idle_delivery_mode:'prompt',agent_interrupts_enabled:'on',
     agent_interrupt_min_priority:'important',agent_hard_interrupt_min_priority:'critical',
     agent_permission_interrupts:'on',agent_report_injection_mode:'next_reply',
@@ -262,8 +262,8 @@ const EventBus={
   },
   _processPendingReports(){
     if(!this.agentTaskState)return;
-    window._pendingSteer=this.agentTaskState.text||'';
-    window._pendingSteerPriority=this.agentTaskState.priority||'normal';
+    window._pendingInjection=this.agentTaskState.text||'';
+    window._pendingInjectionPriority=this.agentTaskState.priority||'normal';
     this.pendingReports=[];
   },
   _processInterrupts(){
@@ -295,14 +295,14 @@ const EventBus={
     if(typeof stopSpeaking==='function')stopSpeaking();
     if(typeof speakText==='function')speakText(data.message||'Important update from Korina Agent.',{interrupt:true});
   },
-  _injectIntoNextReply(data){window._pendingSteer=(window._pendingSteer||'')+' '+(data.message||'');},
+  _injectIntoNextReply(data){window._pendingInjection=(window._pendingInjection||'')+' '+(data.message||'');},
   _priorityLevel(p){return{low:0,normal:1,important:2,critical:3}[p]||1;},
   resetDelivery(){this.turnsSinceLastDelivery=0;this.lastPeriodicDeliveryAt=Date.now();},
   reset(){
     this.pendingDeltas=[];this.pendingReports=[];this.pendingInterrupts=[];this.permissionQueue=[];
     this.transcriptHistory=[];this.agentTaskState=null;this.turnsSinceLastDelivery=0;this.firstDeliveryDone=false;
     if(this.firstDeliveryTimer)clearTimeout(this.firstDeliveryTimer);
-    window._pendingSteer='';window._pendingSentenceInterrupt=null;window._pendingPermissionAnswer=null;
+    window._pendingInjection='';window._pendingSentenceInterrupt=null;window._pendingPermissionAnswer=null;
   },
   updateConfig(cfg){Object.assign(this.config,cfg);}
 };
@@ -881,8 +881,10 @@ async function askLM(message){
   const r=await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:stripTranscriptLabels(injection+message),history:cleanHistoryForModel(),max_tokens:180,temperature:0.7,model:lmModel(),reasoning:llmReasoningEnabled()})});
   const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); return j.reply||'';
 }
-async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:stripTranscriptLabels(message)}); const systemExtra=window._pendingSteer ? "\n/steer " + window._pendingSteer : "";
-  window._pendingSteer="";
+async function askAndSpeak(message, context=''){ log('You',message); if(await handlePermissionAnswerIfAny(message)) return; history.push({role:'user',content:stripTranscriptLabels(message)}); // /steer is the kept LLM-prompt contract (renamed variable above; the literal
+// sent to the LLM is /steer for stability with the existing prompt convention).
+const systemExtra=window._pendingInjection ? "\n/steer " + window._pendingInjection : "";
+  window._pendingInjection="";
   const lmMessage=context ? `${stripTranscriptLabels(context)}${systemExtra}\n\nThe user now says: ${stripTranscriptLabels(message)}` : stripTranscriptLabels(message); EventBus.emit("ConversationTurnComplete",{role:"user",text:message,ts:Date.now()});
 
     const reply=stripTranscriptLabels(await askLM(lmMessage)); let displayReply=reply;
