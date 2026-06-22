@@ -179,7 +179,7 @@ def save_config(config: dict) -> dict:
     merged = dict(DEFAULT_CONFIG)
     for key, value in (config or {}).items():
         if key in CONFIG_KEYS:
-            merged[key] = value
+            merged[key] = _normalize_config_value(key, value)
     tmp = CONFIG_PATH.with_suffix('.tmp.json')
     tmp.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
     tmp.replace(CONFIG_PATH)
@@ -214,9 +214,16 @@ def display_model_label(model_id: str) -> str:
     return text
 
 
+def local_model_roots() -> list[Path]:
+    roots = list(LOCAL_MODEL_ROOTS)
+    if LMSTUDIO_HUB_ROOT not in roots:
+        roots.append(LMSTUDIO_HUB_ROOT)
+    return roots
+
+
 def discover_local_gguf_models() -> list[str]:
     found: set[str] = set()
-    for root in LOCAL_MODEL_ROOTS:
+    for root in local_model_roots():
         if not root.exists():
             continue
         for path in root.rglob('*.gguf'):
@@ -1462,12 +1469,14 @@ def update_config(payload: dict):
     try:
         llm_provider_now = str(saved.get('llm_provider') or '').strip().lower()
         llm_provider_before = str(previous.get('llm_provider') or '').strip().lower()
-        if llm_provider_now == 'llama.cpp' and (
+        if llm_provider_now in {'llama.cpp', 'lmstudio', 'ollama'} and (
             str(saved.get('lm_model') or '') != str(previous.get('lm_model') or '')
             or config_llm_reasoning(saved) != config_llm_reasoning(previous)
-            or llm_provider_before != 'llama.cpp'
+            or llm_provider_before != llm_provider_now
         ):
-            activate_llm_provider('llama.cpp', saved, model=str(saved.get('lm_model') or ''))
+            activate_llm_provider(llm_provider_now, saved, model=str(saved.get('lm_model') or ''))
+        elif llm_provider_before in {'llama.cpp', 'lmstudio', 'ollama'} and llm_provider_now == 'openai-compatible':
+            activate_llm_provider('openai-compatible', saved, model=str(saved.get('lm_model') or ''))
     except Exception:
         pass
     return saved

@@ -343,10 +343,10 @@ function applyConfig(c={}){
   if($('sttLlmReasoningEnabled')) $('sttLlmReasoningEnabled').checked=String(c.stt_llm_reasoning||'off')==='on';
   if($('sttLlmModel')){
     const sttModelValue = c.stt_llm_model!==undefined ? c.stt_llm_model : '';
-    if(sttModelValue && !$('sttLlmModel').querySelector(`option[value="${CSS.escape(sttModelValue)}"]`)){ const o=document.createElement('option'); o.value=sttModelValue; o.textContent=sttModelValue; $('sttLlmModel').appendChild(o); }
+    if(sttModelValue && !$('sttLlmModel').querySelector(`option[value="${CSS.escape(sttModelValue)}"]`)){ const o=document.createElement('option'); o.value=sttModelValue; o.textContent=prettyModelLabel(sttModelValue); $('sttLlmModel').appendChild(o); }
     $('sttLlmModel').value=sttModelValue||'';
   }
-  if(c.lm_model && $('lmModel')) $('lmModel').value=c.lm_model;
+  if(c.lm_model && $('lmModel')){ if(!$('lmModel').querySelector(`option[value="${CSS.escape(c.lm_model)}"]`)){ const o=document.createElement('option'); o.value=c.lm_model; o.textContent=prettyModelLabel(c.lm_model); $('lmModel').appendChild(o); } $('lmModel').value=c.lm_model; }
   if(c.tts_device && $('ttsDevice')) $('ttsDevice').value=c.tts_device;
   if(c.tts_provider && $('ttsProvider')) $('ttsProvider').value=c.tts_provider;
   if(c.tts_port && $('ttsPort')) $('ttsPort').value=c.tts_port;
@@ -364,7 +364,7 @@ function applyConfig(c={}){
   if(c.agent_base_url!==undefined && $('agentBaseUrl')) $('agentBaseUrl').value=c.agent_base_url||'';
   if(c.agent_api_key!==undefined && $('agentApiKey')) $('agentApiKey').value=c.agent_api_key||'';
   if(c.agent_model!==undefined && $('agentModel')) {
-    if(c.agent_model && !$('agentModel').querySelector(`option[value="${CSS.escape(c.agent_model)}"]`)){ const o=document.createElement('option'); o.value=c.agent_model; o.textContent=c.agent_model; $('agentModel').appendChild(o); }
+    if(c.agent_model && !$('agentModel').querySelector(`option[value="${CSS.escape(c.agent_model)}"]`)){ const o=document.createElement('option'); o.value=c.agent_model; o.textContent=prettyModelLabel(c.agent_model); $('agentModel').appendChild(o); }
     $('agentModel').value=c.agent_model||'';
   }
   if(c.agent_max_turns && $('agentMaxTurns')) $('agentMaxTurns').value=c.agent_max_turns;
@@ -502,7 +502,7 @@ async function loadAgentModelOptions(){
     if($('agentModel')){
       $('agentModel').innerHTML='';
       const blank=document.createElement('option'); blank.value=''; blank.textContent='Use Korina Converse model'; $('agentModel').appendChild(blank);
-      for(const m of (j.models||[])){ const o=document.createElement('option'); o.value=m; o.textContent=m; $('agentModel').appendChild(o); }
+      for(const m of (j.models||[])){ const o=document.createElement('option'); o.value=m; o.textContent=prettyModelLabel(m); $('agentModel').appendChild(o); }
       $('agentModel').value=[...$('agentModel').options].some(o=>o.value===current)?current:'';
     }
     $('settingsInfo').textContent=`Loaded ${(j.models||[]).length} Korina Agent models from ${j.provider}. ${j.error?('Error: '+j.error):''}`;
