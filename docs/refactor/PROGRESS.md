@@ -4,13 +4,13 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as you complete ea
 
 ## Phase 0 — Stabilization
 
-- [ ] 0.1 barge-in thresholds
-- [ ] 0.2 injection migration
-- [ ] 0.3 config role split
-- [ ] 0.4 agent_api_key docs
-- [ ] 0.5 secrets contract
-- [ ] 0.6 display label for agent
-- [ ] 0.7 verify on roggoz
+- [x] 0.1 barge-in thresholds
+- [x] 0.2 injection migration
+- [x] 0.3 config role split
+- [x] 0.4 agent_api_key docs
+- [x] 0.5 secrets contract
+- [x] 0.6 display label for agent
+- [x] 0.7 verify on roggoz
 
 ## Phase 1 — Backend modularization
 
