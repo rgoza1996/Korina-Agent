@@ -1761,6 +1761,54 @@ def chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+# ============================================================
+# Korina Agent: State Report + Permission Answer Endpoints
+# ============================================================
+
+@korina_app.post("/api/agent/state-report")
+async def agent_state_report(request: Request):
+    """
+    Receives transcript deltas/turns from Korina Converse.
+    Returns state_report, interrupt, and/or permission_request.
+    """
+    body = await request.json()
+    cfg = load_config()
+    agent_cfg = {
+        'enabled': cfg.get('agent_enabled') == 'on',
+        'model': cfg.get('agent_model', ''),
+        'base_url': cfg.get('agent_base_url', ''),
+        'api_key_env': cfg.get('agent_api_key_env', 'OPENAI_API_KEY'),
+    }
+
+    # TODO: wire up to Korina Agent Alpha here
+    # For now, return empty responses — Agent not yet connected
+    return {
+        "state_report": None,
+        "interrupt": None,
+        "permission_request": None,
+        "debug": {
+            "turns_received": len(body.get('turns', [])),
+            "trigger": body.get('trigger', '?'),
+            "agent_enabled": agent_cfg['enabled'],
+        }
+    }
+
+
+@korina_app.post("/api/agent/permission-answer")
+async def agent_permission_answer(request: Request):
+    """
+    Receives the user's answer to a permission question.
+    Routes it back to Korina Agent.
+    """
+    body = await request.json()
+    request_id = body.get('request_id', 'unknown')
+    answer = body.get('answer', 'no')
+    # TODO: wire up to Korina Agent
+    print(f"[Korina Agent] Permission answer: {request_id} -> {answer}")
+    return {"ok": True, "request_id": request_id, "answer": answer}
+
 if __name__ == '__main__':
     import uvicorn
     uvicorn.run(app, host='0.0.0.0', port=8001)
