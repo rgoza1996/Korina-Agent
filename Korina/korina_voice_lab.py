@@ -328,11 +328,26 @@ def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> N
     service_path.write_text('\n'.join(unit))
 
 
+def wait_for_llama_server_ready(timeout_seconds: float = 90.0) -> None:
+    deadline = time.time() + timeout_seconds
+    last_error = ''
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:8080/v1/models', timeout=2) as resp:
+                if resp.status == 200:
+                    return
+        except Exception as e:
+            last_error = str(e)
+        time.sleep(0.5)
+    raise RuntimeError(f'llama-server did not become ready within {timeout_seconds:.0f}s: {last_error}')
+
+
 def start_llama_server(model_path: str, config: Optional[dict] = None) -> None:
     write_llama_server_unit(model_path, config=config)
     subprocess.run(['systemctl', '--user', 'daemon-reload'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(['systemctl', '--user', 'enable', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(['systemctl', '--user', 'restart', 'llama-server.service'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    wait_for_llama_server_ready()
 
 
 def stop_llama_server() -> None:
