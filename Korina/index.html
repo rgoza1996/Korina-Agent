@@ -1109,7 +1109,7 @@ function startBargeInCapture(){
 function monitorBargeIn(){
   if(!live || !ttsSpeaking || handlingBarge) return;
   const level=rmsLevel(); const now=performance.now();
-  if(level>SPEECH_THRESHOLD){
+  if(level>vadSpeechThreshold){
     if(!bargeSpeechStart) bargeSpeechStart=now;
     if(now-bargeSpeechStart>220){
       handlingBarge=true;
@@ -1120,7 +1120,7 @@ function monitorBargeIn(){
       monitorBargeSpeechEnd();
       return;
     }
-  } else if(level<SILENCE_THRESHOLD) {
+  } else if(level<vadSilenceThreshold) {
     bargeSpeechStart=0;
   }
   bargeLoopId=requestAnimationFrame(monitorBargeIn);
@@ -1128,8 +1128,8 @@ function monitorBargeIn(){
 function monitorBargeSpeechEnd(){
   if(!live || !handlingBarge) return;
   const level=rmsLevel(); const now=performance.now();
-  if(level>SPEECH_THRESHOLD){ bargeSilenceStart=0; }
-  else if(level<SILENCE_THRESHOLD){
+  if(level>vadSpeechThreshold){ bargeSilenceStart=0; }
+  else if(level<vadSilenceThreshold){
     if(!bargeSilenceStart) bargeSilenceStart=now;
     if(now-bargeSilenceStart>endSilenceMs){
       status($('sttStatus'),'Interruption finished. Transcribing…','warn');
