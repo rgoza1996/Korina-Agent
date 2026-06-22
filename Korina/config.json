@@ -4,7 +4,7 @@
   "agent_auto_compact": "on",
   "agent_base_url": "http://127.0.0.1:8080/v1",
   "agent_block_images": "off",
-  "agent_busy_delivery_mode": "steer",
+  "agent_busy_delivery_mode": "injection",
   "agent_compaction_keep_recent_tokens": 20000,
   "agent_compaction_reserve_tokens": 16384,
   "agent_enable_skill_commands": "on",

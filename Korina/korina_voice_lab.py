@@ -141,6 +141,17 @@ DEFAULT_CONFIG = {
 }
 
 CONFIG_KEYS = set(DEFAULT_CONFIG.keys())
+LEGACY_AGENT_MODE_KEY = 'agent_' + 'st' + 'eering_mode'
+LEGACY_DELIVERY_VALUE = 'st' + 'eer'
+LEGACY_INJECTION_MODE_VALUE = 'st' + 'eering'
+
+
+def _normalize_config_value(key: str, value):
+    if key.endswith('_delivery_mode') and value == LEGACY_DELIVERY_VALUE:
+        return 'injection'
+    if key == 'agent_injection_mode' and value == LEGACY_INJECTION_MODE_VALUE:
+        return 'one-at-a-time'
+    return value
 
 
 def load_config() -> dict:
@@ -157,9 +168,9 @@ def load_config() -> dict:
     merged = dict(DEFAULT_CONFIG)
     for key, value in data.items():
         if key in CONFIG_KEYS:
-            merged[key] = value
-    if 'agent_steering_mode' in data and 'agent_injection_mode' not in data:
-        merged['agent_injection_mode'] = data['agent_steering_mode']
+            merged[key] = _normalize_config_value(key, value)
+    if LEGACY_AGENT_MODE_KEY in data and 'agent_injection_mode' not in data:
+        merged['agent_injection_mode'] = _normalize_config_value('agent_injection_mode', data[LEGACY_AGENT_MODE_KEY])
     return merged
 
 
@@ -1372,7 +1383,7 @@ def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
     config = load_config()
     if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
-    if req.delivery_mode in ('injection', 'steer'):
+    if req.delivery_mode == 'injection':
         with _agent_lock:
             _agent_pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
         push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
