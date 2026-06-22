@@ -24,30 +24,17 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-_KORINA_REPO_ROOT = Path(__file__).resolve().parent
-_DEFAULT_APP_DIR = '/home/roggoz/Korina'
-APP_DIR = Path(os.environ.get('KORINA_APP_DIR', _DEFAULT_APP_DIR if (Path(_DEFAULT_APP_DIR) / 'index.html').exists() else str(_KORINA_REPO_ROOT)))
-INDEX_PATH = APP_DIR / 'index.html'
-ACK_DIR = APP_DIR / 'Ack'
-ACK_PHRASES_PATH = ACK_DIR / 'ack_phrases.json'
-CONFIG_PATH = APP_DIR / 'config.json'
-KOKORO_URL = os.environ.get('KOKORO_URL', 'http://127.0.0.1:8880')
-ACK_DEFAULT_VOICE = os.environ.get('ACK_DEFAULT_VOICE', 'af_heart')
-WHISPER_MODEL_ID = os.environ.get('WHISPER_MODEL_ID', 'turbo')
-WHISPER_DEVICE = os.environ.get('WHISPER_DEVICE')
-WHISPER_COMPUTE_TYPE = os.environ.get('WHISPER_COMPUTE_TYPE')
-WHISPER_CPU_THREADS = int(os.environ.get('WHISPER_CPU_THREADS', '4'))
-WHISPER_BEAM_SIZE = int(os.environ.get('WHISPER_BEAM_SIZE', '1'))
-PARTIAL_MIN_SECONDS = float(os.environ.get('PARTIAL_MIN_SECONDS', '0.6'))
-LMSTUDIO_URL = os.environ.get('LMSTUDIO_URL', 'http://127.0.0.1:8080/v1/chat/completions')
-LMSTUDIO_MODEL = os.environ.get('LMSTUDIO_MODEL', '/home/roggoz/Disks/SN750/models/google/gemma-4-E2B-it-qat-q4_0-gguf/gemma-4-E2B_q4_0-it.gguf')
-WHISPER_MODEL_CHOICES = ['tiny.en', 'base.en', 'small.en', 'turbo', 'distil-large-v3']
-LOCAL_MODEL_ROOTS = [Path(p) for p in os.environ.get('KORINA_LOCAL_MODEL_ROOTS', '/home/roggoz/Disks/SN750/models').split(os.pathsep) if p.strip()]
-LMSTUDIO_HUB_ROOT = Path(os.environ.get('KORINA_LMSTUDIO_HUB_ROOT', '/home/roggoz/.lmstudio/hub/models'))
-LLAMA_SERVER_BIN = Path(os.environ.get('KORINA_LLAMA_SERVER_BIN', '/home/roggoz/Disks/SN750/llama.cpp/build/bin/llama-server'))
-LMSTUDIO_BIN = Path(os.environ.get('KORINA_LMSTUDIO_BIN', '/opt/LM-Studio/lm-studio'))
-LLAMA_SERVER_MEDIA_PATH = os.environ.get('KORINA_LLAMA_SERVER_MEDIA_PATH', '/home/roggoz/Disks/SN750')
-LLAMA_SERVER_USER_UNIT = Path(os.environ.get('KORINA_LLAMA_SERVER_USER_UNIT', '/home/roggoz/.config/systemd/user/llama-server.service'))
+# Paths and env defaults moved to korina/util/paths.py (Phase 1.2)
+from korina.util.paths import (
+    APP_DIR, INDEX_PATH, ACK_DIR, ACK_PHRASES_PATH, CONFIG_PATH,
+    KOKORO_URL, ACK_DEFAULT_VOICE,
+    WHISPER_MODEL_ID, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE,
+    WHISPER_CPU_THREADS, WHISPER_BEAM_SIZE,
+    PARTIAL_MIN_SECONDS, LMSTUDIO_URL, LMSTUDIO_MODEL,
+    WHISPER_MODEL_CHOICES, LOCAL_MODEL_ROOTS, LMSTUDIO_HUB_ROOT,
+    LLAMA_SERVER_BIN, LMSTUDIO_BIN, LLAMA_SERVER_MEDIA_PATH,
+    LLAMA_SERVER_USER_UNIT,
+)
 
 app = FastAPI(title='Korina Voice Lab: Built-in Whisper, multimodal STT, llama.cpp, and Kokoro')
 # Backwards-compat alias used by the in-progress EventBus state-report endpoints
@@ -71,166 +58,27 @@ _asr_compute_type: Optional[str] = None
 
 
 
-DEFAULT_CONFIG = {
-    'voice': ACK_DEFAULT_VOICE,
-    'speed': 1.0,
-    'mode': 'sse',
-    'ack_enabled': 'on',
-    'stt_backend': 'whisper',
-    'stt_device': 'cpu',
-    'stt_model': 'base.en',
-    'stt_llm_provider': '',
-    'stt_llm_base_url': '',
-    'stt_llm_api_key_env': '',
-    'stt_llm_model': '',
-    'stt_llm_reasoning': 'off',
-    'lm_model': LMSTUDIO_MODEL,
-    'tts_device': 'cpu',
-    'tts_provider': 'kokoro',
-    'tts_port': 8880,
-    'tts_base_url': '',
-    'tts_model': 'kokoro',
-    'llm_provider': 'llama.cpp',
-    'llm_base_url': 'http://127.0.0.1:8080/v1',
-    'llm_api_key_env': '',
-    'llm_reasoning': 'off',
-    'stt_cloud_provider': '',
-    'stt_cloud_base_url': '',
-    'stt_cloud_model': '',
-    'stt_api_key_env': '',
-    'agent_enabled': 'on',
-    'agent_provider': 'openai-compatible',
-    'agent_base_url': 'http://127.0.0.1:8080/v1',
-    'agent_api_key': '',
-    'agent_model': '',
-    'agent_max_turns': 16,
-    'agent_max_tokens': 512,
-    'agent_yolo_mode': 'off',
-    'agent_project_trust': 'ask',
-    'agent_injection_mode': 'one-at-a-time',
-    'agent_follow_up_mode': 'one-at-a-time',
-    'agent_thinking_level': 'low',
-    'agent_auto_compact': 'on',
-    'agent_compaction_reserve_tokens': 16384,
-    'agent_compaction_keep_recent_tokens': 20000,
-    'agent_hide_thinking': 'on',
-    'agent_transport': 'auto',
-    'agent_retry_enabled': 'on',
-    'agent_max_retries': 3,
-    'agent_retry_base_delay_ms': 2000,
-    'agent_http_idle_timeout_ms': 0,
-    'agent_enable_skill_commands': 'on',
-    'agent_block_images': 'off',
-    'agent_first_delivery_mode': 'first_turn_or_timer',
-    'agent_first_delivery_seconds': 20,
-    'agent_periodic_delivery_turns': 2,
-    'agent_periodic_delivery_seconds': 45,
-    'agent_busy_delivery_mode': 'injection',
-    'agent_idle_delivery_mode': 'prompt',
-    'agent_interrupts_enabled': 'on',
-    'agent_interrupt_min_priority': 'important',
-    'agent_hard_interrupt_min_priority': 'critical',
-    'agent_interrupt_cooldown_padding_ms': 3000,
-    'agent_permission_interrupts': 'on',
-    'agent_report_injection_mode': 'next_reply',
-    'endpoint_mode': 'reading',
-    'silence_ms': 3200,
-    'final_stt_mode': 'chunks',
-    'min_speech_ms': 1200,
-    'partial_window_ms': 1800,
-    'idle_ack_initial_ms': 5000,
-    'idle_ack_step_ms': 5000,
-}
-
-CONFIG_KEYS = set(DEFAULT_CONFIG.keys())
-LEGACY_AGENT_MODE_KEY = 'agent_' + 'st' + 'eering_mode'
-LEGACY_DELIVERY_VALUE = 'st' + 'eer'
-LEGACY_INJECTION_MODE_VALUE = 'st' + 'eering'
-
-
-def _normalize_config_value(key: str, value):
-    if key.endswith('_delivery_mode') and value == LEGACY_DELIVERY_VALUE:
-        return 'injection'
-    if key == 'agent_injection_mode' and value == LEGACY_INJECTION_MODE_VALUE:
-        return 'one-at-a-time'
-    return value
-
-
-def _config_example_path() -> Path:
-    return APP_DIR / 'config' / 'config.example.json'
-
-
-def load_config() -> dict:
-    APP_DIR.mkdir(parents=True, exist_ok=True)
-    if not CONFIG_PATH.exists():
-        example = _config_example_path()
-        if example.exists():
-            try:
-                seed = json.loads(example.read_text())
-                if isinstance(seed, dict):
-                    merged_seed = dict(DEFAULT_CONFIG)
-                    for key, value in seed.items():
-                        if key in CONFIG_KEYS:
-                            merged_seed[key] = _normalize_config_value(key, value)
-                    save_config(merged_seed)
-                    return merged_seed
-            except Exception:
-                pass
-        save_config(DEFAULT_CONFIG)
-        return dict(DEFAULT_CONFIG)
-    try:
-        data = json.loads(CONFIG_PATH.read_text())
-        if not isinstance(data, dict):
-            data = {}
-    except Exception:
-        data = {}
-    merged = dict(DEFAULT_CONFIG)
-    for key, value in data.items():
-        if key in CONFIG_KEYS:
-            merged[key] = _normalize_config_value(key, value)
-    if LEGACY_AGENT_MODE_KEY in data and 'agent_injection_mode' not in data:
-        merged['agent_injection_mode'] = _normalize_config_value('agent_injection_mode', data[LEGACY_AGENT_MODE_KEY])
-    return merged
-
-
-def save_config(config: dict) -> dict:
-    APP_DIR.mkdir(parents=True, exist_ok=True)
-    merged = dict(DEFAULT_CONFIG)
-    for key, value in (config or {}).items():
-        if key in CONFIG_KEYS:
-            merged[key] = _normalize_config_value(key, value)
-    tmp = CONFIG_PATH.with_suffix('.tmp.json')
-    tmp.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
-    tmp.replace(CONFIG_PATH)
-    return merged
+# Config bootstrapping and helpers moved to korina/config.py (Phase 1.2)
+from korina.config import (
+    DEFAULT_CONFIG, CONFIG_KEYS,
+    LEGACY_AGENT_MODE_KEY, LEGACY_DELIVERY_VALUE, LEGACY_INJECTION_MODE_VALUE,
+    _normalize_config_value, _config_example_path,
+    load_config, save_config,
+    provider_preset_base_url, is_local_provider_base_url, display_model_label,
+    synchronize_llm_dependents,
+    config_tts_base_url, config_llm_base_url, config_llm_chat_url, config_llm_models_url,
+    config_stt_llm_provider, config_stt_llm_base_url, config_stt_llm_chat_url, config_stt_llm_models_url,
+    config_stt_llm_api_env, config_stt_llm_model,
+    config_min_speech_ms, config_partial_window_ms,
+    config_llm_reasoning, config_stt_llm_reasoning,
+    auth_headers_from_env, api_key_from_config,
+    agent_provider, agent_base_url, agent_models_url, agent_chat_url, agent_auth_headers,
+    parse_model_ids, agent_model_choices,
+    llm_models_for,
+)
 
 
 
-def provider_preset_base_url(provider: str) -> str:
-    provider = str(provider or '').strip().lower()
-    return {
-        'llama.cpp': 'http://127.0.0.1:8080/v1',
-        'lmstudio': 'http://127.0.0.1:1234/v1',
-        'ollama': 'http://127.0.0.1:11434/v1',
-    }.get(provider, '')
-
-
-def is_local_provider_base_url(base_url: str, provider: str = '') -> bool:
-    base = str(base_url or '').strip().rstrip('/')
-    provider = str(provider or '').strip().lower()
-    if provider in {'llama.cpp', 'lmstudio', 'ollama'}:
-        return True
-    return base in {'http://127.0.0.1:8080/v1', 'http://127.0.0.1:1234/v1', 'http://127.0.0.1:11434/v1'}
-
-
-def display_model_label(model_id: str) -> str:
-    text = str(model_id or '').strip()
-    if not text:
-        return ''
-    if '/' in text or text.endswith('.gguf'):
-        p = Path(text)
-        return f'{p.name} — {p.parent.name}' if p.parent.name else p.name
-    return text
 
 
 def local_model_roots() -> list[Path]:
@@ -445,229 +293,8 @@ class ProviderActivateRequest(BaseModel):
     model: Optional[str] = None
 
 
-def synchronize_llm_dependents(config: dict, previous: Optional[dict] = None) -> dict:
-    config = dict(config or {})
-    previous = previous or {}
-    provider = str(config.get('llm_provider') or '').strip().lower()
-    preset = provider_preset_base_url(provider)
-    prev_provider = str(previous.get('llm_provider') or '').strip().lower()
-    prev_preset = provider_preset_base_url(prev_provider)
-    prev_model = str(previous.get('lm_model') or '').strip()
-    current_model = str(config.get('lm_model') or '').strip()
-
-    if provider and provider != 'openai-compatible' and preset:
-        config['llm_base_url'] = preset
-
-    if str(config.get('stt_backend') or '').strip() == 'llm':
-        config['stt_llm_provider'] = provider or str(config.get('stt_llm_provider') or '').strip()
-        if provider != 'openai-compatible' and preset:
-            config['stt_llm_base_url'] = preset
-        elif not str(config.get('stt_llm_base_url') or '').strip():
-            config['stt_llm_base_url'] = str(config.get('llm_base_url') or '').strip()
-        if current_model:
-            config['stt_llm_model'] = current_model
-
-    agent_provider_value = str(config.get('agent_provider') or 'openai-compatible').strip().lower()
-    if agent_provider_value != 'anthropic':
-        config['agent_provider'] = 'openai-compatible'
-        if provider != 'openai-compatible' and preset:
-            config['agent_base_url'] = preset
-        elif not str(config.get('agent_base_url') or '').strip() or str(config.get('agent_base_url') or '').strip().rstrip('/') == prev_preset.rstrip('/'):
-            config['agent_base_url'] = str(config.get('llm_base_url') or '').strip()
-        agent_model = str(config.get('agent_model') or '').strip()
-        if not agent_model or agent_model == prev_model:
-            config['agent_model'] = current_model
-
-    return config
 
 
-def config_tts_base_url(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    explicit = str(config.get('tts_base_url') or '').strip().rstrip('/')
-    if explicit:
-        return explicit
-    port = int(config.get('tts_port') or 8880)
-    return f'http://127.0.0.1:{port}'
-
-
-def config_llm_base_url(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    return str(config.get('llm_base_url') or 'http://127.0.0.1:8080/v1').strip().rstrip('/')
-
-
-def config_llm_chat_url(config: Optional[dict] = None) -> str:
-    base = config_llm_base_url(config)
-    return base if base.endswith('/chat/completions') else f'{base}/chat/completions'
-
-
-def config_llm_models_url(config: Optional[dict] = None) -> str:
-    base = config_llm_base_url(config)
-    if base.endswith('/chat/completions'):
-        base = base.rsplit('/chat/completions', 1)[0]
-    return f'{base}/models'
-
-
-def config_stt_llm_provider(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    return str(config.get('stt_llm_provider') or config.get('llm_provider') or 'openai-compatible').strip()
-
-
-def config_stt_llm_base_url(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    explicit = str(config.get('stt_llm_base_url') or '').strip().rstrip('/')
-    if explicit:
-        return explicit
-    return config_llm_base_url(config)
-
-
-def config_stt_llm_chat_url(config: Optional[dict] = None) -> str:
-    base = config_stt_llm_base_url(config)
-    return base if base.endswith('/chat/completions') else f'{base}/chat/completions'
-
-
-def config_stt_llm_models_url(config: Optional[dict] = None) -> str:
-    base = config_stt_llm_base_url(config)
-    if base.endswith('/chat/completions'):
-        base = base.rsplit('/chat/completions', 1)[0]
-    return f'{base}/models'
-
-
-def config_stt_llm_api_env(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    return str(config.get('stt_llm_api_key_env') or config.get('llm_api_key_env') or '').strip()
-
-
-def config_stt_llm_model(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    explicit = str(config.get('stt_llm_model') or '').strip()
-    if explicit:
-        return explicit
-    if str(config.get('stt_llm_provider') or '').strip() or str(config.get('stt_llm_base_url') or '').strip():
-        return ''
-    return str(config.get('lm_model') or LMSTUDIO_MODEL).strip()
-
-
-def config_min_speech_ms(config: Optional[dict] = None) -> int:
-    config = config or load_config()
-    try:
-        return max(300, int(config.get('min_speech_ms') or 1200))
-    except Exception:
-        return 1200
-
-
-def config_partial_window_ms(config: Optional[dict] = None) -> int:
-    config = config or load_config()
-    try:
-        return max(400, int(config.get('partial_window_ms') or 1800))
-    except Exception:
-        return 1800
-
-
-def llm_models_for(base_url: str, api_env: str) -> list[str]:
-    base = str(base_url or '').strip().rstrip('/')
-    if not base:
-        return []
-    if base.endswith('/chat/completions'):
-        base = base.rsplit('/chat/completions', 1)[0]
-    url = f'{base}/models'
-    headers = auth_headers_from_env(api_env)
-    req = urllib.request.Request(url, headers=headers, method='GET')
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        body = json.loads(resp.read().decode('utf-8'))
-    models = []
-    for item in body.get('data', []):
-        mid = item.get('id')
-        if isinstance(mid, str) and mid.strip():
-            models.append(mid.strip())
-    if base == 'http://127.0.0.1:8080/v1':
-        for discovered in discover_local_gguf_models():
-            if discovered not in models:
-                models.append(discovered)
-    return models
-
-
-def config_llm_reasoning(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    return 'on' if str(config.get('llm_reasoning') or 'off').strip().lower() == 'on' else 'off'
-
-
-def config_stt_llm_reasoning(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    return 'on' if str(config.get('stt_llm_reasoning') or 'off').strip().lower() == 'on' else 'off'
-
-
-def auth_headers_from_env(env_name: str) -> dict:
-    env_name = (env_name or '').strip()
-    if not env_name:
-        return {}
-    value = os.environ.get(env_name, '').strip()
-    if not value:
-        return {}
-    return {'Authorization': f'Bearer {value}'}
-
-
-def api_key_from_config(config: dict, direct_key: str = '', env_key_name: str = '') -> str:
-    direct = str(direct_key or '').strip()
-    if direct:
-        return direct
-    env_name = str(env_key_name or '').strip()
-    return os.environ.get(env_name, '').strip() if env_name else ''
-
-
-def agent_provider(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    return str(config.get('agent_provider') or 'openai-compatible').strip().lower()
-
-
-def agent_base_url(config: Optional[dict] = None) -> str:
-    config = config or load_config()
-    return str(config.get('agent_base_url') or config.get('llm_base_url') or 'http://127.0.0.1:8080/v1').strip().rstrip('/')
-
-
-def agent_models_url(config: Optional[dict] = None) -> str:
-    base = agent_base_url(config)
-    if base.endswith('/messages'):
-        base = base.rsplit('/messages', 1)[0]
-    if base.endswith('/chat/completions'):
-        base = base.rsplit('/chat/completions', 1)[0]
-    return f'{base}/models'
-
-
-def agent_chat_url(config: Optional[dict] = None) -> str:
-    base = agent_base_url(config)
-    provider = agent_provider(config)
-    if provider == 'anthropic':
-        return base if base.endswith('/messages') else f'{base}/messages'
-    return base if base.endswith('/chat/completions') else f'{base}/chat/completions'
-
-
-def agent_auth_headers(config: dict) -> dict:
-    key = api_key_from_config(config, config.get('agent_api_key') or '', config.get('llm_api_key_env') or '')
-    provider = agent_provider(config)
-    if not key:
-        return {}
-    if provider == 'anthropic':
-        return {'x-api-key': key, 'anthropic-version': '2023-06-01'}
-    return {'Authorization': f'Bearer {key}'}
-
-
-def parse_model_ids(body: dict) -> list[str]:
-    models = []
-    data = body.get('data', []) if isinstance(body, dict) else []
-    if isinstance(data, list):
-        for item in data:
-            mid = item.get('id') if isinstance(item, dict) else item
-            if isinstance(mid, str) and mid.strip():
-                models.append(mid.strip())
-    return models
-
-
-def agent_model_choices() -> list[str]:
-    config = load_config()
-    req = urllib.request.Request(agent_models_url(config), headers=agent_auth_headers(config), method='GET')
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        body = json.loads(resp.read().decode('utf-8'))
-    return parse_model_ids(body)
 
 
 _ack_queue: list[tuple[str, str, str]] = []
@@ -1529,10 +1156,18 @@ def models(llm_base_url: Optional[str] = Query(None), llm_api_key_env: Optional[
     stt_llm_models = []
     try:
         llm_models = llm_models_for(llm_base, llm_api_env_name)
+        if llm_base == "http://127.0.0.1:8080/v1":
+            for d in discover_local_gguf_models():
+                if d not in llm_models:
+                    llm_models.append(d)
     except Exception as e:
         llm_error = str(e)
     try:
         stt_llm_models = llm_models_for(stt_base, stt_api_env_name)
+        if stt_base == "http://127.0.0.1:8080/v1":
+            for d in discover_local_gguf_models():
+                if d not in stt_llm_models:
+                    stt_llm_models.append(d)
     except Exception as e:
         stt_llm_error = str(e)
     return {
