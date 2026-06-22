@@ -156,9 +156,26 @@ def _normalize_config_value(key: str, value):
     return value
 
 
+def _config_example_path() -> Path:
+    return APP_DIR / 'config' / 'config.example.json'
+
+
 def load_config() -> dict:
     APP_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_PATH.exists():
+        example = _config_example_path()
+        if example.exists():
+            try:
+                seed = json.loads(example.read_text())
+                if isinstance(seed, dict):
+                    merged_seed = dict(DEFAULT_CONFIG)
+                    for key, value in seed.items():
+                        if key in CONFIG_KEYS:
+                            merged_seed[key] = _normalize_config_value(key, value)
+                    save_config(merged_seed)
+                    return merged_seed
+            except Exception:
+                pass
         save_config(DEFAULT_CONFIG)
         return dict(DEFAULT_CONFIG)
     try:
