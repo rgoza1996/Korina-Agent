@@ -1798,7 +1798,6 @@ async def agent_state_report(request: Request):
         'enabled': cfg.get('agent_enabled') == 'on',
         'model': cfg.get('agent_model', ''),
         'base_url': cfg.get('agent_base_url', ''),
-        'api_key_env': cfg.get('agent_api_key_env', 'OPENAI_API_KEY'),
     }
 
     # TODO: wire up to Korina Agent Alpha here

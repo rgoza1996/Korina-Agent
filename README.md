@@ -93,6 +93,18 @@ ${location.protocol}//${location.hostname}:${tts_port}
 
 For custom or cloud-compatible endpoints, set the full base URL in the settings modal. For cloud and OpenAI-compatible endpoints, the preferred path is config-stored env-var names such as `llm_api_key_env` / `stt_api_key_env` / `stt_llm_api_key_env` so the server reads secrets from the environment. As a local-dev/test convenience only, `Korina/config.json` may also contain an optional `agent_api_key`; do not use this field in production.
 
+## Secrets
+
+API-key storage contract:
+
+- `llm_api_key_env` — env-var name; the server reads the actual key from `os.environ[...]`. **Preferred path for production.**
+- `stt_api_key_env` — same pattern, for the STT path.
+- `stt_llm_api_key_env` — same pattern, for the multimodal LLM STT path.
+- `agent_api_key` — stored directly in `Korina/config.json`. **Local dev / test only.** Do not use in production. The Agent path reads it via `api_key_from_config()` and falls back to `llm_api_key_env`.
+- `agent_api_key_env` — not used by the Agent path; the field has been removed from the tracked config.
+
+The `Korina/config.json` runtime file is gitignored. Do not commit API keys to the repo.
+
 ## STT backends
 
 Korina supports two speech-to-text backends via the Settings modal:
