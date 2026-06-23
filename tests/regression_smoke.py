@@ -24,6 +24,8 @@ shim to main().)
 
 from __future__ import annotations
 
+BASE = ''  # module-level placeholder; set by run() before invoking the 4 test_* functions
+
 import argparse
 import json
 import sys
@@ -102,6 +104,8 @@ def assert_status(name: str, got: int, want: int, body: str) -> bool:
 
 
 def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
+    global BASE
+    BASE = base
     failures = 0
 
     # Health / config / models / metadata endpoints.
@@ -313,6 +317,16 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         print(f"  [FAIL] korina.schemas import: {e}")
         failures += 1
 
+    # ----- Phase 2 frontend wiring (must run BEFORE the factory
+    # dispatch test, which historically raised SystemExit(0) and
+    # skipped every test that came after it). The factory stub now
+    # returns instead of raising, but we keep the tests grouped here
+    # and clearly labelled. -----
+    test_frontend_uses_capabilities()
+    test_frontend_set_base_url_editability_for_agent()
+    test_frontend_initial_sync_uses_capabilities()
+    test_capabilities_endpoint()
+
     # Phase 1.8 / 1.9 deliverable: korina.app.main() is the canonical uvicorn
     # launcher. After 1.9 the package owns the app via app_factory.create_app,
     # and main() takes no app argument. We verify:
@@ -396,7 +410,13 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
                 "host": args[1] if len(args) > 1 else kwargs.get("host"),
                 "port": args[2] if len(args) > 2 else kwargs.get("port"),
             })
-            raise SystemExit(0)
+            # NOTE: do NOT raise SystemExit(0) here. SystemExit inherits
+            # from BaseException, so a raise propagates out of run() and
+            # skips any later test invocations (this regression script's
+            # own test_capabilities_endpoint, plus any test added after
+            # the factory block in Phase 2.2.3+). Just return -- the
+            # captured dict is what we assert on.
+            return
         _uvicorn.run = _capture_run
 
         from korina.app import main as korina_main  # type: ignore[import-not-found]
@@ -450,6 +470,96 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         print(f"  [FAIL] korina.app.main dispatch test: {type(e).__name__}: {e}")
         failures += 1
 
+    # ----- Run summary -----
+    print()
+    if failures == 0:
+        print(f"All checks passed against {base}.")
+        return 0
+    print(f"{failures} check(s) failed against {base}.")
+    return 1
+
+def test_frontend_uses_capabilities():
+    """Phase 2.2.3 -- the static index page must fetch /api/capabilities,
+    define the new lookup helpers, and not hardcode the legacy
+    PROVIDER_BASE_URL_PRESETS constant."""
+    import urllib.request, re
+    try:
+        with urllib.request.urlopen(BASE + "/", timeout=10) as r:
+            assert r.status == 200
+            html = r.read().decode("utf-8")
+        m = re.search(r"<script>([\s\S]*?)</script>", html)
+        assert m, "no <script> block in served index.html"
+        js = m.group(1)
+        # New: cache loader + helpers present
+        assert "function getResponseLlmProviderCaps(provider)" in js, \
+            "getResponseLlmProviderCaps helper not defined"
+        assert "function getAgentProviderCaps(provider)" in js, \
+            "getAgentProviderCaps helper not defined"
+        assert "/api/capabilities" in js, \
+            "no /api/capabilities fetch in served index.html"
+        # Old: legacy constant declaration gone (its usage in 2.2.1's
+        # transitional comment is fine; we only ban the const declaration)
+        assert "const PROVIDER_BASE_URL_PRESETS" not in js, \
+            "legacy PROVIDER_BASE_URL_PRESETS const declaration still present"
+    except Exception as e:
+        print(f"  [FAIL] frontend uses capabilities: {type(e).__name__}: {e}")
+        global failures
+        failures += 1
+        return
+    print(f"  [PASS] frontend uses capabilities: loadCapabilities + helpers present, legacy constant removed")
+
+
+def test_frontend_set_base_url_editability_for_agent():
+    """Phase 2.2.3 -- setBaseUrlEditability must wire up the agent provider's
+    base URL field. This is the regression check for the bug that the
+    agent path was previously uncontrolled."""
+    import urllib.request, re
+    try:
+        with urllib.request.urlopen(BASE + "/", timeout=10) as r:
+            html = r.read().decode("utf-8")
+        m = re.search(r"<script>([\s\S]*?)</script>", html)
+        js = m.group(1)
+        # The agent section must be present in the editability function.
+        m_fn = re.search(r"async function setBaseUrlEditability\(\)\{([\s\S]*?)\n\}", js)
+        assert m_fn, "async setBaseUrlEditability not found"
+        body = m_fn.group(1)
+        assert "agentBaseUrl" in body, \
+            "setBaseUrlEditability does not reference agentBaseUrl -- the agent path is uncontrolled"
+        assert "getAgentProviderCaps" in js, \
+            "getAgentProviderCaps helper not present"
+    except Exception as e:
+        print(f"  [FAIL] frontend setBaseUrlEditability for agent: {type(e).__name__}: {e}")
+        global failures
+        failures += 1
+        return
+    print(f"  [PASS] frontend setBaseUrlEditability for agent: agentBaseUrl wired, getAgentProviderCaps present")
+
+
+def test_frontend_initial_sync_uses_capabilities():
+    """Phase 2.2.3 -- the top-level loadCapabilities().then(()=>setBaseUrlEditability())
+    call from 2.2.2 must be in place, so the async editability pass runs
+    before initApp() without modifying initApp itself."""
+    import urllib.request, re
+    try:
+        with urllib.request.urlopen(BASE + "/", timeout=10) as r:
+            html = r.read().decode("utf-8")
+        m = re.search(r"<script>([\s\S]*?)</script>", html)
+        js = m.group(1)
+        assert "loadCapabilities().then(()=>setBaseUrlEditability())" in js, \
+            "initial sync is not loading capabilities before setting editability"
+        # initApp must still be untouched (no await loadCapabilities inside).
+        m_init = re.search(r"async function initApp\(\)\{([\s\S]*?)\n\}", js)
+        assert m_init, "initApp not found"
+        init_body = m_init.group(1)
+        assert "try{ await loadCapabilities();" not in init_body, \
+            "initApp was modified to await loadCapabilities -- 2.2.2 discipline broken"
+    except Exception as e:
+        print(f"  [FAIL] frontend initial sync uses capabilities: {type(e).__name__}: {e}")
+        global failures
+        failures += 1
+        return
+    print(f"  [PASS] frontend initial sync uses capabilities: top-level loadCapabilities().then() present, initApp untouched")
+
 def test_capabilities_endpoint():
     """Phase 2.1 -- GET /api/capabilities returns the full registry split by section."""
     import json, urllib.request
@@ -475,14 +585,6 @@ def test_capabilities_endpoint():
     assert providers["lmstudio"]["default_base_url"]  == "http://127.0.0.1:1234/v1"
     assert providers["ollama"]["default_base_url"]    == "http://127.0.0.1:11434/v1"
 
-
-    test_capabilities_endpoint()
-    print()
-    if failures == 0:
-        print(f"All checks passed against {base}.")
-        return 0
-    print(f"{failures} check(s) failed against {base}.")
-    return 1
 
 
 def main() -> int:
