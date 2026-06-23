@@ -1,29 +1,36 @@
 # Refactor Progress
 
-Mirror of the checklist at the bottom of `blueprint.md`. Tick as you complete each step.
+Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is completed and keep a short evidence note so future work can resume without reconstructing git history.
+
+**Branch:** `beta`  
+**Latest verified Phase 1 commit:** `e21c518` — `test: verify Phase 1 refactor contract and restore OpenAPI body schemas (Phase 1.10)`  
+**Last full verification:** `2026-06-22 21:00 PDT` on roggoz. `tests/regression_smoke.py` passed **28/28** with real `/api/chat` enabled; `/api/chat` returned HTTP 200 with a live LLM reply.  
+**Verification report:** `docs/refactor/phase-1-verification.md`
 
 ## Phase 0 — Stabilization
 
-- [x] 0.1 barge-in thresholds
-- [x] 0.2 injection migration
-- [x] 0.3 config role split
-- [x] 0.4 agent_api_key docs
-- [x] 0.5 secrets contract
-- [x] 0.6 display label for agent
-- [x] 0.7 verify on roggoz
+- [x] 0.1 barge-in thresholds — completed before Phase 1; validated on roggoz.
+- [x] 0.2 injection migration — steer/delivery wording migrated to injection terminology where required.
+- [x] 0.3 config role split — runtime config separated from tracked example config.
+- [x] 0.4 agent_api_key docs — documented API key/env contract.
+- [x] 0.5 secrets contract — runtime secrets excluded from tracked config; README updated.
+- [x] 0.6 display label for agent — model labels normalized for display.
+- [x] 0.7 verify on roggoz — Phase 0 verified and committed at `b065ea0`.
 
 ## Phase 1 — Backend modularization
 
-- [x] 1.1 directory layout
-- [x] 1.2 paths/config
-- [x] 1.3 runtime state
-- [x] 1.4 services
-- [x] 1.5 config helpers
-- [x] 1.6 routes
-- [x] 1.7 schemas
-- [x] 1.8 backward-compat shim
-- [x] 1.9 delete monolith body
-- [x] 1.10 verify
+- [x] 1.1 directory layout — package skeleton under `korina/` added; committed at `e6a8f64`.
+- [x] 1.2 paths/config — path/bootstrap/config helpers moved into `korina/util/paths.py` and `korina/config.py`; committed at `5034438`.
+- [x] 1.3 runtime state — module globals gathered into `korina/runtime/state.py`; committed at `aa653c4`.
+- [x] 1.4 services — service areas extracted into `korina/services/`; committed at `b54dcd5`.
+- [x] 1.5 config helpers — helper functions redistributed into focused modules; regression suite added; committed at `e20788e`.
+- [x] 1.6 routes — FastAPI route ownership split into `korina/routes/`; committed at `37b0cd5`.
+- [x] 1.7 schemas — routes import schemas from `korina.schemas`; validation returns 422 correctly; committed at `2127df6`.
+- [x] 1.8 backward-compat shim — `korina.app.main()` introduced as canonical uvicorn launcher; committed at `392c9de`.
+- [x] 1.9 delete monolith body — `Korina/korina_voice_lab.py` reduced to 3-line shim; app factory owns app construction; committed at `4dc1f2d`.
+- [x] 1.10 verify — full live regression and Phase 0 route-contract comparison completed; committed at `e21c518`.
+
+**Phase 1 result:** backend modularization is complete on `beta`. Current app construction lives in `korina/app_factory.py`; `Korina/korina_voice_lab.py` is only the compatibility shim. The live API exposes the same 19 path contract as the Phase 0 baseline (`b065ea0`) with no missing/added paths and no method diffs.
 
 ## Phase 2 — Single source of truth
 
