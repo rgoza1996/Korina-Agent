@@ -326,6 +326,7 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
     test_frontend_set_base_url_editability_for_agent()
     test_frontend_initial_sync_uses_capabilities()
     test_capabilities_endpoint()
+    test_capabilities_anthropic_default_and_editability()
 
     # Phase 1.8 / 1.9 deliverable: korina.app.main() is the canonical uvicorn
     # launcher. After 1.9 the package owns the app via app_factory.create_app,
@@ -559,6 +560,58 @@ def test_frontend_initial_sync_uses_capabilities():
         failures += 1
         return
     print(f"  [PASS] frontend initial sync uses capabilities: top-level loadCapabilities().then() present, initApp untouched")
+
+def test_capabilities_anthropic_default_and_editability():
+    """Phase 2.3.2 -- pin the editable_base_url contract across all providers.
+
+    Mirrors the per-provider table in docs/capabilities.md. If a future
+    change to PROVIDER_CAPABILITIES or to a per-provider helper drifts
+    from the contract, this test fails loudly.
+    """
+    import json, urllib.request
+    try:
+        with urllib.request.urlopen(BASE + "/api/capabilities", timeout=10) as r:
+            assert r.status == 200
+            body = json.loads(r.read().decode("utf-8"))
+        # Anthropic (agent-only) contract
+        a = body["agent_providers"]["anthropic"]
+        assert a["default_base_url"] == "", (
+            f"anthropic default_base_url must be empty (user must supply "
+            f"their own Anthropic-compatible URL); got {a['default_base_url']!r}"
+        )
+        assert a["editable_base_url"] is True, (
+            "anthropic must be editable so the user can paste their URL"
+        )
+        assert a["is_local"] is False, "anthropic is not a local server"
+        assert a["agent_only"] is True, (
+            "anthropic must be agent_only so it does not appear in the "
+            "response-LLM section"
+        )
+        # Response-LLM editability contract (matches the legacy hardcoded
+        # 'openai-compatible' check, so frontend behavior is identical for
+        # current users even after the migration to the cache).
+        p = body["providers"]
+        assert p["openai-compatible"]["editable_base_url"] is True
+        assert p["llama.cpp"]["editable_base_url"] is False
+        assert p["lmstudio"]["editable_base_url"] is False
+        assert p["ollama"]["editable_base_url"] is False
+        # No field drift: every provider must declare the same 8 keys.
+        expected_keys = {
+            "label", "default_base_url", "editable_base_url", "manageable",
+            "model_sources", "is_local", "agent_only", "response_llm_only",
+        }
+        for section_name, section in (("providers", p), ("agent_providers", body["agent_providers"])):
+            for pid, cap in section.items():
+                missing = expected_keys - set(cap.keys())
+                assert not missing, (
+                    f"{section_name}.{pid} missing keys: {sorted(missing)}"
+                )
+    except Exception as e:
+        print(f"  [FAIL] capabilities contract per provider: {type(e).__name__}: {e}")
+        global failures
+        failures += 1
+        return
+    print("  [PASS] capabilities contract per provider: anthropic default=empty+editable, openai-compatible editable, 3 local not editable, 8 keys on every provider")
 
 def test_capabilities_endpoint():
     """Phase 2.1 -- GET /api/capabilities returns the full registry split by section."""
