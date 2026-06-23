@@ -3,7 +3,7 @@
 > Companion to `architecture-report.md`. Reads that first for the "why". This document is the "what" and the "in what order".
 
 **Status:** proposal — not yet executed.
-**Target branch:** `alpha` (all work happens here, per README branch policy).
+**Target branch:** `beta` (refactor work lands on `beta`; `alpha` is the stable branch from before the refactor series started. Per user direction, the refactor series lives on `beta` until release — see `docs/refactor/PROGRESS.md` for what has actually landed and on which branch.)
 **Default principle:** **every refactor step is behavior-preserving** unless the step title says otherwise. If a step changes behavior, it ships in its own commit with tests.
 
 ---
@@ -50,7 +50,7 @@ These apply to every phase. Don't make a refactor decision that violates one of 
 | 5 | Process supervision unification| high   | yes (ops)         | ~200                |
 | 6 | Testing + CI                   | low    | none              | ~800                |
 
-Each phase ends with a working tree, a green smoke run, and a commit on `alpha`.
+Each phase ends with a working tree, a green smoke run, and a commit on `beta`.
 
 ---
 
