@@ -28,12 +28,21 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
 
 ## What's included
 
-- `korina_voice_lab.py` — FastAPI server: STT endpoints, chat proxy, settings/config API.
-- `kokoro-streaming-server.py` — Kokoro TTS server: SSE streaming, buffered WAV fallback.
-- `Korina/index.html` — Browser UI: live VAD, partial transcription queue, settings modal, Web Audio playback.
+- `korina_voice_lab.py` — 3-line uvicorn entrypoint shim (`from korina.app import main; main()`). The actual FastAPI app is built and configured by `korina/app_factory.py:create_app()`, which composes routers from `korina/routes/` and attaches middleware, the `/Ack` static mount, and the startup hook. See `docs/refactor/architecture-report.md` for the package layout.
+- `korina/` — backend Python package:
+  - `korina/app.py`, `korina/app_factory.py` — app construction
+  - `korina/routes/` — one router per concern (`health`, `config`, `models`, `chat`, `stt`, `acks`, `agent`, `providers`, `capabilities`)
+  - `korina/services/` — provider manager, model catalog, whisper service, multimodal STT, response LLM, agent service, ack service
+  - `korina/util/presets.py` — `PROVIDER_CAPABILITIES` registry (single source of truth for provider metadata; served at `GET /api/capabilities`; documented in `docs/capabilities.md`)
+  - `korina/schemas.py`, `korina/schemas_capabilities.py` — Pydantic request/response models
+  - `korina/config.py` — `DEFAULT_CONFIG`, `load_config`, `save_config`, legacy-key migration
+  - `korina/runtime/` — `RuntimeState` (gathered module globals)
+- `kokoro-streaming-server.py` — Kokoro TTS server: SSE streaming, buffered WAV fallback. (Separate process; unchanged by the Phase 1 backend modularization.)
+- `Korina/index.html` — Browser UI: live VAD, partial transcription queue, settings modal (Converse + Agent tabs), Web Audio playback. Reads provider presets and base-URL editability from `/api/capabilities` via `loadCapabilities()` at boot.
 - `Korina/config.json` — runtime test-site settings (gitignored). The tracked example is at `Korina/config/config.example.json`.
 - `Korina/start.sh` / `stop.sh` — Service lifecycle.
 - `Korina/Ack/ack_phrases.json` — tagged acknowledgement phrase manifest. Generated WAVs are cache files and are ignored by git.
+- `tests/regression_smoke.py` — live regression suite: 38 checks against the running server, including provider-activation, real LLM chat round-trip, and the `/api/capabilities` contract.
 
 ## Setup on a new machine
 
@@ -74,6 +83,7 @@ The browser loads and writes settings through:
 ```text
 GET  /api/config
 POST /api/config
+GET  /api/capabilities   # provider registry; see docs/capabilities.md
 ```
 
 The backing file is:
@@ -146,9 +156,10 @@ Agent debugging is visible in the **Korina Agent Debug** panel. It logs transcri
 Korina Agent can use a separate vendor-agnostic endpoint from Korina Converse. The Agent tab supports:
 
 - OpenAI-compatible endpoints, including local LM Studio and compatible cloud APIs such as MiniMax-style endpoints.
-- Anthropic-compatible `/v1/messages` endpoints.
+- Anthropic-style request shape (`system` as a top-level field, no `stream: false`) sent to whatever base URL the user provides. The user pastes a URL into the **Agent API base URL** field; the service does not call the official Anthropic API. To use a real Anthropic endpoint, point this URL at an Anthropic-compatible proxy.
 - API-key entry saved locally in `config.json` for test/dev use.
 - Model discovery through `/api/agent/models` when the provider exposes a `/models` endpoint.
+- The provider dropdown, base-URL default, and base-URL editability are sourced from `/api/capabilities`. See `docs/capabilities.md` for the full contract.
 
 The Agent tab also exposes Pi-style behavior settings for the voice-first agent layer:
 
@@ -176,6 +187,6 @@ Partial transcription windows (~1.8s each) are queued rather than dropped, so sl
 
 - `master` — stable, production-ready snapshots
 - `beta` — release candidates
-- `alpha` — active development (default working branch)
+- `alpha` — active development
 
-Do all new work on `alpha`.
+In practice, recent refactor work (Phase 1 backend modularization, Phase 2 single source of truth) has been done on `beta` rather than `alpha`. Treat `alpha` and `beta` as the active working branches; reserve `master` for snapshots you have decided to ship. When a refactor spans both, see `docs/refactor/PROGRESS.md` for the working branch the last increment used.
