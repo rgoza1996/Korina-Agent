@@ -23,7 +23,7 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as you complete ea
 - [x] 1.7 schemas
 - [x] 1.8 backward-compat shim
 - [x] 1.9 delete monolith body
-- [ ] 1.10 verify
+- [x] 1.10 verify
 
 ## Phase 2 — Single source of truth
 

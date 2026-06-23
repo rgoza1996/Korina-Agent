@@ -5,7 +5,7 @@ Phase 1.9: inlined from the monolith's _route_get_config / _route_update_config 
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter
 
 from korina.config import (
     CONFIG_KEYS,
@@ -25,8 +25,7 @@ def get_config():
 
 
 @router.post('/api/config')
-async def update_config(request: Request):
-    payload = await request.json()
+async def update_config(payload: dict):
     current = load_config()
     previous = dict(current)
     if isinstance(payload, dict):

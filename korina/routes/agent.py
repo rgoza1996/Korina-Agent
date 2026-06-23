@@ -5,8 +5,7 @@ Phase 1.9: inlined from the monolith's _route_agent* helpers.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import ValidationError
+from fastapi import APIRouter, HTTPException, Query
 
 from korina.config import agent_provider, load_config
 from korina.runtime import state
@@ -37,20 +36,12 @@ def agent_events(after: int = Query(0)):
 
 
 @router.post('/api/agent/transcript')
-async def agent_transcript(request: Request):
-    try:
-        req = AgentTranscriptRequest(**(await request.json()))
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors())
+async def agent_transcript(req: AgentTranscriptRequest):
     return submit_agent_transcript(req)
 
 
 @router.post('/api/agent/permission-answer')
-async def agent_permission_answer(request: Request):
-    try:
-        req = AgentPermissionAnswer(**(await request.json()))
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors())
+async def agent_permission_answer(req: AgentPermissionAnswer):
     push_agent_event({'type': 'permission_answer', 'priority': 'normal',
                        'request_id': req.request_id, 'answer': req.answer,
                        'transcript': req.transcript})
@@ -89,11 +80,7 @@ def agent_models():
 
 
 @router.post('/api/agent/state-report')
-async def agent_state_report(request: Request):
-    try:
-        req = AgentStateRequest(**(await request.json()))
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors())
+async def agent_state_report(req: AgentStateRequest):
     if str(load_config().get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'state_report': '', 'disabled': True}
     try:

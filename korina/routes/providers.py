@@ -5,8 +5,7 @@ Phase 1.9: inlined from the monolith's _route_activate_provider helper.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import ValidationError
+from fastapi import APIRouter, HTTPException
 
 from korina.config import load_config, save_config, synchronize_llm_dependents
 from korina.schemas import ProviderActivateRequest
@@ -17,12 +16,7 @@ router = APIRouter()
 
 
 @router.post('/api/llm/provider/activate')
-async def activate_provider(request: Request):
-    try:
-        req = ProviderActivateRequest(**(await request.json()))
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors())
-
+async def activate_provider(req: ProviderActivateRequest):
     config = load_config()
     provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip()
     current = dict(config)

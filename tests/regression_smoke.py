@@ -179,7 +179,23 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
     if not assert_status("POST /api/agent/permission-answer (bad type -> 422)", code, 422, body):
         failures += 1
 
+    # Optional real LLM round-trip (skipped if --no-chat). Run this before
+    # provider-activation tests: activating openai-compatible intentionally
+    # stops managed local providers such as llama-server, and would make this
+    # later chat check fail for sequencing reasons rather than app behavior.
+    if do_chat:
+        code, body = http_post(
+            base,
+            "/api/chat",
+            {"message": "hello korina"},
+            timeout=60,
+        )
+        if not assert_status("POST /api/chat (with message -> 200)", code, 200, body):
+            failures += 1
+
     # Provider activate with valid payload → 200 (active is a known provider).
+    # This is intentionally after /api/chat because it may stop managed local
+    # provider processes as a side effect of switching to openai-compatible.
     code, body = http_post(base, "/api/llm/provider/activate",
                            {"provider": "openai-compatible", "model": ""}, timeout=45)
     if not assert_status("POST /api/llm/provider/activate (valid -> 200)", code, 200, body):
@@ -207,17 +223,6 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         code, _ = http_post(base, "/api/config", roll_back)
         if code != 200:
             print(f"  [WARN] failed to roll back /api/config (HTTP {code})")
-
-    # Optional real LLM round-trip (skipped if --no-chat).
-    if do_chat:
-        code, body = http_post(
-            base,
-            "/api/chat",
-            {"message": "hello korina"},
-            timeout=60,
-        )
-        if not assert_status("POST /api/chat (with message -> 200)", code, 200, body):
-            failures += 1
 
     # Optional transcribe via synthetic WAV (skipped if --no-transcribe).
     if do_transcribe:

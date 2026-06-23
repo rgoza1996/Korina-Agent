@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Query
 
 from korina.runtime import state
 from korina.services.ack_service import (
@@ -38,8 +38,7 @@ def acks_status(voice: str = Query('af_heart')):
 
 
 @router.post('/api/acks/rebuild')
-async def acks_rebuild(request: Request):
-    payload = await request.json()
+async def acks_rebuild(payload: dict):
     voice = (payload.get('voice') or ACK_DEFAULT_VOICE).strip()
     tag = payload.get('tag')
     clear = bool(payload.get('clear', False))
