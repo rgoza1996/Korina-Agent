@@ -14,8 +14,8 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as you complete ea
 
 ## Phase 1 — Backend modularization
 
-- [ ] 1.1 directory layout
-- [ ] 1.2 paths/config
+- [x] 1.1 directory layout
+- [x] 1.2 paths/config
 - [ ] 1.3 runtime state
 - [ ] 1.4 services
 - [ ] 1.5 config helpers
