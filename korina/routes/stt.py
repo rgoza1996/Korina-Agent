@@ -1,15 +1,33 @@
+"""STT endpoints — transcribe, partial, stream.
+
+Phase 1.9: inlined from the monolith's _route_transcribe* helpers.
+"""
+
 from __future__ import annotations
 
+import shutil
+import tempfile
+import time
+from pathlib import Path
 from typing import Optional
 
+import numpy as np
+import soundfile as sf
 from fastapi import APIRouter, File, Query, UploadFile
+from fastapi.responses import JSONResponse, StreamingResponse
+
+from korina.config import config_stt_llm_api_env, config_stt_llm_chat_url, load_config
+from korina.runtime import state
+from korina.services.multimodal_stt import lmstudio_transcribe_wav
+from korina.services.whisper_service import (
+    convert_to_16k_wav,
+    sse_event,
+    transcribe_upload_file,
+    transcribe_wav_segments,
+)
+from korina.util.paths import LMSTUDIO_MODEL, PARTIAL_MIN_SECONDS, WHISPER_MODEL_ID
 
 router = APIRouter()
-_ctx: dict = {}
-
-
-def init(ctx: dict) -> None:
-    _ctx.clear(); _ctx.update(ctx)
 
 
 @router.post('/api/transcribe')
@@ -20,7 +38,14 @@ async def transcribe(
     backend: str = Query('whisper'),
     llm_model: Optional[str] = Query(None),
 ):
-    return await _ctx['_route_transcribe'](audio, device, model, backend, llm_model)
+    suffix = Path(audio.filename or 'recording.webm').suffix or '.webm'
+    try:
+        return JSONResponse(transcribe_upload_file(
+            audio.file, suffix, vad_filter=True,
+            device=device, model_id=model, backend=backend, llm_model=llm_model,
+        ))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post('/api/transcribe/partial')
@@ -31,7 +56,27 @@ async def transcribe_partial(
     backend: str = Query('whisper'),
     llm_model: Optional[str] = Query(None),
 ):
-    return await _ctx['_route_transcribe_partial'](audio, device, model, backend, llm_model)
+    """Low-latency rolling partial transcript for live mode.
+
+    Browser sends the growing current utterance every ~1.8s while the user is
+    still speaking. faster-whisper itself is not a streaming decoder, so this
+    endpoint transcribes snapshots of the in-progress utterance and returns the
+    latest best partial.
+    """
+    suffix = Path(audio.filename or 'partial.webm').suffix or '.webm'
+    try:
+        result = transcribe_upload_file(
+            audio.file, suffix, vad_filter=False,
+            device=device, model_id=model, backend=backend, llm_model=llm_model,
+        )
+        result['partial'] = True
+        result['stable'] = False
+        if result['duration'] < PARTIAL_MIN_SECONDS:
+            result['text'] = ''
+            result['segments'] = []
+        return JSONResponse(result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post('/api/transcribe/stream')
@@ -42,4 +87,76 @@ async def transcribe_stream(
     backend: str = Query('whisper'),
     llm_model: Optional[str] = Query(None),
 ):
-    return await _ctx['_route_transcribe_stream'](audio, device, model, backend, llm_model)
+    suffix = Path(audio.filename or 'recording.webm').suffix or '.webm'
+
+    def events():
+        with tempfile.TemporaryDirectory(prefix='korina-stt-stream-') as td:
+            td_path = Path(td)
+            src = td_path / f'input{suffix}'
+            wav = td_path / 'input-16k.wav'
+            with src.open('wb') as f:
+                shutil.copyfileobj(audio.file, f)
+            started = time.time()
+            try:
+                yield sse_event('status', {'message': 'converting', 'backend': 'faster-whisper'})
+                convert_to_16k_wav(src, wav)
+                data, sr = sf.read(wav, dtype='float32')
+                if data.ndim > 1:
+                    data = np.mean(data, axis=1)
+                yield sse_event('status', {'message': 'transcribing',
+                                           'samples': int(len(data)),
+                                           'sample_rate': int(sr),
+                                           'backend': backend})
+                if backend == 'llm':
+                    result = lmstudio_transcribe_wav(
+                        wav, model=llm_model,
+                        base_url=config_stt_llm_chat_url(load_config()),
+                        api_env=config_stt_llm_api_env(load_config()),
+                    )
+                    text = result.get('text', '')
+                    if text:
+                        yield sse_event('segment', {'start': None, 'end': None,
+                                                    'text': text, 'index': 1})
+                    elapsed = time.time() - started
+                    yield sse_event('done', {
+                        'text': text,
+                        'seconds': elapsed,
+                        'samples': int(len(data)),
+                        'sample_rate': int(sr),
+                        'model': llm_model or LMSTUDIO_MODEL,
+                        'backend': 'multimodal-stt',
+                        'segments': 1 if text else 0,
+                    })
+                    return
+                parts, info = transcribe_wav_segments(wav, vad_filter=True, device=device, model_id=model)
+                text_parts = []
+                count = 0
+                for seg in parts:
+                    count += 1
+                    part = seg.text.strip()
+                    if part:
+                        text_parts.append(seg.text)
+                    yield sse_event('segment', {
+                        'start': seg.start,
+                        'end': seg.end,
+                        'text': part,
+                        'index': count,
+                    })
+                elapsed = time.time() - started
+                yield sse_event('done', {
+                    'text': ''.join(text_parts).strip(),
+                    'seconds': elapsed,
+                    'samples': int(len(data)),
+                    'sample_rate': int(sr),
+                    'model': model or WHISPER_MODEL_ID,
+                    'backend': 'faster-whisper',
+                    'device': state.asr.device,
+                    'compute_type': state.asr.compute_type,
+                    'language': info.language,
+                    'language_probability': info.language_probability,
+                    'segments': count,
+                })
+            except Exception as e:
+                yield sse_event('error', {'detail': str(e)})
+
+    return StreamingResponse(events(), media_type='text/event-stream')

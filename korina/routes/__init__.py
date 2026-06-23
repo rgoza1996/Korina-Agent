@@ -1,18 +1,15 @@
-from __future__ import annotations
+"""Korina route registry.
 
-from fastapi import FastAPI
+Phase 1.9: this module now only re-exports the submodules. The ``create_app()``
+function in ``korina/app_factory.py`` is responsible for wiring routers
+onto the FastAPI instance. Phase 1.6's ``register_routes(app, ctx)``
+helper is gone — route bodies no longer live in the monolith, so the
+``globals()`` indirection is no longer needed.
+"""
+
+from __future__ import annotations
 
 from . import acks, agent, chat, config, health, index, models, providers, stt
 
-
-def register_routes(app: FastAPI, ctx: dict) -> None:
-    """Register Korina Voice Lab API routers.
-
-    Phase 1.6 keeps route implementations delegated to legacy helper
-    functions while moving FastAPI route ownership into korina.routes modules.
-    Later phases can move helper bodies behind services without changing the
-    public routes again.
-    """
-    for module in (index, health, config, models, providers, acks, agent, stt, chat):
-        module.init(ctx)
-        app.include_router(module.router)
+__all__ = ["acks", "agent", "chat", "config", "health", "index",
+           "models", "providers", "stt"]

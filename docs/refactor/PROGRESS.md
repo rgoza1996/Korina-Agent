@@ -22,7 +22,7 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as you complete ea
 - [x] 1.6 routes
 - [x] 1.7 schemas
 - [x] 1.8 backward-compat shim
-- [ ] 1.9 delete monolith body
+- [x] 1.9 delete monolith body
 - [ ] 1.10 verify
 
 ## Phase 2 — Single source of truth

@@ -16,6 +16,10 @@ activate, /api/config POST round-trip, OpenAPI body-schema visibility).
 
 Phase 1.8 additions (korina.app.main dispatch — both explicit-app and
 no-arg fallback paths forward to uvicorn.run with the right args).
+
+Phase 1.9 additions (korina.app_factory.create_app owns app construction;
+korina.app.main() has no app arg; Korina/korina_voice_lab.py is a 3-line
+shim to main().)
 """
 
 from __future__ import annotations
@@ -304,21 +308,60 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         print(f"  [FAIL] korina.schemas import: {e}")
         failures += 1
 
-    # Phase 1.8 deliverable: korina.app.main() is the canonical uvicorn
-    # launcher. Verify it's importable and that calling it with the
-    # monolith's app dispatches to uvicorn.run with the right args.
-    # The live service is already running via the monolith entry point;
-    # this test proves the dispatch shape for any future caller.
+    # Phase 1.8 / 1.9 deliverable: korina.app.main() is the canonical uvicorn
+    # launcher. After 1.9 the package owns the app via app_factory.create_app,
+    # and main() takes no app argument. We verify:
+    #   1. main() imports cleanly (no app to pass).
+    #   2. korina.app_factory.create_app() returns a wired FastAPI app.
+    #   3. Calling main() with stubbed uvicorn.run forwards the factory-built
+    #      app to uvicorn.run with the right host/port defaults.
     try:
-        # Make sure korina and Korina are importable regardless of cwd.
+        # Make sure korina is importable regardless of cwd.
         import os as _os
         _repo_root = str(Path(__file__).resolve().parent.parent)
         if _repo_root not in _os.sys.path:
             _os.sys.path.insert(0, _repo_root)
 
-        from korina.app import main as korina_main  # type: ignore[import-not-found]
         import uvicorn as _uvicorn
+        from korina.app_factory import create_app  # type: ignore[import-not-found]
 
+        # 0) Blueprint check: korina_voice_lab.py appears exactly once
+        # in git ls-files. Phase 1.9 reduces it to a 3-line shim.
+        import subprocess as _subprocess
+        try:
+            _ls = _subprocess.run(
+                ["git", "ls-files"],
+                cwd=_repo_root, capture_output=True, text=True, check=True,
+            ).stdout
+            n_korina_voice_lab = sum(
+                1 for line in _ls.splitlines()
+                if line.endswith("korina_voice_lab.py")
+            )
+            ok_one = n_korina_voice_lab == 1
+            if not assert_status(
+                "blueprint: exactly 1 korina_voice_lab.py in git ls-files",
+                200 if ok_one else 0, 200,
+                f"count={n_korina_voice_lab}" if not ok_one else "1 entry",
+            ):
+                failures += 1
+        except Exception as e:
+            print(f"  [FAIL] git ls-files check: {type(e).__name__}: {e}")
+            failures += 1
+
+        # 1) Factory builds the same app the live service runs.
+        factory_app = create_app()
+        ok_factory = (
+            factory_app.title.startswith("Korina")
+            and len(factory_app.openapi()["paths"]) >= 19
+        )
+        if not assert_status(
+            "factory: korina.app_factory.create_app() returns wired FastAPI app",
+            200 if ok_factory else 0, 200,
+            f"{len(factory_app.openapi()['paths'])} paths" if ok_factory else "factory broken",
+        ):
+            failures += 1
+
+        # 2) main() forwards to uvicorn.run with the factory-built app.
         captured: list[dict] = []
         def _capture_run(*args, **kwargs):
             title = (args[0].title if args
@@ -327,38 +370,55 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
                 "title": title,
                 "host": args[1] if len(args) > 1 else kwargs.get("host"),
                 "port": args[2] if len(args) > 2 else kwargs.get("port"),
-                "via": "explicit_app" if args else "kwarg",
             })
-            # Don't actually start a server.
             raise SystemExit(0)
         _uvicorn.run = _capture_run
 
-        # Call 1: explicit app argument (the path the monolith uses).
-        from Korina.korina_voice_lab import app as monolith_app  # type: ignore[import-not-found]
-        try:
-            korina_main(monolith_app)
-        except SystemExit:
-            pass
-        # Call 2: no app argument (the package-entry fallback path used
-        # by `python3 -m korina.app`). Same expectation: launches the
-        # monolith's app.
+        from korina.app import main as korina_main  # type: ignore[import-not-found]
+        # Verify the post-1.9 signature has no `app` parameter.
+        import inspect
+        sig = inspect.signature(korina_main)
+        no_app_arg = "app" not in sig.parameters
+        if not assert_status(
+            "factory: korina.app.main() takes no app arg (1.9 contract)",
+            200 if no_app_arg else 0, 200,
+            f"sig={sig}" if not no_app_arg else "main() has no app param",
+        ):
+            failures += 1
+
+        # Call main() — should build app via factory and pass to uvicorn.
         try:
             korina_main()
         except SystemExit:
             pass
-
-        # Both calls should have captured exactly one uvicorn.run each,
-        # both targeting the monolith's FastAPI instance on 0.0.0.0:8001.
-        ok = (len(captured) == 2
-              and all(c["title"] and c["title"].startswith("Korina") for c in captured)
-              and all(c["host"] == "0.0.0.0" and c["port"] == 8001 for c in captured)
-              and captured[0]["via"] == "explicit_app"
-              and captured[1]["via"] == "explicit_app")
+        ok_main = (
+            len(captured) == 1
+            and captured[0]["title"] and captured[0]["title"].startswith("Korina")
+            and captured[0]["host"] == "0.0.0.0"
+            and captured[0]["port"] == 8001
+        )
         if not assert_status(
-            "dispatch: korina.app.main forwards to uvicorn.run (explicit & fallback)",
-            200 if ok else 0,
-            200,
-            f"captured={captured}" if not ok else "both paths dispatch correctly",
+            "dispatch: korina.app.main() builds via factory + calls uvicorn.run",
+            200 if ok_main else 0, 200,
+            f"captured={captured}" if not ok_main else "main() dispatched correctly",
+        ):
+            failures += 1
+
+        # 3) main(host=, port=) forwards the override.
+        captured.clear()
+        try:
+            korina_main(host="127.0.0.1", port=9999)
+        except SystemExit:
+            pass
+        ok_override = (
+            len(captured) == 1
+            and captured[0]["host"] == "127.0.0.1"
+            and captured[0]["port"] == 9999
+        )
+        if not assert_status(
+            "dispatch: korina.app.main(host=, port=) forwards overrides",
+            200 if ok_override else 0, 200,
+            f"captured={captured}" if not ok_override else "overrides forwarded",
         ):
             failures += 1
     except Exception as e:
