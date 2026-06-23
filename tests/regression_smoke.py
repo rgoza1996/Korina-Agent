@@ -331,15 +331,18 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         from korina.app_factory import create_app  # type: ignore[import-not-found]
 
         # 0) Blueprint check: korina_voice_lab.py appears exactly once
-        # in git ls-files. Phase 1.9 reduces it to a 3-line shim.
+        # in git ls-files. Phase 1.9 reduces it to a 3-line shim. Also
+        # verify runtime config.json files are not tracked, catching the
+        # "tracked secret/runtime config" class of regression.
         import subprocess as _subprocess
         try:
             _ls = _subprocess.run(
                 ["git", "ls-files"],
                 cwd=_repo_root, capture_output=True, text=True, check=True,
             ).stdout
+            tracked = _ls.splitlines()
             n_korina_voice_lab = sum(
-                1 for line in _ls.splitlines()
+                1 for line in tracked
                 if line.endswith("korina_voice_lab.py")
             )
             ok_one = n_korina_voice_lab == 1
@@ -347,6 +350,23 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
                 "blueprint: exactly 1 korina_voice_lab.py in git ls-files",
                 200 if ok_one else 0, 200,
                 f"count={n_korina_voice_lab}" if not ok_one else "1 entry",
+            ):
+                failures += 1
+
+            tracked_runtime_configs = [
+                line for line in tracked
+                if line == "config.json" or line.endswith("/config.json")
+            ]
+            # Keep tracked examples/templates; only runtime config.json should be absent.
+            tracked_runtime_configs = [
+                line for line in tracked_runtime_configs
+                if not line.endswith("config.example.json")
+            ]
+            ok_no_runtime_config = not tracked_runtime_configs
+            if not assert_status(
+                "git hygiene: runtime config.json is not tracked",
+                200 if ok_no_runtime_config else 0, 200,
+                "none tracked" if ok_no_runtime_config else f"tracked={tracked_runtime_configs}",
             ):
                 failures += 1
         except Exception as e:
