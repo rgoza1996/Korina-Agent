@@ -352,16 +352,10 @@ function agentEnabled(){return $('agentEnabled')?.checked?'on':'off'}
 function agentModel(){return $('agentModel')?.value||lmModel()}
 function finalSttMode(){return $('finalSttMode')?.value||'chunks'}
 function endpointMode(){return $('endpointMode')?.value||'reading'}
-const PROVIDER_BASE_URL_PRESETS={
-  'llama.cpp':'http://127.0.0.1:8080/v1',
-  'lmstudio':'http://127.0.0.1:1234/v1',
-  'ollama':'http://127.0.0.1:11434/v1',
-};
 // Provider capability registry. Fetched once at boot from /api/capabilities.
-// Cached in memory; in 2.2.1 these helpers are defined but not yet
-// used by setBaseUrlEditability / maybeApplyProviderPreset -- they
-// keep reading PROVIDER_BASE_URL_PRESETS as the fallback until 2.2.2
-// migrates the consumers.
+// Cached in memory; 2.2.2 migrates the existing consumers so provider
+// presets and editability all flow through this cache instead of an inline
+// hardcoded constant.
 let _capabilitiesCache = null;
 async function loadCapabilities(force=false){
   if(_capabilitiesCache && !force) return _capabilitiesCache;
@@ -379,18 +373,41 @@ function getAgentProviderCaps(provider){
   const caps = _capabilitiesCache?.agentProviders || {};
   return caps[String(provider||'').trim()] || null;
 }
-function providerPresetBaseUrl(provider){ return PROVIDER_BASE_URL_PRESETS[String(provider||'').trim()]||''; }
+function providerPresetBaseUrl(provider){
+  const caps = getResponseLlmProviderCaps(provider);
+  return caps ? String(caps.default_base_url || '') : '';
+}
 function maybeApplyProviderPreset(providerId, baseUrlId, {clearWhenBlank=false}={}){
   const provider=$(providerId)?.value||'';
   const input=$(baseUrlId);
   if(!input) return false;
-  const preset=providerPresetBaseUrl(provider);
+  // agent provider uses agent_providers section
+  const isAgent = providerId === 'agentProvider';
+  const caps = (isAgent ? getAgentProviderCaps(provider) : getResponseLlmProviderCaps(provider));
+  const preset = caps ? String(caps.default_base_url || '') : providerPresetBaseUrl(provider);
   if(preset){ input.value=preset; return true; }
   if(clearWhenBlank && !provider){ input.value=''; return true; }
   return false;
 }
 function prettyModelLabel(modelId){ const text=String(modelId||'').trim(); if(!text) return ''; if(text.includes('/') || text.endsWith('.gguf')){ const parts=text.split('/').filter(Boolean); const tail=parts[parts.length-1]||text; const parent=parts.length>1 ? parts[parts.length-2] : ''; return parent ? `${tail} — ${parent}` : tail; } return text; }
-function setBaseUrlEditability(){ const llmEditable=llmProvider()==='openai-compatible'; if($('llmBaseUrl')) $('llmBaseUrl').disabled=!llmEditable; const sttProviderValue=String($('sttLlmProvider')?.value||'').trim(); const sttEditable=sttProviderValue==='openai-compatible'; if($('sttLlmBaseUrl')) $('sttLlmBaseUrl').disabled=!sttEditable; }
+async function setBaseUrlEditability(){
+  await loadCapabilities();
+  // response-LLM
+  const llmId = $('llmProvider')?.value || '';
+  const llmCaps = getResponseLlmProviderCaps(llmId);
+  const llmEditable = llmCaps ? !!llmCaps.editable_base_url : (llmId === 'openai-compatible');
+  if($('llmBaseUrl')) $('llmBaseUrl').disabled = !llmEditable;
+  // multimodal-STT (uses response-LLM provider list)
+  const sttId = String($('sttLlmProvider')?.value || '').trim();
+  const sttCaps = getResponseLlmProviderCaps(sttId);
+  const sttEditable = sttCaps ? !!sttCaps.editable_base_url : (sttId === 'openai-compatible');
+  if($('sttLlmBaseUrl')) $('sttLlmBaseUrl').disabled = !sttEditable;
+  // agent (NEW: this was missing)
+  const agentId = String($('agentProvider')?.value || '').trim();
+  const agentCaps = getAgentProviderCaps(agentId);
+  const agentEditable = agentCaps ? !!agentCaps.editable_base_url : (agentId === 'openai-compatible' || agentId === 'anthropic');
+  if($('agentBaseUrl')) $('agentBaseUrl').disabled = !agentEditable;
+}
 async function activateSelectedProvider(provider, model=''){ const r=await fetch('/api/llm/provider/activate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider,model:model||''})}); const j=await r.json(); if(!r.ok) throw new Error(j.detail||JSON.stringify(j)); if(j.saved) applyConfig(j.saved); return j; }
 function setDot(id,state){$(id).className='dot '+state}
 function log(role,text){ const p=document.createElement('p'); p.className='msg'; p.innerHTML=`<b>${role}:</b> ${String(text).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}`; $('log').appendChild(p); $('log').scrollTop=$('log').scrollHeight; }
@@ -665,7 +682,7 @@ async function loadAgentModelOptions(){
     $('settingsInfo').textContent=`Loaded ${(j.models||[]).length} Korina Agent models from ${j.provider}. ${j.error?('Error: '+j.error):''}`;
   }catch(e){ $('settingsInfo').textContent='Agent model list load failed: '+e.message; }
 }
-$('settingsBtn').onclick=()=>{ $('settingsModal').classList.add('open'); syncConverseSettingsUI(); setBaseUrlEditability(); loadAgentModelOptions(); };
+$('settingsBtn').onclick=async()=>{ $('settingsModal').classList.add('open'); syncConverseSettingsUI(); await setBaseUrlEditability(); loadAgentModelOptions(); };
 $('closeSettingsBtn').onclick=()=>$('settingsModal').classList.remove('open');
 $('saveSettingsBtn').onclick=()=>{ saveConfigNow(); $('settingsModal').classList.remove('open'); };
 $('refreshAgentModelsBtn').onclick=()=>loadAgentModelOptions();
@@ -695,11 +712,11 @@ $('endpointMode').onchange=()=>{ endSilenceMs=endpointMode()==='reading'?3200:95
 $('sttDevice').onchange=()=>{ status($('sttStatus'),`STT device set to ${sttDevice()}. Next transcription will use it. First use may load a second model.`, 'warn'); health(); saveConfigSoon(); };
 $('sttModel').onchange=()=>{ status($('sttStatus'),`Whisper model set to ${sttModel()}. First use downloads/loads that model.`, 'warn'); health(); saveConfigSoon(); };
 $('sttBackend').onchange=()=>{ const msg=sttBackend()==='llm'?`Multimodal STT selected. Audio transcription now uses ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()}. Blank STT fields inherit from LLM Response.`:'Built-in Whisper selected.'; syncConverseSettingsUI(); status($('sttStatus'),msg,'warn'); $('settingsInfo').textContent=msg; health(); saveConfigSoon(); };
-$('llmProvider').onchange=async()=>{ maybeApplyProviderPreset('llmProvider','llmBaseUrl'); setBaseUrlEditability(); syncConverseSettingsUI(); status($('sttStatus'),`Switching response provider to ${llmProvider()}…`,'warn'); await saveConfigNow(); try{ const j=await activateSelectedProvider(llmProvider(), lmModel()); $('settingsInfo').textContent=`Activated ${j.activation.provider}. Started ${j.activation.started.join(', ')||'nothing'}; stopped ${j.activation.stopped.join(', ')||'nothing'}.`; }catch(e){ $('settingsInfo').textContent='Provider activation failed: '+e.message; status($('sttStatus'),'Provider activation failed: '+e.message,'bad'); } await loadModelOptions(true); await loadAgentModelOptions(); health(); saveConfigSoon(); };
+$('llmProvider').onchange=async()=>{ maybeApplyProviderPreset('llmProvider','llmBaseUrl'); await setBaseUrlEditability(); syncConverseSettingsUI(); status($('sttStatus'),`Switching response provider to ${llmProvider()}…`,'warn'); await saveConfigNow(); try{ const j=await activateSelectedProvider(llmProvider(), lmModel()); $('settingsInfo').textContent=`Activated ${j.activation.provider}. Started ${j.activation.started.join(', ')||'nothing'}; stopped ${j.activation.stopped.join(', ')||'nothing'}.`; }catch(e){ $('settingsInfo').textContent='Provider activation failed: '+e.message; status($('sttStatus'),'Provider activation failed: '+e.message,'bad'); } await loadModelOptions(true); await loadAgentModelOptions(); health(); saveConfigSoon(); };
 $('lmModel').onchange=async()=>{ if(!sttLlmModel()) syncConverseSettingsUI(); status($('sttStatus'),`LLM response model set to ${prettyModelLabel(lmModel())}.`, 'warn'); await saveConfigNow(); if(llmProvider()==='llama.cpp'){ try{ const j=await activateSelectedProvider('llama.cpp', lmModel()); $('settingsInfo').textContent=`Reloaded llama.cpp with ${prettyModelLabel(j.activation.model)}.`; await loadModelOptions(true); }catch(e){ $('settingsInfo').textContent='llama.cpp reload failed: '+e.message; status($('sttStatus'),'llama.cpp reload failed: '+e.message,'bad'); } } saveConfigSoon(); };
 if($('sttLlmModel')) $('sttLlmModel').onchange=()=>{ status($('sttStatus'),`Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
-if($('sttLlmProvider')) $('sttLlmProvider').onchange=()=>{ maybeApplyProviderPreset('sttLlmProvider','sttLlmBaseUrl',{clearWhenBlank:true}); setBaseUrlEditability(); syncConverseSettingsUI(); health(); saveConfigSoon(); };
-if($('sttLlmBaseUrl')) $('sttLlmBaseUrl').onchange=()=>{ setBaseUrlEditability(); syncConverseSettingsUI(); health(); saveConfigSoon(); };
+if($('sttLlmProvider')) $('sttLlmProvider').onchange=async()=>{ maybeApplyProviderPreset('sttLlmProvider','sttLlmBaseUrl',{clearWhenBlank:true}); await setBaseUrlEditability(); syncConverseSettingsUI(); health(); saveConfigSoon(); };
+if($('sttLlmBaseUrl')) $('sttLlmBaseUrl').onchange=async()=>{ await setBaseUrlEditability(); syncConverseSettingsUI(); health(); saveConfigSoon(); };
 if($('sttLlmApiKeyEnv')) $('sttLlmApiKeyEnv').onchange=()=>{ syncConverseSettingsUI(); loadModelOptions(); saveConfigSoon(); };
 $('ttsDevice').onchange=()=>{ status($('ttsStatus'),`TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
 ['ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmBaseUrl','llmApiKeyEnv','sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider','agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens','agentYoloMode','agentProjectTrust','agentInjectionMode','agentFollowUpMode','agentThinkingLevel','agentAutoCompact','agentCompactionReserveTokens','agentCompactionKeepRecentTokens','agentHideThinking','agentTransport','agentRetryEnabled','agentMaxRetries','agentRetryBaseDelayMs','agentHttpIdleTimeoutMs','agentEnableSkillCommands','agentBlockImages','agentFirstDeliveryMode','agentFirstDeliverySeconds','agentPeriodicDeliveryTurns','agentPeriodicDeliverySeconds','agentBusyDeliveryMode','agentIdleDeliveryMode','agentInterruptsEnabled','agentInterruptMinPriority','agentHardInterruptMinPriority','agentInterruptCooldownPaddingMs','agentPermissionInterrupts','agentReportInjectionMode'].forEach(id=>{ const el=$(id); if(el) el.onchange=()=>{ $('hostInfo').textContent=`${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`; syncConverseSettingsUI(); health(); saveConfigSoon(); }; });
@@ -720,7 +737,7 @@ $('minSpeechMs').oninput=()=>{ $('minSpeechMsDisplay').textContent=(minSpeechMs(
 $('partialWindowMs').oninput=()=>{ partialWindowMs=partialWindowMsSetting(); $('partialWindowMsDisplay').textContent=(partialWindowMs/1000).toFixed(1)+'s'; saveConfigSoon(); };
 document.querySelectorAll('.tab[data-mode]').forEach(t=>t.onclick=()=>{mode=t.dataset.mode;document.querySelectorAll('.tab[data-mode]').forEach(x=>x.classList.toggle('active',x===t)); saveConfigSoon();});
 ['lmModel','sttLlmModel'].forEach(id=>{ const el=$(id); if(!el) return; const trigger=()=>loadModelOptions(false).catch(e=>console.warn('model load failed', e)); el.addEventListener('pointerdown', trigger); el.addEventListener('focus', trigger); });
-setBaseUrlEditability();
+loadCapabilities().then(()=>setBaseUrlEditability()).catch(e=>console.warn('capabilities load failed', e));
 
 
 async function initApp(){
