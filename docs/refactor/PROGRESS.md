@@ -21,7 +21,7 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as you complete ea
 - [x] 1.5 config helpers
 - [x] 1.6 routes
 - [x] 1.7 schemas
-- [ ] 1.8 backward-compat shim
+- [x] 1.8 backward-compat shim
 - [ ] 1.9 delete monolith body
 - [ ] 1.10 verify
 

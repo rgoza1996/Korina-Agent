@@ -571,6 +571,9 @@ async def _route_alpha_agent_permission_answer(request: Request):
 
 register_routes(app, globals())
 
+# Phase 1.8: __main__ block delegates to korina.app.main() so the uvicorn
+# launcher lives in one canonical place. The route body, app instance,
+# and globals()-based route registration stay here until Step 1.9.
 if __name__ == '__main__':
-    import uvicorn
-    uvicorn.run(app, host='0.0.0.0', port=8001)
+    from korina.app import main
+    main(app)

@@ -13,6 +13,9 @@ Exit code 0 if every check passes, 1 otherwise.
 
 Phase 1.7 additions (schema validation, partial transcribe, provider
 activate, /api/config POST round-trip, OpenAPI body-schema visibility).
+
+Phase 1.8 additions (korina.app.main dispatch — both explicit-app and
+no-arg fallback paths forward to uvicorn.run with the right args).
 """
 
 from __future__ import annotations
@@ -299,6 +302,67 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
             failures += 1
     except ImportError as e:
         print(f"  [FAIL] korina.schemas import: {e}")
+        failures += 1
+
+    # Phase 1.8 deliverable: korina.app.main() is the canonical uvicorn
+    # launcher. Verify it's importable and that calling it with the
+    # monolith's app dispatches to uvicorn.run with the right args.
+    # The live service is already running via the monolith entry point;
+    # this test proves the dispatch shape for any future caller.
+    try:
+        # Make sure korina and Korina are importable regardless of cwd.
+        import os as _os
+        _repo_root = str(Path(__file__).resolve().parent.parent)
+        if _repo_root not in _os.sys.path:
+            _os.sys.path.insert(0, _repo_root)
+
+        from korina.app import main as korina_main  # type: ignore[import-not-found]
+        import uvicorn as _uvicorn
+
+        captured: list[dict] = []
+        def _capture_run(*args, **kwargs):
+            title = (args[0].title if args
+                     else getattr(kwargs.get("app"), "title", None))
+            captured.append({
+                "title": title,
+                "host": args[1] if len(args) > 1 else kwargs.get("host"),
+                "port": args[2] if len(args) > 2 else kwargs.get("port"),
+                "via": "explicit_app" if args else "kwarg",
+            })
+            # Don't actually start a server.
+            raise SystemExit(0)
+        _uvicorn.run = _capture_run
+
+        # Call 1: explicit app argument (the path the monolith uses).
+        from Korina.korina_voice_lab import app as monolith_app  # type: ignore[import-not-found]
+        try:
+            korina_main(monolith_app)
+        except SystemExit:
+            pass
+        # Call 2: no app argument (the package-entry fallback path used
+        # by `python3 -m korina.app`). Same expectation: launches the
+        # monolith's app.
+        try:
+            korina_main()
+        except SystemExit:
+            pass
+
+        # Both calls should have captured exactly one uvicorn.run each,
+        # both targeting the monolith's FastAPI instance on 0.0.0.0:8001.
+        ok = (len(captured) == 2
+              and all(c["title"] and c["title"].startswith("Korina") for c in captured)
+              and all(c["host"] == "0.0.0.0" and c["port"] == 8001 for c in captured)
+              and captured[0]["via"] == "explicit_app"
+              and captured[1]["via"] == "explicit_app")
+        if not assert_status(
+            "dispatch: korina.app.main forwards to uvicorn.run (explicit & fallback)",
+            200 if ok else 0,
+            200,
+            f"captured={captured}" if not ok else "both paths dispatch correctly",
+        ):
+            failures += 1
+    except Exception as e:
+        print(f"  [FAIL] korina.app.main dispatch test: {type(e).__name__}: {e}")
         failures += 1
 
     print()
