@@ -61,18 +61,20 @@ from korina.config import (
     LEGACY_AGENT_MODE_KEY, LEGACY_DELIVERY_VALUE, LEGACY_INJECTION_MODE_VALUE,
     _normalize_config_value, _config_example_path,
     load_config, save_config,
-    provider_preset_base_url, is_local_provider_base_url, display_model_label,
     synchronize_llm_dependents,
     config_tts_base_url, config_llm_base_url, config_llm_chat_url, config_llm_models_url,
     config_stt_llm_provider, config_stt_llm_base_url, config_stt_llm_chat_url, config_stt_llm_models_url,
     config_stt_llm_api_env, config_stt_llm_model,
     config_min_speech_ms, config_partial_window_ms,
     config_llm_reasoning, config_stt_llm_reasoning,
-    auth_headers_from_env, api_key_from_config,
     agent_provider, agent_base_url, agent_models_url, agent_chat_url, agent_auth_headers,
-    parse_model_ids, agent_model_choices,
-    llm_models_for,
 )
+from korina.util.presets import provider_preset_base_url, is_local_provider_base_url
+from korina.util.labels import safe_slug, display_model_label
+from korina.runtime.http import auth_headers_from_env, api_key_from_config
+from korina.services.agent_service import agent_model_choices, parse_model_ids
+from korina.services.model_catalog import llm_models_for
+
 from korina.routes import register_routes
 from korina.schemas import (
     AgentPermissionAnswer, AgentStateRequest, AgentTranscriptRequest,

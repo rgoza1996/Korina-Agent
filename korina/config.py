@@ -15,6 +15,9 @@ from korina.util.paths import (
     APP_DIR, CONFIG_PATH, ACK_DEFAULT_VOICE, LMSTUDIO_MODEL, KOKORO_URL,
 )
 
+from korina.util.presets import provider_preset_base_url, is_local_provider_base_url
+from korina.runtime.http import api_key_from_config
+
 DEFAULT_CONFIG = {
     'voice': ACK_DEFAULT_VOICE,
     'speed': 1.0,
@@ -149,31 +152,7 @@ def save_config(config: dict) -> dict:
     return merged
 
 
-def provider_preset_base_url(provider: str) -> str:
-    provider = str(provider or '').strip().lower()
-    return {
-        'llama.cpp': 'http://127.0.0.1:8080/v1',
-        'lmstudio': 'http://127.0.0.1:1234/v1',
-        'ollama': 'http://127.0.0.1:11434/v1',
-    }.get(provider, '')
 
-
-def is_local_provider_base_url(base_url: str, provider: str = '') -> bool:
-    base = str(base_url or '').strip().rstrip('/')
-    provider = str(provider or '').strip().lower()
-    if provider in {'llama.cpp', 'lmstudio', 'ollama'}:
-        return True
-    return base in {'http://127.0.0.1:8080/v1', 'http://127.0.0.1:1234/v1', 'http://127.0.0.1:11434/v1'}
-
-
-def display_model_label(model_id: str) -> str:
-    text = str(model_id or '').strip()
-    if not text:
-        return ''
-    if '/' in text or text.endswith('.gguf'):
-        p = Path(text)
-        return f'{p.name} \u2014 {p.parent.name}' if p.parent.name else p.name
-    return text
 
 
 def synchronize_llm_dependents(config: dict, previous: Optional[dict] = None) -> dict:
@@ -304,22 +283,6 @@ def config_stt_llm_reasoning(config: Optional[dict] = None) -> str:
     return 'on' if str(config.get('stt_llm_reasoning') or 'off').strip().lower() == 'on' else 'off'
 
 
-def auth_headers_from_env(env_name: str) -> dict:
-    env_name = (env_name or '').strip()
-    if not env_name:
-        return {}
-    value = os.environ.get(env_name, '').strip()
-    if not value:
-        return {}
-    return {'Authorization': f'Bearer {value}'}
-
-
-def api_key_from_config(config: dict, direct_key: str = '', env_key_name: str = '') -> str:
-    direct = str(direct_key or '').strip()
-    if direct:
-        return direct
-    env_name = str(env_key_name or '').strip()
-    return os.environ.get(env_name, '').strip() if env_name else ''
 
 
 def agent_provider(config: Optional[dict] = None) -> str:
@@ -359,39 +322,5 @@ def agent_auth_headers(config: dict) -> dict:
     return {'Authorization': f'Bearer {key}'}
 
 
-def parse_model_ids(body: dict) -> list:
-    models = []
-    data = body.get('data', []) if isinstance(body, dict) else []
-    if isinstance(data, list):
-        for item in data:
-            mid = item.get('id') if isinstance(item, dict) else item
-            if isinstance(mid, str) and mid.strip():
-                models.append(mid.strip())
-    return models
 
 
-def agent_model_choices() -> list:
-    config = load_config()
-    req = urllib.request.Request(agent_models_url(config), headers=agent_auth_headers(config), method='GET')
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        body = json.loads(resp.read().decode('utf-8'))
-    return parse_model_ids(body)
-
-
-def llm_models_for(base_url: str, api_env: str) -> list:
-    base = str(base_url or "").strip().rstrip("/")
-    if not base:
-        return []
-    if base.endswith("/chat/completions"):
-        base = base.rsplit("/chat/completions", 1)[0]
-    url = f"{base}/models"
-    headers = auth_headers_from_env(api_env)
-    req = urllib.request.Request(url, headers=headers, method="GET")
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        body = json.loads(resp.read().decode("utf-8"))
-    models = []
-    for item in body.get("data", []):
-        mid = item.get("id")
-        if isinstance(mid, str) and mid.strip():
-            models.append(mid.strip())
-    return models

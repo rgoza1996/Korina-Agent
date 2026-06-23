@@ -37,9 +37,9 @@ from korina.config import (
     config_stt_llm_api_env, config_stt_llm_model,
     agent_provider, agent_base_url, agent_chat_url, agent_models_url,
     agent_auth_headers,
-    provider_preset_base_url, is_local_provider_base_url,
-    display_model_label, parse_model_ids, agent_model_choices, llm_models_for,
 )
+
+from korina.util.labels import display_model_label
 import os
 import re
 import json
@@ -85,3 +85,27 @@ def find_mmproj_for_model(model_path: str) -> str:
     matches = sorted(path.parent.glob('*mmproj*.gguf'))
     return str(matches[0]) if matches else ''
 
+
+
+
+# --- Phase 1.5 helper moved from korina.config ---
+
+def llm_models_for(base_url: str, api_env: str) -> list:
+    base = str(base_url or "").strip().rstrip("/")
+    if not base:
+        return []
+    if base.endswith("/chat/completions"):
+        base = base.rsplit("/chat/completions", 1)[0]
+    url = f"{base}/models"
+    from korina.runtime.http import auth_headers_from_env
+    headers = auth_headers_from_env(api_env)
+    import urllib.request as _ur
+    req = _ur.Request(url, headers=headers, method="GET")
+    with _ur.urlopen(req, timeout=15) as resp:
+        body = json.loads(resp.read().decode("utf-8"))
+    models = []
+    for item in body.get("data", []):
+        mid = item.get("id")
+        if isinstance(mid, str) and mid.strip():
+            models.append(mid.strip())
+    return models

@@ -37,9 +37,9 @@ from korina.config import (
     config_stt_llm_api_env, config_stt_llm_model,
     agent_provider, agent_base_url, agent_chat_url, agent_models_url,
     agent_auth_headers,
-    provider_preset_base_url, is_local_provider_base_url,
-    display_model_label, parse_model_ids, agent_model_choices, llm_models_for,
 )
+from korina.config import agent_provider, agent_base_url, agent_models_url, agent_chat_url, agent_auth_headers
+from korina.config import agent_provider, agent_base_url, agent_models_url, agent_chat_url, agent_auth_headers
 import os
 import re
 import shutil
@@ -282,3 +282,26 @@ def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
     threading.Thread(target=run_agent_transcript_job, args=(req,), daemon=True).start()
     return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': agent_snapshot()}
 
+
+
+# --- Phase 1.5 helpers moved from korina.config ---
+
+def parse_model_ids(body: dict) -> list:
+    models = []
+    data = body.get('data', []) if isinstance(body, dict) else []
+    if isinstance(data, list):
+        for item in data:
+            mid = item.get('id') if isinstance(item, dict) else item
+            if isinstance(mid, str) and mid.strip():
+                models.append(mid.strip())
+    return models
+
+
+def agent_model_choices() -> list:
+    from korina.config import agent_models_url, agent_auth_headers, load_config
+    config = load_config()
+    import urllib.request as _ur
+    req = _ur.Request(agent_models_url(config), headers=agent_auth_headers(config), method='GET')
+    with _ur.urlopen(req, timeout=20) as resp:
+        body = json.loads(resp.read().decode('utf-8'))
+    return parse_model_ids(body)
