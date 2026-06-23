@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import ValidationError
+
+from korina.schemas import AgentPermissionAnswer, AgentStateRequest, AgentTranscriptRequest
 
 router = APIRouter()
 _ctx: dict = {}
@@ -22,13 +25,19 @@ def agent_events(after: int = Query(0)):
 
 @router.post('/api/agent/transcript')
 async def agent_transcript(request: Request):
-    req = _ctx['AgentTranscriptRequest'](**(await request.json()))
+    try:
+        req = AgentTranscriptRequest(**(await request.json()))
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
     return _ctx['_route_agent_transcript'](req)
 
 
 @router.post('/api/agent/permission-answer')
 async def agent_permission_answer(request: Request):
-    req = _ctx['AgentPermissionAnswer'](**(await request.json()))
+    try:
+        req = AgentPermissionAnswer(**(await request.json()))
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
     return _ctx['_route_agent_permission_answer'](req)
 
 
@@ -44,5 +53,8 @@ def agent_models():
 
 @router.post('/api/agent/state-report')
 async def agent_state_report(request: Request):
-    req = _ctx['AgentStateRequest'](**(await request.json()))
+    try:
+        req = AgentStateRequest(**(await request.json()))
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
     return _ctx['_route_agent_state_report'](req)
