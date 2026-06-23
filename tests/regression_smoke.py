@@ -450,6 +450,33 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         print(f"  [FAIL] korina.app.main dispatch test: {type(e).__name__}: {e}")
         failures += 1
 
+def test_capabilities_endpoint():
+    """Phase 2.1 -- GET /api/capabilities returns the full registry split by section."""
+    import json, urllib.request
+    with urllib.request.urlopen(BASE + "/api/capabilities", timeout=10) as r:
+        assert r.status == 200
+        body = json.loads(r.read().decode("utf-8"))
+    assert body.get("version") == 1
+    providers = body.get("providers") or {}
+    agent_providers = body.get("agent_providers") or {}
+    assert set(providers.keys()) == {"llama.cpp", "lmstudio", "ollama", "openai-compatible"}
+    for pid, cap in providers.items():
+        assert cap.get("agent_only") is False, f"{pid} leaked into response-LLM section"
+        assert isinstance(cap.get("editable_base_url"), bool)
+        assert isinstance(cap.get("manageable"), bool)
+        assert isinstance(cap.get("is_local"), bool)
+        assert isinstance(cap.get("model_sources"), list)
+        assert cap.get("label"), f"{pid} missing label"
+    assert set(agent_providers.keys()) == {"openai-compatible", "anthropic"}
+    assert agent_providers["anthropic"].get("agent_only") is True
+    assert agent_providers["anthropic"].get("default_base_url") == ""
+    assert agent_providers["anthropic"].get("editable_base_url") is True
+    assert providers["llama.cpp"]["default_base_url"] == "http://127.0.0.1:8080/v1"
+    assert providers["lmstudio"]["default_base_url"]  == "http://127.0.0.1:1234/v1"
+    assert providers["ollama"]["default_base_url"]    == "http://127.0.0.1:11434/v1"
+
+
+    test_capabilities_endpoint()
     print()
     if failures == 0:
         print(f"All checks passed against {base}.")
