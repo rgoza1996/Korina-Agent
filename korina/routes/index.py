@@ -10,6 +10,6 @@ def init(ctx: dict) -> None:
     _ctx.clear(); _ctx.update(ctx)
 
 
-@router.get('/api/health')
-def health():
-    return _ctx['_route_health']()
+@router.get('/')
+def index():
+    return _ctx['_route_index']()

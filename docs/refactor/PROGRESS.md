@@ -19,7 +19,7 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as you complete ea
 - [ ] 1.3 runtime state
 - [ ] 1.4 services
 - [ ] 1.5 config helpers
-- [ ] 1.6 routes
+- [x] 1.6 routes
 - [ ] 1.7 schemas
 - [ ] 1.8 backward-compat shim
 - [ ] 1.9 delete monolith body

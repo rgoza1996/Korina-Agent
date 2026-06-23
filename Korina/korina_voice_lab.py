@@ -76,6 +76,7 @@ from korina.config import (
     parse_model_ids, agent_model_choices,
     llm_models_for,
 )
+from korina.routes import register_routes
 
 
 
@@ -1066,15 +1067,13 @@ def startup_generate_default_acks():
     enqueue_missing_acks(str(load_config().get('voice') or ACK_DEFAULT_VOICE))
 
 
-@app.get('/')
-def index():
+def _route_index():
     if not INDEX_PATH.exists():
         raise HTTPException(status_code=404, detail='index.html missing')
     return FileResponse(INDEX_PATH)
 
 
-@app.get('/api/health')
-def health():
+def _route_health():
     config = load_config()
     return {
         'ok': True,
@@ -1112,13 +1111,11 @@ def health():
     }
 
 
-@app.get('/api/config')
-def get_config():
+def _route_get_config():
     return load_config()
 
 
-@app.post('/api/config')
-def update_config(payload: dict):
+def _route_update_config(payload: dict):
     current = load_config()
     previous = dict(current)
     if isinstance(payload, dict):
@@ -1143,8 +1140,7 @@ def update_config(payload: dict):
     return saved
 
 
-@app.get('/api/models')
-def models(llm_base_url: Optional[str] = Query(None), llm_api_key_env: Optional[str] = Query(None), stt_llm_base_url: Optional[str] = Query(None), stt_llm_api_key_env: Optional[str] = Query(None)):
+def _route_models(llm_base_url: Optional[str] = Query(None), llm_api_key_env: Optional[str] = Query(None), stt_llm_base_url: Optional[str] = Query(None), stt_llm_api_key_env: Optional[str] = Query(None)):
     config = load_config()
     llm_base = str(llm_base_url or config_llm_base_url(config)).strip().rstrip('/')
     llm_api_env_name = str(llm_api_key_env or config.get('llm_api_key_env') or '').strip()
@@ -1186,8 +1182,7 @@ def models(llm_base_url: Optional[str] = Query(None), llm_api_key_env: Optional[
     }
 
 
-@app.post('/api/llm/provider/activate')
-def activate_provider(req: ProviderActivateRequest):
+def _route_activate_provider(req: ProviderActivateRequest):
     config = load_config()
     provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip()
     current = dict(config)
@@ -1208,8 +1203,7 @@ def activate_provider(req: ProviderActivateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get('/api/acks')
-def acks(voice: str = Query(ACK_DEFAULT_VOICE), tag: Optional[str] = Query(None)):
+def _route_acks(voice: str = Query(ACK_DEFAULT_VOICE), tag: Optional[str] = Query(None)):
     voice = (voice or ACK_DEFAULT_VOICE).strip() or ACK_DEFAULT_VOICE
     enqueue_missing_acks(voice, tag)
     return {
@@ -1219,13 +1213,11 @@ def acks(voice: str = Query(ACK_DEFAULT_VOICE), tag: Optional[str] = Query(None)
     }
 
 
-@app.get('/api/acks/status')
-def acks_status(voice: str = Query(ACK_DEFAULT_VOICE)):
+def _route_acks_status(voice: str = Query(ACK_DEFAULT_VOICE)):
     return ack_status((voice or ACK_DEFAULT_VOICE).strip() or ACK_DEFAULT_VOICE)
 
 
-@app.post('/api/acks/rebuild')
-def acks_rebuild(payload: dict):
+def _route_acks_rebuild(payload: dict):
     global _ack_current_voice
     voice = (payload.get('voice') or ACK_DEFAULT_VOICE).strip()
     tag = payload.get('tag')
@@ -1239,32 +1231,27 @@ def acks_rebuild(payload: dict):
     return {'ok': True, 'voice': voice, 'tag': tag, 'removed': removed, 'queued_or_missing': missing, 'status': ack_status(voice)}
 
 
-@app.get('/api/agent/status')
-def agent_status():
+def _route_agent_status():
     return {'ok': True, **agent_snapshot()}
 
 
-@app.get('/api/agent/events')
-def agent_events(after: int = Query(0)):
+def _route_agent_events(after: int = Query(0)):
     with _agent_lock:
         events = [e for e in _agent_events if int(e.get('id', 0)) > after]
         last_id = _agent_event_seq
     return {'ok': True, 'events': events, 'last_event_id': last_id, **agent_snapshot()}
 
 
-@app.post('/api/agent/transcript')
-def agent_transcript(req: AgentTranscriptRequest):
+def _route_agent_transcript(req: AgentTranscriptRequest):
     return submit_agent_transcript(req)
 
 
-@app.post('/api/agent/permission-answer')
-def agent_permission_answer(req: AgentPermissionAnswer):
+def _route_agent_permission_answer(req: AgentPermissionAnswer):
     push_agent_event({'type': 'permission_answer', 'priority': 'normal', 'request_id': req.request_id, 'answer': req.answer, 'transcript': req.transcript})
     return submit_agent_transcript(AgentTranscriptRequest(transcript=req.transcript, delivery_mode='prompt', reason=f'permission_answer:{req.answer}', turn_count=0))
 
 
-@app.post('/api/agent/reset')
-def agent_reset():
+def _route_agent_reset():
     global _agent_event_seq, _agent_busy, _agent_status, _agent_last_report, _agent_last_error, _agent_last_emitted_report_hash, _agent_last_emitted_report_at
     with _agent_lock:
         _agent_events.clear()
@@ -1279,8 +1266,7 @@ def agent_reset():
     return {'ok': True, 'status': agent_snapshot()}
 
 
-@app.get('/api/agent/models')
-def agent_models():
+def _route_agent_models():
     try:
         models = agent_model_choices()
         return {'ok': True, 'models': models, 'provider': agent_provider(), 'default': str(load_config().get('agent_model') or load_config().get('lm_model') or LMSTUDIO_MODEL), 'error': None}
@@ -1288,8 +1274,7 @@ def agent_models():
         return {'ok': False, 'models': [], 'provider': agent_provider(), 'default': str(load_config().get('agent_model') or load_config().get('lm_model') or LMSTUDIO_MODEL), 'error': str(e)}
 
 
-@app.post('/api/agent/state-report')
-def agent_state_report(req: AgentStateRequest):
+def _route_agent_state_report(req: AgentStateRequest):
     if str(load_config().get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'state_report': '', 'disabled': True}
     try:
@@ -1299,8 +1284,7 @@ def agent_state_report(req: AgentStateRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post('/api/transcribe')
-async def transcribe(audio: UploadFile = File(...), device: Optional[str] = Query(None), model: Optional[str] = Query(None), backend: str = Query('whisper'), llm_model: Optional[str] = Query(None)):
+async def _route_transcribe(audio: UploadFile = File(...), device: Optional[str] = Query(None), model: Optional[str] = Query(None), backend: str = Query('whisper'), llm_model: Optional[str] = Query(None)):
     suffix = Path(audio.filename or 'recording.webm').suffix or '.webm'
     try:
         return JSONResponse(transcribe_upload_file(audio.file, suffix, vad_filter=True, device=device, model_id=model, backend=backend, llm_model=llm_model))
@@ -1308,8 +1292,7 @@ async def transcribe(audio: UploadFile = File(...), device: Optional[str] = Quer
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post('/api/transcribe/partial')
-async def transcribe_partial(audio: UploadFile = File(...), device: Optional[str] = Query(None), model: Optional[str] = Query(None), backend: str = Query('whisper'), llm_model: Optional[str] = Query(None)):
+async def _route_transcribe_partial(audio: UploadFile = File(...), device: Optional[str] = Query(None), model: Optional[str] = Query(None), backend: str = Query('whisper'), llm_model: Optional[str] = Query(None)):
     """Low-latency rolling partial transcript for live mode.
 
     Browser sends the growing current utterance every ~1.8s while the user is
@@ -1330,8 +1313,7 @@ async def transcribe_partial(audio: UploadFile = File(...), device: Optional[str
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post('/api/transcribe/stream')
-async def transcribe_stream(audio: UploadFile = File(...), device: Optional[str] = Query(None), model: Optional[str] = Query(None), backend: str = Query('whisper'), llm_model: Optional[str] = Query(None)):
+async def _route_transcribe_stream(audio: UploadFile = File(...), device: Optional[str] = Query(None), model: Optional[str] = Query(None), backend: str = Query('whisper'), llm_model: Optional[str] = Query(None)):
     suffix = Path(audio.filename or 'recording.webm').suffix or '.webm'
 
     def events():
@@ -1399,8 +1381,7 @@ async def transcribe_stream(audio: UploadFile = File(...), device: Optional[str]
     return StreamingResponse(events(), media_type='text/event-stream')
 
 
-@app.post('/api/chat')
-def chat(req: ChatRequest):
+def _route_chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail='No message provided')
     started = time.time()
@@ -1421,8 +1402,7 @@ def chat(req: ChatRequest):
 # Korina Agent: State Report + Permission Answer Endpoints
 # ============================================================
 
-@korina_app.post("/api/agent/state-report")
-async def agent_state_report(request: Request):
+async def _route_alpha_agent_state_report(request: Request):
     """
     Receives transcript deltas/turns from Korina Converse.
     Returns state_report, interrupt, and/or permission_request.
@@ -1449,8 +1429,7 @@ async def agent_state_report(request: Request):
     }
 
 
-@korina_app.post("/api/agent/permission-answer")
-async def agent_permission_answer(request: Request):
+async def _route_alpha_agent_permission_answer(request: Request):
     """
     Receives the user's answer to a permission question.
     Routes it back to Korina Agent.
@@ -1461,6 +1440,10 @@ async def agent_permission_answer(request: Request):
     # TODO: wire up to Korina Agent
     print(f"[Korina Agent] Permission answer: {request_id} -> {answer}")
     return {"ok": True, "request_id": request_id, "answer": answer}
+
+
+
+register_routes(app, globals())
 
 if __name__ == '__main__':
     import uvicorn
