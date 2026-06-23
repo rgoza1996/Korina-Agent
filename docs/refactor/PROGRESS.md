@@ -17,7 +17,7 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as you complete ea
 - [x] 1.1 directory layout
 - [x] 1.2 paths/config
 - [x] 1.3 runtime state
-- [ ] 1.4 services
+- [x] 1.4 services
 - [ ] 1.5 config helpers
 - [x] 1.6 routes
 - [ ] 1.7 schemas
