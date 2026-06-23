@@ -43,6 +43,8 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is co
 
 **Post-Phase-2 doc fixes (no code change):** `e828647` updated `README.md` for the modular package layout, single-source-of-truth registry, and agent request-shape clarification; `e21fc2f` corrected `docs/refactor/blueprint.md` to state that the refactor series targets `beta` (the blueprint was written before Phase 0 and still said `alpha`).
 
+**Pre-Phase-3 housekeeping:** `13c51e6` further updated `PROGRESS.md` to track current HEAD and disambiguate doc-only vs code-touching commits; `1f21a67` corrected the blueprint `Status:` line to reflect that Phases 0/1/2 are complete on `beta`. The runtime `/home/roggoz/Korina/tests/regression_smoke.py` was also synced from source — the runtime copy had been frozen at a pre-Phase-1.10 snapshot and was missing the Phase 2.2.3 frontend tests and the `SystemExit(0)` bug fix. **Note:** `regression_smoke.py` must be run from a git checkout (source `Korina-Agent/`, not the runtime `Korina/` deploy dir) because the blueprint check uses `git ls-files` resolved relative to the script's `parent.parent`. Running it from the runtime fails that one check.
+
 ## Phase 3 — Frontend modularization
 
 - [ ] 3.1 module strategy
