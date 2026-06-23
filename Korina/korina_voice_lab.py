@@ -49,14 +49,11 @@ app.add_middleware(
 ACK_DIR.mkdir(parents=True, exist_ok=True)
 app.mount('/Ack', StaticFiles(directory=str(ACK_DIR)), name='ack')
 
-_asr_models: dict[str, object] = {}
-_asr_loaded_at_by_device: dict[str, float] = {}
-_asr_lock = threading.Lock()
-_asr_infer_lock = threading.Lock()
-_asr_device: Optional[str] = None
-_asr_compute_type: Optional[str] = None
 
 
+
+# Runtime state moved to korina/runtime/state.py (Phase 1.3)
+from korina.runtime import state
 
 # Config bootstrapping and helpers moved to korina/config.py (Phase 1.2)
 from korina.config import (
@@ -298,25 +295,8 @@ class ProviderActivateRequest(BaseModel):
 
 
 
-_ack_queue: list[tuple[str, str, str]] = []
-_ack_in_progress: set[tuple[str, str]] = set()
-_ack_queue_lock = threading.Lock()
-_ack_worker_running = False
-_ack_last_error: Optional[str] = None
-_ack_last_generated: Optional[str] = None
-_ack_current_voice = ACK_DEFAULT_VOICE
 
 
-_agent_lock = threading.Lock()
-_agent_events: list[dict] = []
-_agent_event_seq = 0
-_agent_busy = False
-_agent_status = 'idle'
-_agent_last_report = ''
-_agent_pending_injections: list[dict] = []
-_agent_last_error: Optional[str] = None
-_agent_last_emitted_report_hash = ''
-_agent_last_emitted_report_at = 0.0
 
 
 def safe_slug(value: str) -> str:
@@ -405,20 +385,19 @@ def missing_ack_phrases(voice: str, tag: Optional[str] = None) -> list[dict]:
 
 
 def enqueue_missing_acks(voice: str, tag: Optional[str] = None) -> int:
-    global _ack_worker_running
     voice = (voice or ACK_DEFAULT_VOICE).strip() or ACK_DEFAULT_VOICE
     missing = missing_ack_phrases(voice, tag)
-    with _ack_queue_lock:
-        existing = {(v, pid) for v, pid, _ in _ack_queue} | set(_ack_in_progress)
+    with state.ack.queue_lock:
+        existing = {(v, pid) for v, pid, _ in state.ack.queue} | set(state.ack.in_progress)
         added = 0
         for phrase in missing:
             key = (voice, phrase['id'])
             if key not in existing:
-                _ack_queue.append((voice, phrase['id'], phrase['text']))
+                state.ack.queue.append((voice, phrase['id'], phrase['text']))
                 existing.add(key)
                 added += 1
-        if added and not _ack_worker_running:
-            _ack_worker_running = True
+        if added and not state.ack.worker_running:
+            state.ack.worker_running = True
             threading.Thread(target=ack_generation_worker, daemon=True).start()
     return len(missing)
 
@@ -443,31 +422,30 @@ def synthesize_ack_wav(voice: str, phrase_id: str, text: str) -> None:
 
 
 def ack_generation_worker() -> None:
-    global _ack_worker_running, _ack_last_error, _ack_last_generated
     try:
         while True:
-            with _ack_queue_lock:
-                if not _ack_queue:
-                    _ack_worker_running = False
+            with state.ack.queue_lock:
+                if not state.ack.queue:
+                    state.ack.worker_running = False
                     return
-                voice, phrase_id, text = _ack_queue.pop(0)
-                _ack_in_progress.add((voice, phrase_id))
+                voice, phrase_id, text = state.ack.queue.pop(0)
+                state.ack.in_progress.add((voice, phrase_id))
             try:
                 synthesize_ack_wav(voice, phrase_id, text)
-                _ack_last_generated = f'{voice}:{phrase_id}'
-                _ack_last_error = None
-                print(f'[acks] generated {_ack_last_generated}', flush=True)
+                state.ack.last_generated = f'{voice}:{phrase_id}'
+                state.ack.last_error = None
+                print(f'[acks] generated {state.ack.last_generated}', flush=True)
             except Exception as e:
-                _ack_last_error = f'{voice}:{phrase_id}: {e}'
-                print(f'[acks] generation failed: {_ack_last_error}', flush=True)
+                state.ack.last_error = f'{voice}:{phrase_id}: {e}'
+                print(f'[acks] generation failed: {state.ack.last_error}', flush=True)
                 time.sleep(2)
             finally:
-                with _ack_queue_lock:
-                    _ack_in_progress.discard((voice, phrase_id))
+                with state.ack.queue_lock:
+                    state.ack.in_progress.discard((voice, phrase_id))
     finally:
-        with _ack_queue_lock:
-            if not _ack_queue:
-                _ack_worker_running = False
+        with state.ack.queue_lock:
+            if not state.ack.queue:
+                state.ack.worker_running = False
 
 
 def clear_ack_wavs() -> int:
@@ -484,19 +462,19 @@ def clear_ack_wavs() -> int:
 def ack_status(voice: str) -> dict:
     manifest = load_ack_manifest()
     generated = [p for p in manifest if ack_path(voice, p).exists() and ack_path(voice, p).stat().st_size > 44]
-    with _ack_queue_lock:
-        queued = len(_ack_queue)
-        worker_running = _ack_worker_running
+    with state.ack.queue_lock:
+        queued = len(state.ack.queue)
+        worker_running = state.ack.worker_running
     return {
         'voice': voice,
         'manifest_count': len(manifest),
         'generated_count': len(generated),
         'missing_count': len(missing_ack_phrases(voice)),
         'queue_depth': queued,
-        'in_progress': [f'{v}:{pid}' for v, pid in sorted(_ack_in_progress)],
+        'in_progress': [f'{v}:{pid}' for v, pid in sorted(state.ack.in_progress)],
         'generating': worker_running,
-        'last_generated': _ack_last_generated,
-        'last_error': _ack_last_error,
+        'last_generated': state.ack.last_generated,
+        'last_error': state.ack.last_error,
     }
 
 
@@ -546,20 +524,19 @@ def compute_type_for(device: str) -> str:
 
 
 def get_asr(device: Optional[str] = None, model_id: Optional[str] = None):
-    global _asr_device, _asr_compute_type
     resolved = normalize_device(device, default_env=WHISPER_DEVICE)
     selected_model = (model_id or WHISPER_MODEL_ID).strip() or WHISPER_MODEL_ID
     compute_type = compute_type_for(resolved)
     key = f'{selected_model}:{resolved}:{compute_type}'
-    if key in _asr_models:
-        _asr_device = resolved
-        _asr_compute_type = compute_type
-        return _asr_models[key]
-    with _asr_lock:
-        if key in _asr_models:
-            _asr_device = resolved
-            _asr_compute_type = compute_type
-            return _asr_models[key]
+    if key in state.asr.models:
+        state.asr.device = resolved
+        state.asr.compute_type = compute_type
+        return state.asr.models[key]
+    with state.asr.lock:
+        if key in state.asr.models:
+            state.asr.device = resolved
+            state.asr.compute_type = compute_type
+            return state.asr.models[key]
         from faster_whisper import WhisperModel
 
         print(
@@ -573,10 +550,10 @@ def get_asr(device: Optional[str] = None, model_id: Optional[str] = None):
             compute_type=compute_type,
             cpu_threads=WHISPER_CPU_THREADS,
         )
-        _asr_models[key] = model
-        _asr_loaded_at_by_device[key] = time.time()
-        _asr_device = resolved
-        _asr_compute_type = compute_type
+        state.asr.models[key] = model
+        state.asr.loaded_at_by_device[key] = time.time()
+        state.asr.device = resolved
+        state.asr.compute_type = compute_type
         print(f'[faster-whisper] loaded {key}', flush=True)
         return model
 
@@ -588,7 +565,7 @@ def transcribe_wav_segments(wav: Path, *, vad_filter: bool = True, device: Optio
     Serializing inference avoids overlapping partial/final requests thrashing CPU/GPU.
     """
     asr = get_asr(device, model_id)
-    with _asr_infer_lock:
+    with state.asr.infer_lock:
         segments, info = asr.transcribe(
             str(wav),
             beam_size=WHISPER_BEAM_SIZE,
@@ -640,9 +617,9 @@ def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, 
                     'duration': duration,
                     'model': model_id or config.get('stt_model') or WHISPER_MODEL_ID,
                     'backend': 'whisper-fallback',
-                    'device': _asr_device,
+                    'device': state.asr.device,
                     'requested_device': normalize_device(device, default_env=WHISPER_DEVICE),
-                    'compute_type': _asr_compute_type,
+                    'compute_type': state.asr.compute_type,
                     'language': info.language,
                     'language_probability': info.language_probability,
                     'warning': detail,
@@ -664,9 +641,9 @@ def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, 
             'duration': duration,
             'model': model_id or WHISPER_MODEL_ID,
             'backend': 'faster-whisper',
-            'device': _asr_device,
+            'device': state.asr.device,
             'requested_device': normalize_device(device, default_env=WHISPER_DEVICE),
-            'compute_type': _asr_compute_type,
+            'compute_type': state.asr.compute_type,
             'language': info.language,
             'language_probability': info.language_probability,
             'segments': [
@@ -942,35 +919,33 @@ def classify_agent_priority(report: str) -> str:
 
 
 def push_agent_event(event: dict) -> dict:
-    global _agent_event_seq
-    with _agent_lock:
-        _agent_event_seq += 1
+    with state.agent.lock:
+        state.agent.event_seq += 1
         event = dict(event)
-        event['id'] = _agent_event_seq
+        event['id'] = state.agent.event_seq
         event['created_at'] = time.time()
-        _agent_events.append(event)
-        del _agent_events[:-100]
+        state.agent.events.append(event)
+        del state.agent.events[:-100]
         return event
 
 
 def agent_snapshot() -> dict:
-    with _agent_lock:
+    with state.agent.lock:
         return {
-            'busy': _agent_busy,
-            'status': _agent_status,
-            'last_report': _agent_last_report,
-            'pending_injections': len(_agent_pending_injections),
-            'last_error': _agent_last_error,
-            'last_event_id': _agent_event_seq,
+            'busy': state.agent.busy,
+            'status': state.agent.status,
+            'last_report': state.agent.last_report,
+            'pending_injections': len(state.agent.pending_injections),
+            'last_error': state.agent.last_error,
+            'last_event_id': state.agent.event_seq,
         }
 
 
 def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
-    global _agent_busy, _agent_status, _agent_last_report, _agent_last_error, _agent_last_emitted_report_hash, _agent_last_emitted_report_at
     config = load_config()
-    with _agent_lock:
-        if _agent_busy:
-            _agent_pending_injections.append({
+    with state.agent.lock:
+        if state.agent.busy:
+            state.agent.pending_injections.append({
                 'transcript': req.transcript,
                 'reason': req.reason,
                 'turn_count': req.turn_count,
@@ -980,18 +955,18 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
         else:
             queued_busy = False
         if not queued_busy:
-            _agent_busy = True
-            _agent_status = 'working'
+            state.agent.busy = True
+            state.agent.status = 'working'
     if queued_busy:
         push_agent_event({'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; transcript delta queued as injection.'})
         return
     push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'})
     try:
-        previous = _agent_last_report
-        with _agent_lock:
-            if _agent_pending_injections:
-                injection_text = '\n\nQueued injection while busy:\n' + json.dumps(_agent_pending_injections[-5:], ensure_ascii=False)
-                _agent_pending_injections.clear()
+        previous = state.agent.last_report
+        with state.agent.lock:
+            if state.agent.pending_injections:
+                injection_text = '\n\nQueued injection while busy:\n' + json.dumps(state.agent.pending_injections[-5:], ensure_ascii=False)
+                state.agent.pending_injections.clear()
             else:
                 injection_text = ''
         state_req = AgentStateRequest(
@@ -1016,13 +991,13 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
         priority = classify_agent_priority(raw_report + '\n' + report)
         report_hash = hashlib.sha256(report.encode('utf-8')).hexdigest()
         now = time.time()
-        duplicate_recent = report_hash == _agent_last_emitted_report_hash and (now - _agent_last_emitted_report_at) < 60 and priority != 'critical'
-        _agent_last_emitted_report_hash = report_hash
-        _agent_last_emitted_report_at = now
-        with _agent_lock:
-            _agent_last_report = report
-            _agent_status = 'idle'
-            _agent_last_error = None
+        duplicate_recent = report_hash == state.agent.last_emitted_report_hash and (now - state.agent.last_emitted_report_at) < 60 and priority != 'critical'
+        state.agent.last_emitted_report_hash = report_hash
+        state.agent.last_emitted_report_at = now
+        with state.agent.lock:
+            state.agent.last_report = report
+            state.agent.status = 'idle'
+            state.agent.last_error = None
         event_type = 'permission_request' if priority == 'critical' and 'permission request:' in report.lower() else 'state_report'
         if not duplicate_recent:
             push_agent_event({
@@ -1039,13 +1014,13 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
         else:
             push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'agent_input': agent_input})
     except Exception as e:
-        with _agent_lock:
-            _agent_status = 'idle'
-            _agent_last_error = str(e)
+        with state.agent.lock:
+            state.agent.status = 'idle'
+            state.agent.last_error = str(e)
         push_agent_event({'type': 'agent_error', 'priority': 'important', 'message': str(e)})
     finally:
-        with _agent_lock:
-            _agent_busy = False
+        with state.agent.lock:
+            state.agent.busy = False
 
 
 def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
@@ -1053,8 +1028,8 @@ def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
     if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
     if req.delivery_mode == 'injection':
-        with _agent_lock:
-            _agent_pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
+        with state.agent.lock:
+            state.agent.pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
         push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
         return {'ok': True, 'accepted': True, 'queued_as': 'injection', 'status': agent_snapshot()}
     threading.Thread(target=run_agent_transcript_job, args=(req,), daemon=True).start()
@@ -1081,11 +1056,11 @@ def _route_health():
         'whisper_backend': 'faster-whisper',
         'whisper_model': WHISPER_MODEL_ID,
         'whisper_model_choices': WHISPER_MODEL_CHOICES,
-        'whisper_loaded': bool(_asr_models),
-        'whisper_loaded_devices': sorted(_asr_models.keys()),
-        'whisper_loaded_at_by_device': _asr_loaded_at_by_device,
-        'whisper_device': _asr_device or normalize_device(None, default_env=WHISPER_DEVICE),
-        'whisper_compute_type': _asr_compute_type or compute_type_for(normalize_device(None, default_env=WHISPER_DEVICE)),
+        'whisper_loaded': bool(state.asr.models),
+        'whisper_loaded_devices': sorted(state.asr.models.keys()),
+        'whisper_loaded_at_by_device': state.asr.loaded_at_by_device,
+        'whisper_device': state.asr.device or normalize_device(None, default_env=WHISPER_DEVICE),
+        'whisper_compute_type': state.asr.compute_type or compute_type_for(normalize_device(None, default_env=WHISPER_DEVICE)),
         'cuda_available': torch.cuda.is_available(),
         'whisper_beam_size': WHISPER_BEAM_SIZE,
         'whisper_cpu_threads': WHISPER_CPU_THREADS,
@@ -1106,8 +1081,8 @@ def _route_health():
         'multimodal_stt_chat_url': config_stt_llm_chat_url(config),
         'multimodal_stt_model': config_stt_llm_model(config),
         'tts_base_url': config_tts_base_url(config),
-        'ack_count': len(ack_files_for(_ack_current_voice)),
-        'ack_status': ack_status(_ack_current_voice),
+        'ack_count': len(ack_files_for(state.ack.current_voice)),
+        'ack_status': ack_status(state.ack.current_voice),
     }
 
 
@@ -1218,7 +1193,6 @@ def _route_acks_status(voice: str = Query(ACK_DEFAULT_VOICE)):
 
 
 def _route_acks_rebuild(payload: dict):
-    global _ack_current_voice
     voice = (payload.get('voice') or ACK_DEFAULT_VOICE).strip()
     tag = payload.get('tag')
     clear = bool(payload.get('clear', False))
@@ -1226,7 +1200,7 @@ def _route_acks_rebuild(payload: dict):
         removed = clear_ack_wavs()
     else:
         removed = 0
-    _ack_current_voice = voice
+    state.ack.current_voice = voice
     missing = enqueue_missing_acks(voice, tag)
     return {'ok': True, 'voice': voice, 'tag': tag, 'removed': removed, 'queued_or_missing': missing, 'status': ack_status(voice)}
 
@@ -1236,9 +1210,9 @@ def _route_agent_status():
 
 
 def _route_agent_events(after: int = Query(0)):
-    with _agent_lock:
-        events = [e for e in _agent_events if int(e.get('id', 0)) > after]
-        last_id = _agent_event_seq
+    with state.agent.lock:
+        events = [e for e in state.agent.events if int(e.get('id', 0)) > after]
+        last_id = state.agent.event_seq
     return {'ok': True, 'events': events, 'last_event_id': last_id, **agent_snapshot()}
 
 
@@ -1252,17 +1226,16 @@ def _route_agent_permission_answer(req: AgentPermissionAnswer):
 
 
 def _route_agent_reset():
-    global _agent_event_seq, _agent_busy, _agent_status, _agent_last_report, _agent_last_error, _agent_last_emitted_report_hash, _agent_last_emitted_report_at
-    with _agent_lock:
-        _agent_events.clear()
-        _agent_event_seq = 0
-        _agent_pending_injections.clear()
-        _agent_busy = False
-        _agent_status = 'idle'
-        _agent_last_report = ''
-        _agent_last_error = None
-        _agent_last_emitted_report_hash = ''
-        _agent_last_emitted_report_at = 0.0
+    with state.agent.lock:
+        state.agent.events.clear()
+        state.agent.event_seq = 0
+        state.agent.pending_injections.clear()
+        state.agent.busy = False
+        state.agent.status = 'idle'
+        state.agent.last_report = ''
+        state.agent.last_error = None
+        state.agent.last_emitted_report_hash = ''
+        state.agent.last_emitted_report_at = 0.0
     return {'ok': True, 'status': agent_snapshot()}
 
 
@@ -1369,8 +1342,8 @@ async def _route_transcribe_stream(audio: UploadFile = File(...), device: Option
                     'sample_rate': int(sr),
                     'model': model or WHISPER_MODEL_ID,
                     'backend': 'faster-whisper',
-                    'device': _asr_device,
-                    'compute_type': _asr_compute_type,
+                    'device': state.asr.device,
+                    'compute_type': state.asr.compute_type,
                     'language': info.language,
                     'language_probability': info.language_probability,
                     'segments': count,
