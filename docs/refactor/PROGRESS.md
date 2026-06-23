@@ -2,10 +2,9 @@
 
 Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is completed and keep a short evidence note so future work can resume without reconstructing git history.
 
-**Branch:** `beta`  
-**Latest verified Phase 1 commit:** `e21c518` — `test: verify Phase 1 refactor contract and restore OpenAPI body schemas (Phase 1.10)`  
-**Last full verification:** `2026-06-22 21:00 PDT` on roggoz. `tests/regression_smoke.py` passed **28/28** with real `/api/chat` enabled; `/api/chat` returned HTTP 200 with a live LLM reply.  
-**Verification report:** `docs/refactor/phase-1-verification.md`
+**Branch:** `beta`
+**Latest verified Phase 2 commit:** `2b77d95` — `test: pin editable_base_url contract across all providers (2.3.2)`
+**Last full verification:** 2026-06-23 on roggoz. `tests/regression_smoke.py` passed **38/38** with real `/api/chat` enabled; `/api/chat` returned HTTP 200 with a live LLM reply in 0.18s. OpenAPI exposes 20 paths (Phase 1 baseline 19 + `/api/capabilities`); all prior paths present, none removed. Provider activation works: `started: ['llama-server.service']`, `stopped: ['lmstudio', 'ollama']`.
 
 ## Phase 0 — Stabilization
 
@@ -30,14 +29,16 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is co
 - [✓] 1.9 delete monolith body — `Korina/korina_voice_lab.py` reduced to 3-line shim; app factory owns app construction; committed at `4dc1f2d`.
 - [✓] 1.10 verify — full live regression and Phase 0 route-contract comparison completed; committed at `e21c518`.
 
-**Phase 1 result:** backend modularization is complete on `beta`. Current app construction lives in `korina/app_factory.py`; `Korina/korina_voice_lab.py` is only the compatibility shim. The live API exposes the same 19 path contract as the Phase 0 baseline (`b065ea0`) with no missing/added paths and no method diffs.
+**Phase 1 result:** backend modularization complete on `beta`. Current app construction lives in `korina/app_factory.py`; `Korina/korina_voice_lab.py` is only the compatibility shim. The live API exposes the same 19 path contract as the Phase 0 baseline (`b065ea0`) with no missing/added paths and no method diffs.
 
 ## Phase 2 — Single source of truth
 
-- [ ] 2.1 capabilities endpoint
-- [ ] 2.2 frontend reads capabilities
-- [ ] 2.3 switch contract documented
-- [ ] 2.4 verify
+- [✓] 2.1 capabilities endpoint — `GET /api/capabilities` serves the `PROVIDER_CAPABILITIES` registry split into `providers` (4 response-LLM) and `agent_providers` (2 agent); Pydantic schema in `korina/schemas_capabilities.py`; route in `korina/routes/capabilities.py`; registry in `korina/util/presets.py`. Commits: `af94507` (registry), `7f26835` (schemas), `a08f4e2` (route + factory wiring), `e295968` (regression test).
+- [✓] 2.2 frontend reads capabilities — `loadCapabilities()` fetches once at boot and caches; `getResponseLlmProviderCaps()` / `getAgentProviderCaps()` look up providers from the cache; `setBaseUrlEditability()` is async and now controls `llmBaseUrl`, `sttLlmBaseUrl`, AND `agentBaseUrl` (the pre-Phase-2 bug — agent base URL was never wired to any editability logic); `maybeApplyProviderPreset()` uses the right section (agentProvider → `agent_providers`, everything else → `providers`); legacy `PROVIDER_BASE_URL_PRESETS` constant deleted; `initApp` not modified (boot warm-up via top-level `loadCapabilities().then(()=>setBaseUrlEditability())`). Commits: `b90cbf2` (2.2.1 helpers + fallback), `06bac04` (2.2.2 migrate consumers + remove fallback).
+- [✓] 2.3 switch contract documented — `docs/capabilities.md` is the canonical reference. Covers endpoints, the registry table, 7 invariants, the new-provider checklist, the response-LLM and agent user flows, the bug class this contract prevents, the verification recipe, and what's out of scope. Plus 4 new regression tests (3 frontend + 1 edge-case). Commits: `e85c739` (2.2.3 frontend tests + 3 latent regression-script bugs fixed), `b0023dd` (2.3.1 docs), `2b77d95` (2.3.2 edge-case test).
+- [✓] 2.4 verify — full live regression passed 38/38 on roggoz; `/api/capabilities` returns 200; `/api/chat` still works after provider activation; OpenAPI path count is Phase 1 baseline + 1 (`/api/capabilities`) and all prior paths remain.
+
+**Phase 2 result:** single source of truth for provider rules is live. The agent provider's base-URL field is now properly controlled by `/api/capabilities` (the bug the blueprint flagged). Response-LLM provider behavior is identical to Phase 1 for current users — the legacy hardcoded `llmProvider() === 'openai-compatible'` check is replaced by `editable_base_url` from the cache, which yields the same value for all current response-LLM providers. Three latent regression-script bugs (a `SystemExit(0)` from the factory stub that silently skipped every test after the factory block; a missing return at the end of `run()` that produced a false-green exit 0; an undefined `BASE` module constant) were fixed as part of 2.2.3 wiring the new tests to actually run. The regression suite is now actually exercising the full route catalog for the first time since 2.1.4.
 
 ## Phase 3 — Frontend modularization
 
