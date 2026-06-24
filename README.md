@@ -44,6 +44,57 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
 - `Korina/Ack/ack_phrases.json` — tagged acknowledgement phrase manifest. Generated WAVs are cache files and are ignored by git.
 - `tests/regression_smoke.py` — live regression suite: 38 checks against the running server, including provider-activation, real LLM chat round-trip, and the `/api/capabilities` contract.
 
+## Process supervision
+
+Korina-owned long-running services are managed with `systemd --user`:
+
+| Unit | Port | Purpose |
+|---|---:|---|
+| `korina-voice-lab.service` | 8001 | FastAPI app + browser UI |
+| `kokoro-streaming-server.service` | 8880 | Kokoro streaming TTS |
+
+> Note: `start.sh` is for first-launch; for restarts use `systemctl --user restart korina-voice-lab.service`.
+
+Install/update user units from the source checkout:
+
+```bash
+cd /home/roggoz/Korina-Agent
+./Korina/install-services.sh
+```
+
+Start/restart:
+
+```bash
+systemctl --user restart kokoro-streaming-server.service korina-voice-lab.service
+```
+
+Compatibility wrappers:
+
+```bash
+./Korina/start.sh
+./Korina/stop.sh
+```
+
+Status and logs:
+
+```bash
+systemctl --user status kokoro-streaming-server.service korina-voice-lab.service --no-pager -l
+journalctl --user -u korina-voice-lab.service -f
+journalctl --user -u kokoro-streaming-server.service -f
+```
+
+Boot behavior requires user lingering:
+
+```bash
+loginctl show-user "$USER" -p Linger
+```
+
+If `Linger=no`, a privileged user can enable boot startup with:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
 ## Setup on a new machine
 
 ```bash
