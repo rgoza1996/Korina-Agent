@@ -43,7 +43,7 @@
 | `/api/models` shape | Add `llm_models_capabilities` and `stt_llm_models_capabilities` dicts alongside existing list fields. Keep all existing fields. | low |
 | Compat check | Raise `HTTPException(status_code=400, detail=...)` in `routes/providers.py:activate_provider` before calling `activate_llm_provider()` | low |
 | Compat check rules | llama.cpp + local GGUF: file exists on disk; llama.cpp + non-GGUF: 400; lmstudio + catalog id: must be in `lmstudio_catalog_models`; lmstudio + local GGUF: 400; ollama: model must be in `/v1/models` (only checkable after server is up — for now, accept anything); openai-compatible: always allow | medium — would touch `services/provider_manager.py` |
-| Runtime audio probe (Step 4.6, NEW) | First audio-bearing request to a given `(provider, base_url, model)` triple is its own probe. On audio-not-supported error, cache the failure in `config.json:audio_unsupported[<triple>]`, fall back to whisper for STT, return a structured response so the frontend can inform the user. No separate probe endpoint — the real STT request IS the probe (zero extra compute). | medium — touches the STT path |
+| Runtime audio probe (Step 4.5, NEW) | First audio-bearing request to a given `(provider, base_url, model)` triple is its own probe. On audio-not-supported error, cache the failure in `config.json:audio_unsupported[<triple>]`, fall back to whisper for STT, return a structured response so the frontend can inform the user. No separate probe endpoint — the real STT request IS the probe (zero extra compute). | medium — touches the STT path |
 | Probe cache key | `(provider, base_url, model)` triple, stringified as `"<provider>::<base_url>::<model>"` | low |
 | Probe cache invalidation | (a) Re-activating the provider via `POST /api/llm/provider/activate` clears all entries for that provider. (b) Editing the model in the frontend dropdown clears the entry for that triple. (c) Settings UI has a per-entry "Clear and retry" button. (d) User can `rm` the entries from `config.json` directly. | low |
 | Probe-fallback UI | At moment of fallback: status line *"Audio input not supported by <model> on <provider>. Using Whisper for STT. [Clear this and retry]"*. Persistent badge on the model in the dropdown. | low |
@@ -63,8 +63,8 @@
 | 4.2 | Surface capabilities in `/api/models` (additive — preserves existing shape) | ~50 | low |
 | 4.3 | Frontend capability filter + "All models" toggle (multimodal STT dropdown only) | ~120 | medium (user-visible filter) |
 | 4.4 | Provider-model compatibility check in activate route | ~80 | medium (rejects previously-allowed combos) |
-| 4.5 | Phase 4 verification (service restart + regression + manual smoke) | n/a | n/a |
-| 4.6 | Runtime audio probe + graceful fallback to whisper + persistent cache | ~180 | medium (touches the audio STT path; user-visible fallback message) |
+| 4.5 | Runtime audio probe + graceful fallback to whisper + persistent cache | ~180 | medium (touches the audio STT path; user-visible fallback message) |
+| 4.6 | Phase 4 verification (service restart + regression + manual smoke) | n/a | n/a |
 
 Each step ends with a working tree, a green smoke run, and a commit on `beta`.
 
@@ -544,7 +544,7 @@ print('sample gemma-4-E2B cap:', {k: v for k, v in b.get('stt_llm_models_capabil
 # OR: N + N + gemma-4-E2B.supports_audio_input = True
 ```
 
-> **Note:** the running service was started before this change. To pick up the new field, the service must be restarted. The cron execution recipe restarts the service as needed (Task 4.5.2). For this task, restart is **deferred** — verifying the source compiles and the regression suite passes is sufficient.
+> **Note:** the running service was started before this change. To pick up the new field, the service must be restarted. The cron execution recipe restarts the service as needed (Task 4.6.2). For this task, restart is **deferred** — verifying the source compiles and the regression suite passes is sufficient.
 
 ```bash
 python3 -m py_compile korina/routes/models.py  # expect: no error
@@ -931,7 +931,7 @@ except urllib.error.HTTPError as e:
 # Expect: HTTP 400 with detail.error == "incompatible_provider_model"
 ```
 
-(Requires service restart to pick up route change. Phase 4.5.2 handles restart.)
+(Requires service restart to pick up route change. Phase 4.6.2 handles restart.)
 
 **Step:** Commit:
 ```bash
@@ -994,92 +994,7 @@ git commit -m "test: provider/model compat check on activate (4.4.3)"
 
 ---
 
-## Step 4.5 — Phase 4 verification
-
-**Goal:** confirm the live service picks up all Phase 4 changes (capabilities in `/api/models`, compat check, frontend filter) and the regression suite stays green.
-
-### Task 4.5.1 — Restart live service
-
-The running service was started before this phase. Restart it to pick up the route changes.
-
-```bash
-ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
-  'cd /home/roggoz/Korina && (./stop.sh && sleep 2 && ./start.sh) 2>&1 | tail -10'
-# Expect: "Started" + service back up.
-sleep 3
-curl -fsS http://127.0.0.1:8001/api/health | head -c 200
-# Expect: {"ok":true,...}
-```
-
-> **Note:** the runtime `/home/roggoz/Korina/` already has the new files synced from the source checkout (cron already pushed all 23 Phase 3 commits + the 4.1–4.4 Phase 4 commits). But the Python service needs a restart to re-import `korina.routes.providers` and `korina.routes.models`.
-
-### Task 4.5.2 — Live regression
-
-```bash
-cd /home/roggoz/Korina-Agent && python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe 2>&1 | tail -3
-# Expect: "All checks passed against http://127.0.0.1:8001."
-```
-
-If any test fails, **stop and report raw output**. Do not power through.
-
-### Task 4.5.3 — Manual smoke check
-
-```bash
-# 1. /api/models now exposes *_models_capabilities
-ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
-  'curl -fsS http://127.0.0.1:8001/api/models | python3 -c "import sys, json; d=json.load(sys.stdin); print(\"llm_models_capabilities:\", len(d.get(\"llm_models_capabilities\", {}))); print(\"stt_llm_models_capabilities:\", len(d.get(\"stt_llm_models_capabilities\", {}))); print(\"sample gemma-4-E2B stt cap:\", {k: v for k, v in d.get(\"stt_llm_models_capabilities\", {}).items() if \"gemma-4-E2B\" in k})"'
-
-# Expect:
-# llm_models_capabilities: <N> (whatever llama.cpp has loaded)
-# stt_llm_models_capabilities: <N>
-# sample gemma-4-E2B stt cap: { "...gemma-4-E2B-it-Q8_0.gguf": {"supports_audio_input": true, "source": "local_gguf", ...} }
-
-# 2. Activate rejects incompatible combos
-ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
-  'curl -sS -X POST http://127.0.0.1:8001/api/llm/provider/activate -H "Content-Type: application/json" -d "{\"provider\":\"llama.cpp\",\"model\":\"qwen/qwen3-14b\"}" -w "\nHTTP %{http_code}\n"'
-# Expect: HTTP 400, detail.error == "incompatible_provider_model"
-
-# 3. Frontend page now includes the toggle
-curl -fsS http://127.0.0.1:8001/Korina/index.html | grep -c 'sttCapabilityFilterOverride'
-# Expect: 1
-
-# 4. capability-filter.js serves cleanly
-curl -fsS http://127.0.0.1:8001/Korina/js/capability-filter.js | head -3
-# Expect: comment + import line
-```
-
-### Task 4.5.4 — Update PROGRESS.md and commit
-
-Mark Phase 4 complete in `docs/refactor/PROGRESS.md`:
-
-```markdown
-## Phase 4 — Capability registry
-
-- [✓] 4.1 model capability metadata — `MODEL_CAPABILITIES` registry in `korina/util/presets.py`; `get_model_capability()` in `korina/services/model_capability.py` with mmproj + name heuristic + allowlist; `multimodal_stt_model_allowlist` config field. Commits: `...` (TBD).
-- [✓] 4.2 /api/models includes capabilities — `llm_models_capabilities` + `stt_llm_models_capabilities` dicts alongside existing list fields; existing fields preserved. `ModelCapabilities` Pydantic schema. Commits: `...` (TBD).
-- [✓] 4.3 frontend filters multimodal STT dropdown — `Korina/js/capability-filter.js`; `providers-ui.js` gates the stt_llm population; `?All models` toggle in `index.html` lets power users override. Commits: `...` (TBD).
-- [✓] 4.4 provider/model compatibility — `provider_supports_model()` in `korina/services/provider_manager.py`; activate endpoint raises 400 on incompatible combos. Commits: `...` (TBD).
-- [✓] 4.5 verify — regression green from source against live service; manual smoke checks pass; live service restarted to pick up route changes. Commits: `...` (TBD).
-```
-
-Replace `(TBD)` with the actual SHAs produced by each task.
-
-```bash
-git add docs/refactor/PROGRESS.md
-git commit -m "docs: mark Phase 4 complete in PROGRESS.md (4.5.4)"
-git push origin beta
-```
-
-Final verification:
-```bash
-LOCAL=$(git rev-parse beta)
-REMOTE=$(git ls-remote --heads origin beta | awk '{print $1}')
-[ "$LOCAL" = "$REMOTE" ] && echo OK || echo MISMATCH
-```
-
----
-
-## Step 4.6 — Runtime audio probe + graceful fallback to whisper
+## Step 4.5 — Runtime audio probe + graceful fallback to whisper
 
 **Goal:** when the user picks a model for multimodal STT that the static heuristic *thinks* supports audio but the inference engine *doesn't* (lmstudio, ollama, llama.cpp loaded without mmproj, or a vision-only model), the first real audio STT request acts as a probe. On audio-not-supported failure, the system:
 1. Caches the (provider, base_url, model) triple as audio-unsupported in `config.json`.
@@ -1099,7 +1014,7 @@ REMOTE=$(git ls-remote --heads origin beta | awk '{print $1}')
 - Modify: `Korina/js/api.js` (helper to call the new clear endpoint)
 - Modify: `tests/regression_smoke.py` (probe classifier tests + cache round-trip tests)
 
-### Task 4.6.1 — Add `audio_unsupported` config slot
+### Task 4.5.1 — Add `audio_unsupported` config slot
 
 **Files:** Modify `korina/config.py`
 
@@ -1178,10 +1093,10 @@ Add `audio_unsupported: {}` to `Korina/config/config.example.json` as the docume
 **Step:** Commit:
 ```bash
 git add korina/config.py Korina/config/config.example.json
-git commit -m "feat: audio_unsupported config slot + getter/setter (4.6.1)"
+git commit -m "feat: audio_unsupported config slot + getter/setter (4.5.1)"
 ```
 
-### Task 4.6.2 — Probe classifier module
+### Task 4.5.2 — Probe classifier module
 
 **Files:** Create `korina/services/audio_probe.py`
 
@@ -1258,10 +1173,10 @@ def triple_key(provider: str, base_url: str, model: str) -> str:
 **Step:** Commit:
 ```bash
 git add korina/services/audio_probe.py
-git commit -m "feat: audio probe classifier + triple key helper (4.6.2)"
+git commit -m "feat: audio probe classifier + triple key helper (4.5.2)"
 ```
 
-### Task 4.6.3 — Probe orchestrator + integration into STT route
+### Task 4.5.3 — Probe orchestrator + integration into STT route
 
 **Files:** Modify `korina/routes/stt.py` (or whichever route owns multimodal STT — verify first)
 
@@ -1353,17 +1268,17 @@ except HTTPError as e:
 **Step:** Commit:
 ```bash
 git add korina/services/audio_probe.py korina/routes/stt.py
-git commit -m "feat(stt): probe-fallback to whisper on audio-not-supported (4.6.3)"
+git commit -m "feat(stt): probe-fallback to whisper on audio-not-supported (4.5.3)"
 ```
 
-### Task 4.6.4 — Clear probe cache on provider activate
+### Task 4.5.4 — Clear probe cache on provider activate
 
 **Files:** Modify `korina/routes/providers.py`
 
 In `activate_provider()`, before the existing `compat check`, add:
 
 ```python
-    # Phase 4.6: clear probe cache entries for this provider. Re-activating
+    # Phase 4.5: clear probe cache entries for this provider. Re-activating
     # may have changed base_url or model, so old probe failures no longer apply.
     from korina.config import clear_audio_unsupported_for_provider
     cleared = clear_audio_unsupported_for_provider(provider)
@@ -1374,10 +1289,10 @@ In `activate_provider()`, before the existing `compat check`, add:
 **Step:** Commit:
 ```bash
 git add korina/routes/providers.py
-git commit -m "feat(routes): clear audio probe cache on provider activate (4.6.4)"
+git commit -m "feat(routes): clear audio probe cache on provider activate (4.5.4)"
 ```
 
-### Task 4.6.5 — Probe clear-and-retry endpoint
+### Task 4.5.5 — Probe clear-and-retry endpoint
 
 **Files:** Modify `korina/routes/providers.py` (or new tiny route module)
 
@@ -1404,10 +1319,10 @@ Add the router to `korina/app_factory.py` next to the other route registrations.
 **Step:** Commit:
 ```bash
 git add korina/routes/providers.py korina/app_factory.py
-git commit -m "feat(routes): audio probe list + clear endpoints (4.6.5)"
+git commit -m "feat(routes): audio probe list + clear endpoints (4.5.5)"
 ```
 
-### Task 4.6.6 — Frontend: badge + status line + clear-and-retry button
+### Task 4.5.6 — Frontend: badge + status line + clear-and-retry button
 
 **Files:** Modify `Korina/js/providers-ui.js`, `Korina/js/settings-ui.js`, `Korina/js/api.js`, `Korina/js/app.js`
 
@@ -1493,16 +1408,16 @@ Add `listAudioProbes`, `clearAudioProbe`, and `$("clearProbeBtn")` re-exports to
 **Step:** Commit:
 ```bash
 git add Korina/js/api.js Korina/js/providers-ui.js Korina/js/settings-ui.js Korina/js/app.js Korina/index.html
-git commit -m "feat(frontend): audio probe badges + clear-and-retry UI (4.6.6)"
+git commit -m "feat(frontend): audio probe badges + clear-and-retry UI (4.5.6)"
 ```
 
-### Task 4.6.7 — Probe regression tests
+### Task 4.5.7 — Probe regression tests
 
 **Files:** Modify `tests/regression_smoke.py`
 
 ```python
 def test_audio_probe_classifier():
-    """Phase 4.6 -- the probe classifier must distinguish audio-not-supported
+    """Phase 4.5 -- the probe classifier must distinguish audio-not-supported
     failures (cacheable) from transient/content failures (not cacheable)."""
     import importlib
     ap = importlib.import_module("korina.services.audio_probe")
@@ -1526,7 +1441,7 @@ def test_audio_probe_classifier():
 
 
 def test_audio_probe_endpoints():
-    """Phase 4.6 -- /api/audio-probe GET returns {} on fresh install;
+    """Phase 4.5 -- /api/audio-probe GET returns {} on fresh install;
     DELETE removes the specified entry. Round-trip via direct config write
     to avoid coupling to the STT path."""
     import urllib.request, json
@@ -1560,14 +1475,14 @@ Wire both into `run()` near the existing capability tests.
 **Step:** Commit:
 ```bash
 git add tests/regression_smoke.py
-git commit -m "test: cover audio probe classifier + cache round-trip (4.6.7)"
+git commit -m "test: cover audio probe classifier + cache round-trip (4.5.7)"
 ```
 
-### Task 4.6.8 — Extend Phase 4.5 verification with probe manual smoke
+### Task 4.5.8 — Extend Phase 4.6 verification with probe manual smoke
 
 **Files:** Modify `docs/refactor/phase-4-plan.md` (verification step) — or include the new smoke checks inline in 4.5.3.
 
-Append to the existing Task 4.5.3 manual smoke:
+Append to the existing Task 4.6.3 manual smoke:
 
 ```bash
 # 5. Probe cache list endpoint
@@ -1579,11 +1494,70 @@ curl -sS -X DELETE http://127.0.0.1:8001/api/audio-probe/llama.cpp/http%3A%2F%2F
 # Expect: HTTP 200, {"triple": "...", "removed": false} on fresh install
 ```
 
+## Step 4.6 — Phase 4 verification
+
+**Goal:** confirm the live service picks up all Phase 4 changes (capabilities in `/api/models`, compat check, frontend filter) and the regression suite stays green.
+
+### Task 4.6.1 — Restart live service
+
+The running service was started before this phase. Restart it to pick up the route changes.
+
+```bash
+ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
+  'cd /home/roggoz/Korina && (./stop.sh && sleep 2 && ./start.sh) 2>&1 | tail -10'
+# Expect: "Started" + service back up.
+sleep 3
+curl -fsS http://127.0.0.1:8001/api/health | head -c 200
+# Expect: {"ok":true,...}
+```
+
+> **Note:** the runtime `/home/roggoz/Korina/` already has the new files synced from the source checkout (cron already pushed all 23 Phase 3 commits + the 4.1–4.4 Phase 4 commits). But the Python service needs a restart to re-import `korina.routes.providers` and `korina.routes.models`.
+
+### Task 4.6.2 — Live regression
+
+```bash
+cd /home/roggoz/Korina-Agent && python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe 2>&1 | tail -3
+# Expect: "All checks passed against http://127.0.0.1:8001."
+```
+
+If any test fails, **stop and report raw output**. Do not power through.
+
+### Task 4.6.3 — Manual smoke check
+
+```bash
+# 1. /api/models now exposes *_models_capabilities
+ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
+  'curl -fsS http://127.0.0.1:8001/api/models | python3 -c "import sys, json; d=json.load(sys.stdin); print(\"llm_models_capabilities:\", len(d.get(\"llm_models_capabilities\", {}))); print(\"stt_llm_models_capabilities:\", len(d.get(\"stt_llm_models_capabilities\", {}))); print(\"sample gemma-4-E2B stt cap:\", {k: v for k, v in d.get(\"stt_llm_models_capabilities\", {}).items() if \"gemma-4-E2B\" in k})"'
+
+# Expect:
+# llm_models_capabilities: <N> (whatever llama.cpp has loaded)
+# stt_llm_models_capabilities: <N>
+# sample gemma-4-E2B stt cap: { "...gemma-4-E2B-it-Q8_0.gguf": {"supports_audio_input": true, "source": "local_gguf", ...} }
+
+# 2. Activate rejects incompatible combos
+ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
+  'curl -sS -X POST http://127.0.0.1:8001/api/llm/provider/activate -H "Content-Type: application/json" -d "{\"provider\":\"llama.cpp\",\"model\":\"qwen/qwen3-14b\"}" -w "\nHTTP %{http_code}\n"'
+# Expect: HTTP 400, detail.error == "incompatible_provider_model"
+
+# 3. Frontend page now includes the toggle
+curl -fsS http://127.0.0.1:8001/Korina/index.html | grep -c 'sttCapabilityFilterOverride'
+# Expect: 1
+
+# 4. capability-filter.js serves cleanly
+curl -fsS http://127.0.0.1:8001/Korina/js/capability-filter.js | head -3
+# Expect: comment + import line
+```
+
+### Task 4.6.4 — Update PROGRESS.md and commit
+
+Mark Phase 4 complete in `docs/refactor/PROGRESS.md`:
+
+```markdown
 ---
 
 ## Updated Phase 4 commit count
 
-**~19 commits on `beta`** with Step 4.6 added (was ~15):
+**~22 commits on `beta`** with Step 4.5 (probe) + Step 4.6 (verify) added (was ~15):
 
 | Step | Tasks | Commits |
 |---|---|---|
@@ -1591,8 +1565,8 @@ curl -sS -X DELETE http://127.0.0.1:8001/api/audio-probe/llama.cpp/http%3A%2F%2F
 | 4.2 | 4.2.1, 4.2.2, 4.2.3 | 3 |
 | 4.3 | 4.3.1, 4.3.2, 4.3.3, 4.3.4 | 4 |
 | 4.4 | 4.4.1, 4.4.2, 4.4.3 | 3 |
-| 4.5 | 4.5.1, 4.5.2, 4.5.3, 4.5.4 | 1 (close-out commit) |
-| 4.6 | 4.6.1, 4.6.2, 4.6.3, 4.6.4, 4.6.5, 4.6.6, 4.6.7 | 7 |
+| 4.5 | 4.5.1, 4.5.2, 4.5.3, 4.5.4, 4.5.5, 4.5.6, 4.5.7, 4.5.8 | 7 |
+| 4.6 | 4.6.1, 4.6.2, 4.6.3, 4.6.4 | 1 (close-out commit) |
 | **Total** | | **~22 commits** |
 
 ---
@@ -1603,9 +1577,9 @@ Plan complete. **~22 commits on `beta`**, all behavior-additive (no existing fie
 
 **Branch:** `beta` (matches Phase 0–3 pattern; do not touch `alpha` or `master`).
 
-**Execution approach:** dispatch a fresh subagent per task via the `subagent-driven-development` skill, with two-stage review (spec compliance, then code quality). One batch. Service restart in 4.5.1 is required for the new `/api/models` fields, the new compat check, the audio-probe endpoints, and the probe orchestrator to take effect.
+**Execution approach:** dispatch a fresh subagent per task via the `subagent-driven-development` skill, with two-stage review (spec compliance, then code quality). One batch. Service restart in Task 4.6.1 is required for the new `/api/models` fields, the new compat check, the audio-probe endpoints, and the probe orchestrator to take effect.
 
 **Two questions to confirm before I execute:**
 
 1. **Branch:** plan says `beta`. Confirm `beta`?
-2. **Pace:** one batch (all ~12 commits in one subagent-driven run), or pause per step (4.1, 4.2, 4.3, 4.4, 4.5) so you can review incremental progress?
+2. **Pace:** one batch (all ~22 commits in one subagent-driven run), or pause per step (4.1, 4.2, 4.3, 4.4, 4.5, 4.6) so you can review incremental progress?
