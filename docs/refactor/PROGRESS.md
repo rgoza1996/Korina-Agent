@@ -55,13 +55,22 @@ Phase 3 result: frontend modularization complete on `beta`. The inline `<script>
 - [✓] 3.4 model fetch on open — 4-second TTL hack in `loadModelOptions` removed; cache invalidation now relies only on query identity + the `force` flag. Commit: `47c51de`.
 - [✓] 3.5 verify — full live regression passed (`tests/regression_smoke.py` against `http://127.0.0.1:8001`, `--no-chat --no-transcribe`); `/api/health` returns 200; `/api/health` exposes Phase 2 capabilities unchanged (5 whisper models, 200 response, etc.); 18 frontend files changed, 0 backend files changed (`git diff --stat 65df94d..HEAD -- korina/ tests/` is empty); total 22 Phase 3 commits on `beta`.
 
+
+**Post-Phase-3 deployment fixes (pre-Phase-4 baseline):** Phase 3's modularized frontend was committed to `beta` source but never propagated to the runtime at `/home/roggoz/Korina/`. The runtime kept serving a pre-Phase-3 monolithic `index.html` (with Phase 2 inline patches). Two pre-existing latent issues surfaced once the modularized frontend was actually deployed:
+
+- `8a976f7` — added `/js` StaticFiles mount and `/styles.css` route to `korina/app_factory.py`. Without these, the modularized `<script type="module" src="./js/app.js">` and `<link rel="stylesheet" href="./styles.css">` 404'd in the browser.
+- `c64dac6` — updated Phase 2 frontend tests to read from `/js/providers-ui.js` and `/js/api.js` (where the helpers live after Phase 3 modularization) instead of trying to parse an inline `<script>` block. Also fixed `global failures` NameError bug that would crash the regression script on its first test failure.
+
+The Phase 4 cron recipe should not need to handle runtime↔source sync as a precondition — runtime and source are now in sync at HEAD `c64dac6`.
+
 ## Phase 4 — Capability registry
 
-- [ ] 4.1 capability metadata
-- [ ] 4.2 /api/models includes capabilities
-- [ ] 4.3 frontend filters
-- [ ] 4.4 provider/model compatibility
-- [ ] 4.5 verify
+- [ ] 4.1 backend MODEL_CAPABILITIES registry + get_model_capability() + allowlist config
+- [ ] 4.2 /api/models exposes llm_models_capabilities + stt_llm_models_capabilities (additive)
+- [ ] 4.3 frontend capability-filter.js + ?All models toggle (multimodal STT dropdown only)
+- [ ] 4.4 provider_supports_model() + activate endpoint raises 400 on incompatible combos
+- [ ] 4.5 runtime audio probe + graceful fallback to whisper + persistent cache
+- [ ] 4.6 verify (service restart + regression + manual smoke + PROGRESS.md close-out)
 
 ## Phase 5 — Process supervision unification
 
