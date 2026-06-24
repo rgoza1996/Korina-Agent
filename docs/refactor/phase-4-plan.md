@@ -2,7 +2,7 @@
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task. Each task = one commit on `beta`. **This is the first phase that changes user-visible behavior** (some currently-pickable combinations become filtered), so commits are individually auditable and the regression suite grows with the change.
 
-**Goal:** the user cannot pick a text-only model for multimodal STT, and a clearly-incompatible (provider, model) pair fails fast at `/api/llm/provider/activate` with a 400 instead of failing deep inside the chat request.
+**Goal:** the user cannot pick a text-only model for multimodal STT, and a clearly-incompatible (provider, model) pair fails fast at `/api/llm/provider/activate` with a 400 instead of failing deep inside the chat request. **If a model passes the static checks but the inference engine still rejects audio at runtime, the first real STT request acts as a probe and the system falls back to whisper gracefully, caching the result so subsequent requests don't re-probe.**
 
 **Architecture:** add a parallel `MODEL_CAPABILITIES` registry in `korina/util/presets.py` next to the existing `PROVIDER_CAPABILITIES` (Phase 2 work). New `korina/services/model_capability.py` computes per-model capability at request time using a primary signal (`find_mmproj_for_model` for local GGUFs — already in `korina/services/model_catalog.py:46`) and a name-based heuristic as fallback. `/api/models` exposes `*_models_capabilities` dicts alongside the existing model id lists. Frontend gets a tiny `capability-filter.js` that gates the multimodal STT dropdown, with a `?All models` toggle for power users. Compat check happens in `routes/providers.py:activate_provider` before delegating to `activate_llm_provider`.
 
@@ -43,6 +43,11 @@
 | `/api/models` shape | Add `llm_models_capabilities` and `stt_llm_models_capabilities` dicts alongside existing list fields. Keep all existing fields. | low |
 | Compat check | Raise `HTTPException(status_code=400, detail=...)` in `routes/providers.py:activate_provider` before calling `activate_llm_provider()` | low |
 | Compat check rules | llama.cpp + local GGUF: file exists on disk; llama.cpp + non-GGUF: 400; lmstudio + catalog id: must be in `lmstudio_catalog_models`; lmstudio + local GGUF: 400; ollama: model must be in `/v1/models` (only checkable after server is up — for now, accept anything); openai-compatible: always allow | medium — would touch `services/provider_manager.py` |
+| Runtime audio probe (Step 4.6, NEW) | First audio-bearing request to a given `(provider, base_url, model)` triple is its own probe. On audio-not-supported error, cache the failure in `config.json:audio_unsupported[<triple>]`, fall back to whisper for STT, return a structured response so the frontend can inform the user. No separate probe endpoint — the real STT request IS the probe (zero extra compute). | medium — touches the STT path |
+| Probe cache key | `(provider, base_url, model)` triple, stringified as `"<provider>::<base_url>::<model>"` | low |
+| Probe cache invalidation | (a) Re-activating the provider via `POST /api/llm/provider/activate` clears all entries for that provider. (b) Editing the model in the frontend dropdown clears the entry for that triple. (c) Settings UI has a per-entry "Clear and retry" button. (d) User can `rm` the entries from `config.json` directly. | low |
+| Probe-fallback UI | At moment of fallback: status line *"Audio input not supported by <model> on <provider>. Using Whisper for STT. [Clear this and retry]"*. Persistent badge on the model in the dropdown. | low |
+| Audio-not-supported detection | Regex on the response body: `re.search(r"audio.*(not\s+support|unsupport|not\s+enabled|invalid)|no\s+mmproj", body, re.I)`. Specific enough to avoid false-positive on generic STT failures. | low |
 | `provider_supports_model()` location | `korina/services/provider_manager.py` (matches blueprint §4.4) | low |
 | Capability endpoint version bump | `CapabilitiesResponse.version` stays at 1; new `ModelCapabilitiesResponse.version = 1` (separate schema, separate route or expand `/api/models`) | low |
 | Push pattern | One commit per task to `beta` only; do **not** touch `alpha` or `master` | n/a |
@@ -58,7 +63,8 @@
 | 4.2 | Surface capabilities in `/api/models` (additive — preserves existing shape) | ~50 | low |
 | 4.3 | Frontend capability filter + "All models" toggle (multimodal STT dropdown only) | ~120 | medium (user-visible filter) |
 | 4.4 | Provider-model compatibility check in activate route | ~80 | medium (rejects previously-allowed combos) |
-| 4.5 | Phase 4 verification | n/a | n/a |
+| 4.5 | Phase 4 verification (service restart + regression + manual smoke) | n/a | n/a |
+| 4.6 | Runtime audio probe + graceful fallback to whisper + persistent cache | ~180 | medium (touches the audio STT path; user-visible fallback message) |
 
 Each step ends with a working tree, a green smoke run, and a commit on `beta`.
 
@@ -1073,13 +1079,531 @@ REMOTE=$(git ls-remote --heads origin beta | awk '{print $1}')
 
 ---
 
+## Step 4.6 — Runtime audio probe + graceful fallback to whisper
+
+**Goal:** when the user picks a model for multimodal STT that the static heuristic *thinks* supports audio but the inference engine *doesn't* (lmstudio, ollama, llama.cpp loaded without mmproj, or a vision-only model), the first real audio STT request acts as a probe. On audio-not-supported failure, the system:
+1. Caches the (provider, base_url, model) triple as audio-unsupported in `config.json`.
+2. Falls back to whisper for that request.
+3. Returns a structured response to the frontend so it can inform the user.
+4. Never re-probes until the user explicitly clears the cache or re-activates the provider.
+
+**Why this matters:** the Phase 4.1 heuristic is best-effort; lmstudio and ollama don't reliably expose audio support in their OpenAI-compatible surface. Without this probe, the user picks "Qwen3-VL" (vision-only) for multimodal STT and either gets silent text-only output (worst case) or a confusing 400 (better, but still bad UX). With the probe, the system self-corrects on first use.
+
+**Files:**
+- Modify: `korina/services/audio_probe.py` (new module: probe classifier + cache read/write + fallback orchestrator)
+- Modify: `korina/routes/stt.py` (call the probe orchestrator on the multimodal STT path)
+- Modify: `korina/routes/providers.py` (clear probe cache on activate)
+- Modify: `korina/config.py` (add `config_audio_unsupported()` getter + setter)
+- Modify: `Korina/js/providers-ui.js` (badge + status line for cached entries; clear-and-retry)
+- Modify: `Korina/js/settings-ui.js` (expose the per-entry "Clear and retry" button)
+- Modify: `Korina/js/api.js` (helper to call the new clear endpoint)
+- Modify: `tests/regression_smoke.py` (probe classifier tests + cache round-trip tests)
+
+### Task 4.6.1 — Add `audio_unsupported` config slot
+
+**Files:** Modify `korina/config.py`
+
+Add getter/setter pair:
+
+```python
+def config_audio_unsupported(c: dict | None = None) -> dict[str, dict]:
+    """Return the persistent probe cache: {triple: {reason, since, last_error}}.
+
+    Key format: "<provider>::<base_url>::<model>".
+    Value: {"reason": str, "since": iso8601, "last_error": str}.
+    """
+    cfg = c if c is not None else load_config()
+    raw = cfg.get("audio_unsupported") or {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for k, v in raw.items():
+        if isinstance(k, str) and isinstance(v, dict):
+            out[k] = {
+                "reason": str(v.get("reason") or ""),
+                "since": str(v.get("since") or ""),
+                "last_error": str(v.get("last_error") or ""),
+            }
+    return out
+
+
+def set_audio_unsupported(provider: str, base_url: str, model: str,
+                          reason: str, last_error: str) -> None:
+    """Persist a probe failure. Atomic write via save_config()."""
+    triple = f"{provider}::{base_url}::{model}"
+    cfg = load_config()
+    cache = cfg.get("audio_unsupported") or {}
+    if not isinstance(cache, dict):
+        cache = {}
+    from datetime import datetime, timezone
+    cache[triple] = {
+        "reason": reason,
+        "since": datetime.now(timezone.utc).isoformat(),
+        "last_error": last_error[:500],  # truncate to keep config.json small
+    }
+    cfg["audio_unsupported"] = cache
+    save_config(cfg)
+
+
+def clear_audio_unsupported(provider: str, base_url: str, model: str) -> bool:
+    """Remove one entry. Returns True if removed."""
+    triple = f"{provider}::{base_url}::{model}"
+    cfg = load_config()
+    cache = cfg.get("audio_unsupported") or {}
+    if not isinstance(cache, dict) or triple not in cache:
+        return False
+    del cache[triple]
+    cfg["audio_unsupported"] = cache
+    save_config(cfg)
+    return True
+
+
+def clear_audio_unsupported_for_provider(provider: str) -> int:
+    """Remove all entries for a given provider. Returns count removed."""
+    cfg = load_config()
+    cache = cfg.get("audio_unsupported") or {}
+    if not isinstance(cache, dict):
+        return 0
+    prefix = f"{provider}::"
+    kept = {k: v for k, v in cache.items() if not k.startswith(prefix)}
+    removed = len(cache) - len(kept)
+    if removed > 0:
+        cfg["audio_unsupported"] = kept
+        save_config(cfg)
+    return removed
+```
+
+Add `audio_unsupported: {}` to `Korina/config/config.example.json` as the documented default.
+
+**Step:** Commit:
+```bash
+git add korina/config.py Korina/config/config.example.json
+git commit -m "feat: audio_unsupported config slot + getter/setter (4.6.1)"
+```
+
+### Task 4.6.2 — Probe classifier module
+
+**Files:** Create `korina/services/audio_probe.py`
+
+```python
+"""Runtime audio-capability probe.
+
+Determines whether a failed multimodal STT request indicates the model
+actually doesn't support audio input (cacheable failure) vs a transient
+or content-related failure (don't cache). Also provides the cache
+read/write helpers that wrap korina.config.
+
+Design rationale: see Phase 4 plan §4.6. The probe is the first real
+audio STT request; on audio-not-supported failure we cache and fall
+back to whisper forever (per triple) until the user explicitly clears.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Tuple
+
+
+# Patterns that indicate "this model/inference engine cannot accept
+# audio input" in the response body. Specific enough to avoid matching
+# generic STT content failures (no speech, bad audio, timeout).
+_AUDIO_UNSUPPORTED_PATTERNS = [
+    re.compile(r"audio.*not\s+support", re.IGNORECASE),
+    re.compile(r"audio.*unsupport", re.IGNORECASE),
+    re.compile(r"audio.*not\s+enabled", re.IGNORECASE),
+    re.compile(r"audio.*invalid", re.IGNORECASE),
+    re.compile(r"no\s+mmproj", re.IGNORECASE),
+    re.compile(r"multimodal.*not\s+support", re.IGNORECASE),
+    re.compile(r"input_audio.*not\s+support", re.IGNORECASE),
+]
+
+
+def classify_failure(status_code: int, body: str) -> Tuple[bool, str]:
+    """Return (is_audio_unsupported, reason).
+
+    is_audio_unsupported is True iff the failure indicates the model or
+    inference engine cannot accept audio input. Such failures are
+    cacheable; subsequent requests should fall back to whisper.
+
+    status_code: HTTP status from the multimodal STT endpoint.
+    body: response body as a string.
+    """
+    if not isinstance(body, str):
+        body = str(body or "")
+
+    # 415 Unsupported Media Type is the canonical "audio not supported" code.
+    if status_code == 415:
+        return (True, "http_415_unsupported_media_type")
+
+    # 400/422 with explicit "audio ... not supported" / "no mmproj" in body.
+    if status_code in (400, 422):
+        for pat in _AUDIO_UNSUPPORTED_PATTERNS:
+            if pat.search(body):
+                return (True, f"body_match:{pat.pattern}")
+
+    # 200 with empty/garbage audio content (server accepted the request
+    # but didn't actually process audio) -- this is the silent-failure
+    # case. We can't easily detect this without examining the response
+    # payload, so we don't classify it here; the caller decides whether
+    # to log a warning.
+
+    return (False, "transient_or_content_failure")
+
+
+def triple_key(provider: str, base_url: str, model: str) -> str:
+    """Canonical cache key for the (provider, base_url, model) triple."""
+    return f"{str(provider or '').strip()}::{str(base_url or '').strip().rstrip('/')}::{str(model or '').strip()}"
+```
+
+**Step:** Commit:
+```bash
+git add korina/services/audio_probe.py
+git commit -m "feat: audio probe classifier + triple key helper (4.6.2)"
+```
+
+### Task 4.6.3 — Probe orchestrator + integration into STT route
+
+**Files:** Modify `korina/routes/stt.py` (or whichever route owns multimodal STT — verify first)
+
+```bash
+grep -rn "input_audio\|audio.*content.*part\|multimodal" /home/roggoz/Korina-Agent/korina/routes/ /home/roggoz/Korina-Agent/korina/services/ | head -20
+```
+
+The orchestrator in `korina/services/audio_probe.py`:
+
+```python
+def maybe_fallback_to_whisper(
+    provider: str, base_url: str, model: str,
+    stt_status_code: int, stt_response_body: str,
+    whisper_fallback_fn,
+) -> tuple[bool, dict]:
+    """Decide whether to fall back to whisper for this STT request.
+
+    Returns (used_fallback, response_payload). If used_fallback is True,
+    response_payload is the result of whisper_fallback_fn() (typically
+    a dict with 'text', 'engine', and 'fallback_reason' keys).
+
+    Behavior:
+      1. Check cache: if (provider, base_url, model) is in audio_unsupported,
+         skip the failing call entirely and fall back.
+      2. Otherwise, the caller already made the failing call. Check
+         classify_failure: if True, persist to cache + fall back.
+      3. If False, return (False, {'error': ...}) for the caller to handle.
+    """
+    from korina.config import (
+        config_audio_unsupported,
+        set_audio_unsupported,
+    )
+    from korina.services.audio_probe import classify_failure, triple_key
+
+    triple = triple_key(provider, base_url, model)
+    cache = config_audio_unsupported()
+    cached = cache.get(triple)
+    if cached:
+        # Cache hit -- skip retry entirely.
+        return (True, {
+            **whisper_fallback_fn(),
+            "fallback_reason": cached.get("reason", "cached_audio_unsupported"),
+            "audio_unsupported_since": cached.get("since", ""),
+            "triple": triple,
+        })
+
+    unsupported, reason = classify_failure(stt_status_code, stt_response_body)
+    if unsupported:
+        set_audio_unsupported(provider, base_url, model, reason, stt_response_body)
+        return (True, {
+            **whisper_fallback_fn(),
+            "fallback_reason": reason,
+            "triple": triple,
+        })
+
+    return (False, {
+        "error": "stt_failed",
+        "status_code": stt_status_code,
+        "body": stt_response_body[:500],
+    })
+```
+
+Wire into the multimodal STT path in `korina/routes/stt.py`. The exact splice point depends on the current code shape; in pseudocode:
+
+```python
+# Existing code path for multimodal STT (sttBackend == "llm"):
+try:
+    resp = http_post_multimodal_stt(provider, base_url, model, audio_bytes, ...)
+    return resp.json()
+except HTTPError as e:
+    if e.code in (400, 415, 422):
+        body = e.read().decode(errors="replace")
+        used_fallback, payload = maybe_fallback_to_whisper(
+            provider=current["llm_provider"],
+            base_url=config_stt_llm_base_url(config),
+            model=config_stt_llm_model(config),
+            stt_status_code=e.code,
+            stt_response_body=body,
+            whisper_fallback_fn=lambda: call_whisper_stt(audio_bytes, ...),
+        )
+        if used_fallback:
+            return payload
+        # else: re-raise or return the original error
+        raise HTTPException(status_code=e.code, detail=body)
+```
+
+> **Important:** the `whisper_fallback_fn` must reuse the same audio bytes the user just sent — no need to re-capture. The fallback path is whisper's `/api/stt` or the existing built-in STT handler.
+
+**Step:** Commit:
+```bash
+git add korina/services/audio_probe.py korina/routes/stt.py
+git commit -m "feat(stt): probe-fallback to whisper on audio-not-supported (4.6.3)"
+```
+
+### Task 4.6.4 — Clear probe cache on provider activate
+
+**Files:** Modify `korina/routes/providers.py`
+
+In `activate_provider()`, before the existing `compat check`, add:
+
+```python
+    # Phase 4.6: clear probe cache entries for this provider. Re-activating
+    # may have changed base_url or model, so old probe failures no longer apply.
+    from korina.config import clear_audio_unsupported_for_provider
+    cleared = clear_audio_unsupported_for_provider(provider)
+    if cleared:
+        print(f"[activate] cleared {cleared} audio probe cache entries for {provider}")
+```
+
+**Step:** Commit:
+```bash
+git add korina/routes/providers.py
+git commit -m "feat(routes): clear audio probe cache on provider activate (4.6.4)"
+```
+
+### Task 4.6.5 — Probe clear-and-retry endpoint
+
+**Files:** Modify `korina/routes/providers.py` (or new tiny route module)
+
+```python
+from korina.config import clear_audio_unsupported, config_audio_unsupported
+
+@router.delete('/api/audio-probe/{provider}/{base_url:path}/{model:path}')
+def clear_audio_probe(provider: str, base_url: str, model: str):
+    """Clear a single audio-unsupported cache entry. Power-user escape hatch."""
+    from korina.services.audio_probe import triple_key
+    triple = triple_key(provider, base_url, model)
+    removed = clear_audio_unsupported(provider, base_url, model)
+    return {"triple": triple, "removed": removed}
+
+
+@router.get('/api/audio-probe')
+def list_audio_probes():
+    """List all cached audio-unsupported entries. Used by the settings UI."""
+    return {"entries": config_audio_unsupported()}
+```
+
+Add the router to `korina/app_factory.py` next to the other route registrations.
+
+**Step:** Commit:
+```bash
+git add korina/routes/providers.py korina/app_factory.py
+git commit -m "feat(routes): audio probe list + clear endpoints (4.6.5)"
+```
+
+### Task 4.6.6 — Frontend: badge + status line + clear-and-retry button
+
+**Files:** Modify `Korina/js/providers-ui.js`, `Korina/js/settings-ui.js`, `Korina/js/api.js`, `Korina/js/app.js`
+
+**In `Korina/js/api.js`**, add helpers:
+
+```js
+export async function listAudioProbes() {
+  const r = await fetch('/api/audio-probe');
+  if (!r.ok) return { entries: {} };
+  return r.json();
+}
+
+export async function clearAudioProbe(provider, baseUrl, model) {
+  const r = await fetch(
+    `/api/audio-probe/${encodeURIComponent(provider)}/${encodeURIComponent(baseUrl)}/${encodeURIComponent(model)}`,
+    { method: 'DELETE' }
+  );
+  return r.json();
+}
+```
+
+**In `Korina/js/providers-ui.js`**, after fetching `/api/models`, fetch probe entries too:
+
+```js
+const probeResp = await listAudioProbes();
+state.audioUnsupported = probeResp.entries || {};
+```
+
+In the dropdown population loop, add a badge for cached entries:
+
+```js
+for (const m of sttModelsFiltered) {
+  const o = document.createElement("option");
+  o.value = m;
+  const baseLabel = (j.labels && j.labels[m]) || prettyModelLabel(m);
+  const triple = `${state.llmProvider}::${effectiveSttLlmBaseUrl()}::${m}`;
+  if (state.audioUnsupported[triple]) {
+    o.textContent = `${baseLabel} [audio unsupported: ${state.audioUnsupported[triple].reason}]`;
+    o.disabled = true;  // can't pick a known-broken model unless they clear
+  } else {
+    o.textContent = baseLabel;
+  }
+  $("sttLlmModel").appendChild(o);
+}
+```
+
+In the STT response handler (`speakSSE` or wherever), surface the fallback message:
+
+```js
+// After getting the STT response:
+if (resp.fallback_reason) {
+  $("settingsInfo").textContent = `Audio input not supported by ${model} on ${provider}. Using Whisper. Reason: ${resp.fallback_reason}. [Clear and retry]`;
+  $("clearProbeBtn").dataset.provider = provider;
+  $("clearProbeBtn").dataset.baseUrl = baseUrl;
+  $("clearProbeBtn").dataset.model = model;
+  $("clearProbeBtn").style.display = "inline";
+}
+```
+
+Add the clear button to `Korina/index.html` (near the STT status line):
+
+```html
+<button id="clearProbeBtn" style="display:none;">Clear audio probe and retry</button>
+```
+
+Wire the click handler in `Korina/js/app.js`:
+
+```js
+const clearBtn = $("clearProbeBtn");
+if (clearBtn) {
+  clearBtn.addEventListener("click", async () => {
+    const { provider, baseUrl, model } = clearBtn.dataset;
+    await clearAudioProbe(provider, baseUrl, model);
+    clearBtn.style.display = "none";
+    // Reload model options to refresh the dropdown badges.
+    await loadModelOptions(true);
+  });
+}
+```
+
+Add `listAudioProbes`, `clearAudioProbe`, and `$("clearProbeBtn")` re-exports to `Object.assign(window, ...)` in `app.js`.
+
+**Step:** Commit:
+```bash
+git add Korina/js/api.js Korina/js/providers-ui.js Korina/js/settings-ui.js Korina/js/app.js Korina/index.html
+git commit -m "feat(frontend): audio probe badges + clear-and-retry UI (4.6.6)"
+```
+
+### Task 4.6.7 — Probe regression tests
+
+**Files:** Modify `tests/regression_smoke.py`
+
+```python
+def test_audio_probe_classifier():
+    """Phase 4.6 -- the probe classifier must distinguish audio-not-supported
+    failures (cacheable) from transient/content failures (not cacheable)."""
+    import importlib
+    ap = importlib.import_module("korina.services.audio_probe")
+
+    # Cacheable failures
+    assert ap.classify_failure(415, "unsupported media type")[0] is True
+    assert ap.classify_failure(400, '{"error": "audio input not supported"}')[0] is True
+    assert ap.classify_failure(400, '{"error": "no mmproj loaded for this model"}')[0] is True
+    assert ap.classify_failure(422, '{"error": "audio content invalid"}')[0] is True
+    assert ap.classify_failure(400, '{"error": "input_audio not supported"}')[0] is True
+
+    # Non-cacheable failures
+    assert ap.classify_failure(500, "internal server error")[0] is False
+    assert ap.classify_failure(504, "timeout")[0] is False
+    assert ap.classify_failure(400, '{"error": "no speech detected"}')[0] is False
+    assert ap.classify_failure(200, '{"text": ""}')[0] is False
+
+    # Triple key normalization
+    assert ap.triple_key("llama.cpp", "http://127.0.0.1:8080/v1/", "model.gguf") == \
+        "llama.cpp::http://127.0.0.1:8080/v1::model.gguf"
+
+
+def test_audio_probe_endpoints():
+    """Phase 4.6 -- /api/audio-probe GET returns {} on fresh install;
+    DELETE removes the specified entry. Round-trip via direct config write
+    to avoid coupling to the STT path."""
+    import urllib.request, json
+    from korina.config import (
+        config_audio_unsupported,
+        set_audio_unsupported,
+        clear_audio_unsupported,
+        load_config,
+    )
+
+    # Direct round-trip via config helper (no HTTP needed for the happy path).
+    cfg = load_config()
+    set_audio_unsupported("test_provider", "http://test", "test_model",
+                          "test_reason", "test_error_body")
+    cache = config_audio_unsupported()
+    assert "test_provider::http://test::test_model" in cache
+
+    # Clear it back
+    clear_audio_unsupported("test_provider", "http://test", "test_model")
+    cache = config_audio_unsupported()
+    assert "test_provider::http://test::test_model" not in cache
+
+    # The list endpoint returns the entries as JSON.
+    body = json.loads(http_get(BASE, "/api/audio-probe")[1])
+    assert "entries" in body
+    assert isinstance(body["entries"], dict)
+```
+
+Wire both into `run()` near the existing capability tests.
+
+**Step:** Commit:
+```bash
+git add tests/regression_smoke.py
+git commit -m "test: cover audio probe classifier + cache round-trip (4.6.7)"
+```
+
+### Task 4.6.8 — Extend Phase 4.5 verification with probe manual smoke
+
+**Files:** Modify `docs/refactor/phase-4-plan.md` (verification step) — or include the new smoke checks inline in 4.5.3.
+
+Append to the existing Task 4.5.3 manual smoke:
+
+```bash
+# 5. Probe cache list endpoint
+curl -fsS http://127.0.0.1:8001/api/audio-probe | python3 -m json.tool
+# Expect: {"entries": {}} on fresh install
+
+# 6. Probe clear endpoint
+curl -sS -X DELETE http://127.0.0.1:8001/api/audio-probe/llama.cpp/http%3A%2F%2F127.0.0.1%3A8080%2Fv1/test-model -w "\nHTTP %{http_code}\n"
+# Expect: HTTP 200, {"triple": "...", "removed": false} on fresh install
+```
+
+---
+
+## Updated Phase 4 commit count
+
+**~19 commits on `beta`** with Step 4.6 added (was ~15):
+
+| Step | Tasks | Commits |
+|---|---|---|
+| 4.1 | 4.1.1, 4.1.2, 4.1.3, 4.1.4 | 4 |
+| 4.2 | 4.2.1, 4.2.2, 4.2.3 | 3 |
+| 4.3 | 4.3.1, 4.3.2, 4.3.3, 4.3.4 | 4 |
+| 4.4 | 4.4.1, 4.4.2, 4.4.3 | 3 |
+| 4.5 | 4.5.1, 4.5.2, 4.5.3, 4.5.4 | 1 (close-out commit) |
+| 4.6 | 4.6.1, 4.6.2, 4.6.3, 4.6.4, 4.6.5, 4.6.6, 4.6.7 | 7 |
+| **Total** | | **~22 commits** |
+
+---
+
 ## Execution handoff
 
-Plan complete. **~12 commits on `beta`**, all behavior-additive (no existing field removed or renamed; multimodal STT dropdown behavior changes from "show all" to "show filtered by default with override toggle").
+Plan complete. **~22 commits on `beta`**, all behavior-additive (no existing field removed or renamed; multimodal STT dropdown behavior changes from "show all" to "show filtered by default with override toggle"; **on a probe-detected audio-not-supported model, future STT requests silently fall back to whisper and the user is informed**).
 
 **Branch:** `beta` (matches Phase 0–3 pattern; do not touch `alpha` or `master`).
 
-**Execution approach:** dispatch a fresh subagent per task via the `subagent-driven-development` skill, with two-stage review (spec compliance, then code quality). One batch. Service restart in 4.5.1 is required for the new `/api/models` fields and the new compat check to take effect.
+**Execution approach:** dispatch a fresh subagent per task via the `subagent-driven-development` skill, with two-stage review (spec compliance, then code quality). One batch. Service restart in 4.5.1 is required for the new `/api/models` fields, the new compat check, the audio-probe endpoints, and the probe orchestrator to take effect.
 
 **Two questions to confirm before I execute:**
 
