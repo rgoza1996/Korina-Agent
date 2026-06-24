@@ -82,9 +82,11 @@ Phase 4 result: capability registry for model selection is live on `beta`. The u
 
 ## Phase 5 — Process supervision unification
 
-- [ ] 5.1 supervisor decision
-- [ ] 5.2 unit files
-- [ ] 5.3 verify
+Phase 5 result: Korina Voice Lab and Kokoro streaming TTS are both managed by `systemd --user`. `Korina/start.sh` and `Korina/stop.sh` are compatibility wrappers around `systemctl --user`. Runtime services were installed from tracked units under `deploy/systemd/` and verified on roggoz.
+
+- [✓] 5.1 supervisor decision — standardized on `systemd --user`; llama.cpp remains managed by provider activation; LM Studio/Ollama behavior unchanged.
+- [✓] 5.2 unit files — added `deploy/systemd/korina-voice-lab.service`, `deploy/systemd/kokoro-streaming-server.service`, and `Korina/install-services.sh`; updated lifecycle scripts and README.
+- [✓] 5.3 verify — installed units on roggoz, stopped old/manual processes, restarted units, verified `:8001` and `:8880`, `/api/health`, Kokoro `/health`, frontend static assets, lifecycle wrappers, and regression smoke.
 
 ## Phase 6 — Testing + CI
 
