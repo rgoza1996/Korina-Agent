@@ -59,13 +59,29 @@ def models(
                     stt_llm_models.append(d)
     except Exception as e:
         stt_llm_error = str(e)
+    # Phase 4.2: per-model capabilities for the multimodal-STT filter
+    # and the response-LLM info dropdown. Cached per request so we
+    # don't recompute on every model in the list.
+    from korina.services.model_capability import get_model_capability
+    from korina.config import config_multimodal_stt_model_allowlist
+    _allowlist = config_multimodal_stt_model_allowlist(config)
+
+    def _cap_for(mid: str) -> dict:
+        cap = get_model_capability(mid, allowlist=_allowlist)
+        # Strip the internal _inference key before returning.
+        return {k: v for k, v in cap.items() if not k.startswith('_')}
+
+    llm_models_capabilities = {m: _cap_for(m) for m in llm_models}
+    stt_llm_models_capabilities = {m: _cap_for(m) for m in stt_llm_models}
     return {
         'whisper_models': WHISPER_MODEL_CHOICES,
         'llm_models': llm_models,
+        'llm_models_capabilities': llm_models_capabilities,
         'llm_default': str(config.get('lm_model') or LMSTUDIO_MODEL),
         'llm_base_url': llm_base,
         'llm_error': llm_error,
         'stt_llm_models': stt_llm_models,
+        'stt_llm_models_capabilities': stt_llm_models_capabilities,
         'stt_llm_default': config_stt_llm_model(config),
         'stt_llm_base_url': stt_base,
         'stt_llm_error': stt_llm_error,
