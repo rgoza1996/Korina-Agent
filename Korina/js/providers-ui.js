@@ -28,6 +28,11 @@ import {
   syncConverseSettingsUI,
 } from "./settings-ui.js";
 import { saveConfigNow } from "./api.js";
+import {
+  filterModelsByCapability,
+  sttLlmModelRequirement,
+  setCapabilityFilterOverride,
+} from "./capability-filter.js";
 
 // --- Capabilities (verbatim from index.html:359–391) ---
 
@@ -122,8 +127,20 @@ export async function loadModelOptions(force=false){
       const current=sttLlmModel();
       $("sttLlmModel").innerHTML="";
       const blank=document.createElement("option"); blank.value=""; blank.textContent="Inherit from LLM Response"; $("sttLlmModel").appendChild(blank);
-      for(const m of (j.stt_llm_models||[])){ const o=document.createElement("option"); o.value=m; o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m); $("sttLlmModel").appendChild(o); }
+      const sttRequirement = sttLlmModelRequirement();
+      const sttModelsFiltered = filterModelsByCapability(
+        j.stt_llm_models || [],
+        j.stt_llm_models_capabilities || {},
+        sttRequirement,
+      );
+      for(const m of sttModelsFiltered){ const o=document.createElement("option"); o.value=m; o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m); $("sttLlmModel").appendChild(o); }
       $("sttLlmModel").value=[...$("sttLlmModel").options].some(o=>o.value===current)?current:"";
+      // Informational: how many were filtered out by the audio capability filter.
+      const sttHidden = (j.stt_llm_models || []).length - sttModelsFiltered.length;
+      if (sttHidden > 0 && $("settingsInfo")) {
+        const currentInfo = $("settingsInfo").textContent;
+        $("settingsInfo").textContent = `${currentInfo} · ${sttHidden} hidden by audio capability filter (toggle "All models" to show)`.trim();
+      }
     }
     syncConverseSettingsUI();
     $("settingsInfo").textContent=`Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}`.trim();
