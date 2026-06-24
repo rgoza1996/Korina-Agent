@@ -25,6 +25,7 @@ shim to main().)
 from __future__ import annotations
 
 BASE = ''  # module-level placeholder; set by run() before invoking the 4 test_* functions
+_FAILURES = [0]  # module-level counter; tests bump _FAILURES[0] += 1 on failure
 
 import argparse
 import json
@@ -473,91 +474,102 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
 
     # ----- Run summary -----
     print()
-    if failures == 0:
+    total_failures = max(failures, _FAILURES[0])
+    if total_failures == 0:
         print(f"All checks passed against {base}.")
         return 0
-    print(f"{failures} check(s) failed against {base}.")
+    print(f"{total_failures} check(s) failed against {base}.")
     return 1
 
 def test_frontend_uses_capabilities():
-    """Phase 2.2.3 -- the static index page must fetch /api/capabilities,
-    define the new lookup helpers, and not hardcode the legacy
-    PROVIDER_BASE_URL_PRESETS constant."""
+    """Phase 2.2.3 (updated for Phase 3 modularization) -- after Phase 3,
+    the index.html is <script type="module" src="./js/app.js"></script>.
+    The capability helpers and loadCapabilities() now live in
+    Korina/js/providers-ui.js (fetched as a separate static file).
+    Verify by reading /js/providers-ui.js instead of an inline <script>
+    block. Also verify the index.html still references /api/capabilities
+    via the module entry chain (app.js -> providers-ui.js)."""
     import urllib.request, re
     try:
+        # Check 1: index.html references the module entrypoint.
         with urllib.request.urlopen(BASE + "/", timeout=10) as r:
             assert r.status == 200
             html = r.read().decode("utf-8")
-        m = re.search(r"<script>([\s\S]*?)</script>", html)
-        assert m, "no <script> block in served index.html"
-        js = m.group(1)
-        # New: cache loader + helpers present
-        assert "function getResponseLlmProviderCaps(provider)" in js, \
-            "getResponseLlmProviderCaps helper not defined"
-        assert "function getAgentProviderCaps(provider)" in js, \
-            "getAgentProviderCaps helper not defined"
+        assert re.search(r'<script[^>]*type="module"[^>]*src="\./js/app\.js"', html), \
+            "index.html does not load app.js as a module"
+        # Check 2: providers-ui.js contains the helpers and /api/capabilities fetch.
+        with urllib.request.urlopen(BASE + "/js/providers-ui.js", timeout=10) as r:
+            assert r.status == 200
+            js = r.read().decode("utf-8")
+        assert "function getResponseLlmProviderCaps" in js, \
+            "getResponseLlmProviderCaps helper not defined in providers-ui.js"
+        assert "function getAgentProviderCaps" in js, \
+            "getAgentProviderCaps helper not defined in providers-ui.js"
         assert "/api/capabilities" in js, \
-            "no /api/capabilities fetch in served index.html"
-        # Old: legacy constant declaration gone (its usage in 2.2.1's
-        # transitional comment is fine; we only ban the const declaration)
+            "no /api/capabilities fetch in providers-ui.js"
+        # Old: legacy constant declaration gone (its usage in a comment is fine;
+        # we only ban the const declaration).
         assert "const PROVIDER_BASE_URL_PRESETS" not in js, \
             "legacy PROVIDER_BASE_URL_PRESETS const declaration still present"
     except Exception as e:
         print(f"  [FAIL] frontend uses capabilities: {type(e).__name__}: {e}")
-        global failures
-        failures += 1
+        _FAILURES[0] += 1
         return
     print(f"  [PASS] frontend uses capabilities: loadCapabilities + helpers present, legacy constant removed")
 
 
 def test_frontend_set_base_url_editability_for_agent():
-    """Phase 2.2.3 -- setBaseUrlEditability must wire up the agent provider's
-    base URL field. This is the regression check for the bug that the
-    agent path was previously uncontrolled."""
+    """Phase 2.2.3 (updated for Phase 3 modularization) -- setBaseUrlEditability
+    must wire up the agent provider's base URL field. After Phase 3 the
+    function lives in /js/providers-ui.js. Read that file directly."""
     import urllib.request, re
     try:
-        with urllib.request.urlopen(BASE + "/", timeout=10) as r:
-            html = r.read().decode("utf-8")
-        m = re.search(r"<script>([\s\S]*?)</script>", html)
-        js = m.group(1)
+        with urllib.request.urlopen(BASE + "/js/providers-ui.js", timeout=10) as r:
+            assert r.status == 200
+            js = r.read().decode("utf-8")
         # The agent section must be present in the editability function.
         m_fn = re.search(r"async function setBaseUrlEditability\(\)\{([\s\S]*?)\n\}", js)
-        assert m_fn, "async setBaseUrlEditability not found"
+        assert m_fn, "async setBaseUrlEditability not found in providers-ui.js"
         body = m_fn.group(1)
         assert "agentBaseUrl" in body, \
             "setBaseUrlEditability does not reference agentBaseUrl -- the agent path is uncontrolled"
         assert "getAgentProviderCaps" in js, \
-            "getAgentProviderCaps helper not present"
+            "getAgentProviderCaps helper not present in providers-ui.js"
     except Exception as e:
         print(f"  [FAIL] frontend setBaseUrlEditability for agent: {type(e).__name__}: {e}")
-        global failures
-        failures += 1
+        _FAILURES[0] += 1
         return
     print(f"  [PASS] frontend setBaseUrlEditability for agent: agentBaseUrl wired, getAgentProviderCaps present")
 
 
 def test_frontend_initial_sync_uses_capabilities():
-    """Phase 2.2.3 -- the top-level loadCapabilities().then(()=>setBaseUrlEditability())
-    call from 2.2.2 must be in place, so the async editability pass runs
-    before initApp() without modifying initApp itself."""
+    """Phase 2.2.3 (updated for Phase 3 modularization) -- the top-level
+    loadCapabilities().then(()=>setBaseUrlEditability()) call from 2.2.2
+    must be in /js/app.js (the entrypoint), so the async editability pass
+    runs before initApp() without modifying initApp itself. After Phase 3,
+    initApp itself lives in /js/api.js, so we verify initApp's signature
+    is unchanged in api.js."""
     import urllib.request, re
     try:
-        with urllib.request.urlopen(BASE + "/", timeout=10) as r:
-            html = r.read().decode("utf-8")
-        m = re.search(r"<script>([\s\S]*?)</script>", html)
-        js = m.group(1)
-        assert "loadCapabilities().then(()=>setBaseUrlEditability())" in js, \
-            "initial sync is not loading capabilities before setting editability"
+        with urllib.request.urlopen(BASE + "/js/app.js", timeout=10) as r:
+            assert r.status == 200
+            js = r.read().decode("utf-8")
+        # Allow flexible whitespace and a trailing semicolon.
+        assert re.search(r"loadCapabilities\s*\(\s*\)\s*\.\s*then\s*\(\s*\(\s*\)\s*=>\s*setBaseUrlEditability\s*\(\s*\)\s*\)", js), \
+            "initial sync is not loading capabilities before setting editability in app.js"
         # initApp must still be untouched (no await loadCapabilities inside).
-        m_init = re.search(r"async function initApp\(\)\{([\s\S]*?)\n\}", js)
-        assert m_init, "initApp not found"
+        # Phase 3: initApp lives in /js/api.js, not /js/app.js. Read it from there.
+        with urllib.request.urlopen(BASE + "/js/api.js", timeout=10) as r:
+            assert r.status == 200
+            api_js = r.read().decode("utf-8")
+        m_init = re.search(r"async function initApp\s*\(\s*\)\s*\{([\s\S]*?)\n\}", api_js)
+        assert m_init, "initApp not found in api.js"
         init_body = m_init.group(1)
         assert "try{ await loadCapabilities();" not in init_body, \
             "initApp was modified to await loadCapabilities -- 2.2.2 discipline broken"
     except Exception as e:
         print(f"  [FAIL] frontend initial sync uses capabilities: {type(e).__name__}: {e}")
-        global failures
-        failures += 1
+        _FAILURES[0] += 1
         return
     print(f"  [PASS] frontend initial sync uses capabilities: top-level loadCapabilities().then() present, initApp untouched")
 
@@ -608,8 +620,7 @@ def test_capabilities_anthropic_default_and_editability():
                 )
     except Exception as e:
         print(f"  [FAIL] capabilities contract per provider: {type(e).__name__}: {e}")
-        global failures
-        failures += 1
+        _FAILURES[0] += 1
         return
     print("  [PASS] capabilities contract per provider: anthropic default=empty+editable, openai-compatible editable, 3 local not editable, 8 keys on every provider")
 
