@@ -100,3 +100,30 @@ export async function initApp() {
   setInterval(async () => (await import('./agent-ui.js')).pollAgentEvents(), 2000);
   setInterval(async () => (await import('./agent-ui.js')).maybeReleaseDeferredAgentInterrupt(), 500);
 }
+
+export async function listAudioProbes() {
+  const r = await fetch('/api/audio-probe');
+  if (!r.ok) return { entries: {} };
+  return r.json();
+}
+
+export async function clearAudioProbe(provider, baseUrl, model) {
+  // Query params: see `routes/providers.py` Task 4.5.5 — path-param form
+  // with two `:path` converters routes incorrectly for HF-style model ids.
+  const qs = new URLSearchParams({
+    provider: String(provider || ''),
+    base_url: String(baseUrl || ''),
+    model: String(model || ''),
+  });
+  const r = await fetch(`/api/audio-probe?${qs.toString()}`, { method: 'DELETE' });
+  return r.json();
+}
+
+// Cache key normalizer. MUST match the backend's `triple_key` in
+// `korina/services/audio_probe.py` (which does `.strip().rstrip('/')` on
+// base_url). If we don't apply the same normalization here, the badge
+// lookup silently never hits when the user types a base URL with a
+// trailing slash.
+export function normalizeTripleBaseUrl(s) {
+  return String(s || '').trim().replace(/\/+$/, '');
+}

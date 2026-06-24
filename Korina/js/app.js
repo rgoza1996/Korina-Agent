@@ -24,6 +24,7 @@ import { prettyModelLabel } from "./labels.js";
 import {
   loadConfig, saveConfigNow, saveConfigSoon, health,
   activateSelectedProvider, initApp,
+  listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl,
 } from "./api.js";
 import {
   collectConfig, applyConfig, markActivity,
@@ -65,6 +66,7 @@ Object.assign(window, {
   state, EventBus, $, status, setDot, log, setSectionHidden, clamp,
   prettyModelLabel,
   loadConfig, saveConfigNow, saveConfigSoon, health, activateSelectedProvider, initApp,
+  listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl,
   collectConfig, applyConfig, markActivity, syncConverseSettingsUI,
   loadCapabilities, getResponseLlmProviderCaps, getAgentProviderCaps,
   setBaseUrlEditability, maybeApplyProviderPreset,
@@ -92,6 +94,17 @@ if (_sttOverride) {
     (async () => {
       try { await loadModelOptions(true); } catch (e) { /* best effort */ }
     })();
+  });
+}
+
+// Wire clearProbeBtn (Phase 4.5.6 — clear audio probe cache and retry).
+const clearBtn = $('clearProbeBtn');
+if (clearBtn) {
+  clearBtn.addEventListener('click', async () => {
+    const { provider, baseUrl, model } = clearBtn.dataset;
+    await clearAudioProbe(provider, baseUrl, model);
+    clearBtn.style.display = 'none';
+    try { await loadModelOptions(true); } catch (_) {}
   });
 }
 

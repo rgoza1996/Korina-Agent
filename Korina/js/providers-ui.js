@@ -33,6 +33,11 @@ import {
   sttLlmModelRequirement,
   setCapabilityFilterOverride,
 } from "./capability-filter.js";
+import {
+  listAudioProbes,
+  clearAudioProbe,
+  normalizeTripleBaseUrl,
+} from './api.js';
 
 // --- Capabilities (verbatim from index.html:359–391) ---
 
@@ -98,6 +103,14 @@ export async function setBaseUrlEditability(){
 
 export async function loadModelOptions(force=false){
   try{
+    // Phase 4.5.6: load audio probe cache so the dropdown can show
+    // badges for known-broken (provider, base_url, model) triples.
+    try {
+      const probeResp = await listAudioProbes();
+      state.audioUnsupported = probeResp.entries || {};
+    } catch (_) {
+      state.audioUnsupported = {};
+    }
     const params=new URLSearchParams({
       llm_base_url: llmBaseUrl(),
       llm_api_key_env: String($("llmApiKeyEnv")?.value||"").trim(),
@@ -133,7 +146,21 @@ export async function loadModelOptions(force=false){
         j.stt_llm_models_capabilities || {},
         sttRequirement,
       );
-      for(const m of sttModelsFiltered){ const o=document.createElement("option"); o.value=m; o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m); $("sttLlmModel").appendChild(o); }
+      for(const m of sttModelsFiltered){
+        const o=document.createElement("option");
+        o.value=m;
+        const baseLabel=(j.labels&&j.labels[m])||prettyModelLabel(m);
+        // Triple must match the backend's `triple_key` exactly. The backend
+        // strips trailing slashes from base_url; mirror that here.
+        const _probeTriple = `${state.llmProvider||""}::${normalizeTripleBaseUrl(effectiveSttLlmBaseUrl())}::${m}`;
+        if(state.audioUnsupported && state.audioUnsupported[_probeTriple]){
+          o.textContent = `${baseLabel} [audio unsupported: ${state.audioUnsupported[_probeTriple].reason}]`;
+          o.disabled = true;
+        } else {
+          o.textContent = baseLabel;
+        }
+        $("sttLlmModel").appendChild(o);
+      }
       $("sttLlmModel").value=[...$("sttLlmModel").options].some(o=>o.value===current)?current:"";
       // Informational: how many were filtered out by the audio capability filter.
       const sttHidden = (j.stt_llm_models || []).length - sttModelsFiltered.length;
