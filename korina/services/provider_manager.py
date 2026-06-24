@@ -183,3 +183,67 @@ def activate_llm_provider(provider: str, config: Optional[dict] = None, model: O
     stop_ollama()
     saved_base = str(config.get('llm_base_url') or '').strip()
     return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': saved_base, 'stopped': ['llama-server.service', 'lmstudio', 'ollama'], 'started': []}
+
+
+
+def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
+    """Return (supported, reason).
+
+    Phase 4.4: pre-flight check for /api/llm/provider/activate. Raises
+    no exceptions; returns (False, reason) for the caller to surface
+    as HTTP 400.
+
+    Rules:
+      - llama.cpp + local GGUF path: file must exist on disk
+      - llama.cpp + endpoint-loaded id (not a path): NOT supported
+      - lmstudio + catalog id: must be in lmstudio_catalog_models()
+      - lmstudio + GGUF path: NOT supported
+      - ollama: always allow (model list is server-side, only
+        verifiable after server start)
+      - openai-compatible: always allow (user-provided endpoint)
+      - anthropic: always allow (user-provided endpoint)
+    """
+    from pathlib import Path
+    from korina.services.model_catalog import (
+        discover_lmstudio_catalog_models,
+        discover_local_gguf_models,
+    )
+
+    pid = str(provider or "").strip()
+    mid = str(model or "").strip()
+
+    if pid in ("openai-compatible", "anthropic"):
+        return (True, "user_provided_endpoint")
+
+    if pid == "ollama":
+        # Cannot pre-check; ollama's /v1/models is only reachable once
+        # the server is up. Allow and let the chat request fail loud.
+        return (True, "ollama_endpoint_checked_later")
+
+    if pid == "llama.cpp":
+        if not mid:
+            return (False, "llama.cpp requires a model id (local GGUF path)")
+        if not mid.endswith(".gguf"):
+            return (False, f"llama.cpp does not support endpoint-loaded ids; got '{mid}'")
+        if not Path(mid).exists():
+            return (False, f"llama.cpp model file not found: {mid}")
+        # NOTE: do NOT call `discover_local_gguf_models()` here. That walks
+        # `LOCAL_MODEL_ROOTS` + `LMSTUDIO_HUB_ROOT` via `rglob('*.gguf')`
+        # on every activate request -- a non-trivial filesystem scan on
+        # hosts with many GGUFs. The user-provided path existing on disk
+        # is sufficient evidence of legitimacy; the llama-server will
+        # reject it with a clear error if it's actually broken.
+        return (True, "local_gguf")
+
+    if pid == "lmstudio":
+        if not mid:
+            return (False, "lmstudio requires a model id (catalog id)")
+        try:
+            catalog = discover_lmstudio_catalog_models()
+        except Exception:
+            catalog = []
+        if mid in catalog:
+            return (True, "lmstudio_catalog")
+        return (False, f"lmstudio catalog does not contain '{mid}'")
+
+    return (False, f"unknown provider '{pid}'")
