@@ -708,7 +708,13 @@ for(const m of sttModelsFiltered){
   o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m);
   $("sttLlmModel").appendChild(o);
 }
-// Informational: how many were filtered out.
+// Informational: how many were filtered out. **Transient status only.**
+// `providers-ui.js:129` (the `loadModelOptions` completion path) overwrites
+// `settingsInfo.textContent` wholesale on every call, so this appended
+// fragment is only visible until the next `loadModelOptions` fires. That
+// is fine for a one-shot filter report, but it is NOT persistent state.
+// If we ever need a persistent filter indicator, use a dedicated element
+// (e.g. `#sttFilterStatus`) and update it independently of `settingsInfo`.
 const sttHidden = (j.stt_llm_models || []).length - sttModelsFiltered.length;
 if (sttHidden > 0 && $("settingsInfo")) {
   const current = $("settingsInfo").textContent;
@@ -864,12 +870,12 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
             return (False, f"llama.cpp does not support endpoint-loaded ids; got '{mid}'")
         if not Path(mid).exists():
             return (False, f"llama.cpp model file not found: {mid}")
-        # Sanity: must be in our local GGUF discovery (best-effort).
-        try:
-            if mid not in discover_local_gguf_models():
-                return (False, f"llama.cpp model not in local GGUF roots: {mid}")
-        except Exception:
-            pass  # filesystem walk failed; allow and let llama-server reject
+        # NOTE: do NOT call `discover_local_gguf_models()` here. That walks
+        # `LOCAL_MODEL_ROOTS` + `LMSTUDIO_HUB_ROOT` via `rglob('*.gguf')`
+        # on every activate request -- a non-trivial filesystem scan on
+        # hosts with many GGUFs. The user-provided path existing on disk
+        # is sufficient evidence of legitimacy; the llama-server will
+        # reject it with a clear error if it's actually broken.
         return (True, "local_gguf")
 
     if pid == "lmstudio":
@@ -1209,7 +1215,11 @@ def maybe_fallback_to_whisper(
         config_audio_unsupported,
         set_audio_unsupported,
     )
-    from korina.services.audio_probe import classify_failure, triple_key
+    # `classify_failure` and `triple_key` are defined in this same module
+    # (audio_probe.py). No self-import needed; call them directly.
+    # Earlier draft had `from korina.services.audio_probe import ...` here,
+    # which would be a self-import and a circular-reference trap once
+    # `audio_probe.py` does `from .audio_probe import ...` at module load.
 
     triple = triple_key(provider, base_url, model)
     cache = config_audio_unsupported()
@@ -1299,7 +1309,14 @@ git commit -m "feat(routes): clear audio probe cache on provider activate (4.5.4
 ```python
 from korina.config import clear_audio_unsupported, config_audio_unsupported
 
-@router.delete('/api/audio-probe/{provider}/{base_url:path}/{model:path}')
+# IMPORTANT: query params, not path params. Two consecutive FastAPI
+# `{x:path}` converters greedily consume the URL — verified by running
+# the original `DELETE /api/audio-probe/{provider}/{base_url:path}/{model:path}`
+# against TestClient: an HF-style model id like `org/repo/model.gguf`
+# gets split as `b=...v1/org/repo, m=model.gguf` (wrong). Query params
+# avoid the ambiguity entirely. base_url and model are URL-encoded by
+# the client (encodeURIComponent).
+@router.delete('/api/audio-probe')
 def clear_audio_probe(provider: str, base_url: str, model: str):
     """Clear a single audio-unsupported cache entry. Power-user escape hatch."""
     from korina.services.audio_probe import triple_key
@@ -1336,11 +1353,24 @@ export async function listAudioProbes() {
 }
 
 export async function clearAudioProbe(provider, baseUrl, model) {
-  const r = await fetch(
-    `/api/audio-probe/${encodeURIComponent(provider)}/${encodeURIComponent(baseUrl)}/${encodeURIComponent(model)}`,
-    { method: 'DELETE' }
-  );
+  // Query params: see `routes/providers.py` Task 4.5.5 — path-param form
+  // with two `:path` converters routes incorrectly for HF-style model ids.
+  const qs = new URLSearchParams({
+    provider: String(provider || ''),
+    base_url: String(baseUrl || ''),
+    model: String(model || ''),
+  });
+  const r = await fetch(`/api/audio-probe?${qs.toString()}`, { method: 'DELETE' });
   return r.json();
+}
+
+// Cache key normalizer. MUST match the backend's `triple_key` in
+// `korina/services/audio_probe.py` (which does `.strip().rstrip('/')` on
+// base_url). If we don't apply the same normalization here, the badge
+// lookup silently never hits when the user types a base URL with a
+// trailing slash. Single source of truth: backend. This mirrors it.
+export function normalizeTripleBaseUrl(s) {
+  return String(s || '').trim().replace(/\/+$/, '');
 }
 ```
 
@@ -1358,7 +1388,10 @@ for (const m of sttModelsFiltered) {
   const o = document.createElement("option");
   o.value = m;
   const baseLabel = (j.labels && j.labels[m]) || prettyModelLabel(m);
-  const triple = `${state.llmProvider}::${effectiveSttLlmBaseUrl()}::${m}`;
+  // Triple must match the backend's `triple_key` exactly. The backend
+  // strips trailing slashes from base_url; if we don't mirror that here
+  // the badge lookup silently never hits. Use the shared normalizer.
+  const triple = `${state.llmProvider}::${normalizeTripleBaseUrl(effectiveSttLlmBaseUrl())}::${m}`;
   if (state.audioUnsupported[triple]) {
     o.textContent = `${baseLabel} [audio unsupported: ${state.audioUnsupported[triple].reason}]`;
     o.disabled = true;  // can't pick a known-broken model unless they clear
