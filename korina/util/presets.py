@@ -112,3 +112,69 @@ def capabilities_for_section(section: str) -> dict[str, dict[str, Any]]:
             continue
         out[pid] = cap
     return out
+
+# Per-model capability registry. Same shape as the heuristic in
+# get_model_capability(), but explicitly opt-in. Models listed here
+# ALWAYS use the listed values; the heuristic only runs for models
+# not in this registry.
+#
+# Capability keys (snake_case JSON, served verbatim by /api/models
+# *_models_capabilities):
+#   supports_audio_input: bool    -- can the model accept audio input
+#                                    for the multimodal STT path
+#   source: str                   -- one of: endpoint_loaded, local_gguf,
+#                                    catalog, inferred
+#   has_mmproj: bool              -- only meaningful for local_gguf:
+#                                    True iff find_mmproj_for_model() != ""
+#   approx_vram_gb: float | None  -- when known; None for unknown
+MODEL_CAPABILITIES: dict[str, dict[str, Any]] = {
+    # ---- Explicitly-known multimodal-capable GGUFs on this box ----
+    "gemma-4-e2b": {
+        "supports_audio_input": True,
+        "source": "local_gguf",
+        "has_mmproj": True,
+        "approx_vram_gb": 4.0,
+    },
+    "qwen3-vl-4b": {
+        "supports_audio_input": False,  # vision only, no audio input
+        "source": "local_gguf",
+        "has_mmproj": True,
+        "approx_vram_gb": 3.5,
+    },
+    "ultravox-v0.5-llama-3.1-8b": {
+        "supports_audio_input": True,
+        "source": "local_gguf",
+        "has_mmproj": True,
+        "approx_vram_gb": 6.0,
+    },
+    # ---- Explicitly-known text-only / non-multimodal GGUFs ----
+    "nomic-embed-text-v1.5": {
+        "supports_audio_input": False,
+        "source": "local_gguf",
+        "has_mmproj": False,
+        "approx_vram_gb": 0.3,
+    },
+    "nomic-embed-text-v2-moe": {
+        "supports_audio_input": False,
+        "source": "local_gguf",
+        "has_mmproj": False,
+        "approx_vram_gb": 0.5,
+    },
+    "orpheus-3b": {
+        "supports_audio_input": False,
+        "source": "local_gguf",
+        "has_mmproj": False,
+        "approx_vram_gb": 2.0,
+    },
+}
+
+
+def _lookup_registry_capability(model_id: str) -> dict[str, Any] | None:
+    """Look up a model by lowercased substring. Returns the first match."""
+    if not model_id:
+        return None
+    needle = model_id.lower()
+    for key, cap in MODEL_CAPABILITIES.items():
+        if key in needle:
+            return dict(cap)  # return a copy so callers can't mutate registry
+    return None
