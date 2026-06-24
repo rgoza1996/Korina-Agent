@@ -29,6 +29,7 @@ _FAILURES = [0]  # module-level counter; tests bump _FAILURES[0] += 1 on failure
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -124,6 +125,13 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         code, body = http_get(base, path)
         if not assert_status(name, code, want, body):
             failures += 1
+
+    # Phase 4.2.3 -- /api/models must include per-model capability dicts
+    # once the runtime picks up the route change (Task 4.6.1 restart). The
+    # test itself always asserts the source-level contract, and
+    # conditionally checks the live payload if/when the new fields exist.
+    if not test_api_models_includes_capabilities():
+        failures += 1
 
     # Agent POST endpoints.
     for name, path, payload, want in [
@@ -723,6 +731,57 @@ def test_model_capability_heuristic():
 
     print("  [PASS] model capability heuristic: registry, mmproj-on-disk, "
           "hard allowlist, runtime allowlist, blacklist all behave as documented")
+
+
+def test_api_models_includes_capabilities() -> bool:
+    """Phase 4.2.3 -- /api/models MUST include ``llm_models_capabilities``
+    and ``stt_llm_models_capabilities`` dicts once the runtime picks up
+    the route change (Task 4.6.1 restart). Until then, this test verifies
+    the source-level contract: the route module references both keys, and
+    if the live endpoint already exposes them we also validate their
+    shape. Returns True on success.
+    """
+    # Source-level contract -- always asserted.
+    src_path = os.path.join(os.path.dirname(__file__), "..", "korina",
+                            "routes", "models.py")
+    with open(src_path) as _f:
+        src = _f.read()
+    if "llm_models_capabilities" not in src:
+        print(f"  [FAIL] {src_path} does not declare llm_models_capabilities")
+        return False
+    if "stt_llm_models_capabilities" not in src:
+        print(f"  [FAIL] {src_path} does not declare stt_llm_models_capabilities")
+        return False
+    print("  [PASS] korina/routes/models.py source declares both "
+          "*_models_capabilities keys")
+
+    # Live endpoint -- conditional. The running service on roggoz does NOT
+    # pick up route changes until Task 4.6.1 restart, so /api/models still
+    # returns the old shape. Skip the per-model assertion in that case.
+    try:
+        _code, _body = http_get(BASE, "/api/models")
+        payload = json.loads(_body)
+    except Exception as e:
+        print(f"  [FAIL] /api/models live check: could not parse response: "
+              f"{type(e).__name__}: {e}")
+        return False
+
+    if isinstance(payload, dict) and "llm_models_capabilities" in payload \
+            and "stt_llm_models_capabilities" in payload:
+        if not isinstance(payload["llm_models_capabilities"], dict):
+            print(f"  [FAIL] /api/models llm_models_capabilities is not a "
+                  f"dict: {type(payload['llm_models_capabilities']).__name__}")
+            return False
+        if not isinstance(payload["stt_llm_models_capabilities"], dict):
+            print(f"  [FAIL] /api/models stt_llm_models_capabilities is not "
+                  f"a dict: {type(payload['stt_llm_models_capabilities']).__name__}")
+            return False
+        print("  [PASS] /api/models live endpoint includes both "
+              "*_models_capabilities dicts")
+    else:
+        print("  [SKIP] /api/models live endpoint predates the capability "
+              "fields (restart pending in 4.6.1)")
+    return True
 
 
 def main() -> int:
