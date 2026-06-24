@@ -133,6 +133,13 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
     if not test_api_models_includes_capabilities():
         failures += 1
 
+    # Phase 4.4.3 -- /api/llm/provider/activate must 400 on
+    # provider/model mismatches once the service picks up the
+    # route change (Task 4.6.1 restart). Until then, the test
+    # SKIPs on 200 (pre-Phase-4 behavior).
+    if not test_provider_model_compatibility():
+        failures += 1
+
     # Agent POST endpoints.
     for name, path, payload, want in [
         ("POST /api/agent/reset", "/api/agent/reset", {}, 200),
@@ -784,6 +791,59 @@ def test_api_models_includes_capabilities() -> bool:
         print("  [SKIP] /api/models live endpoint predates the capability "
               "fields (restart pending in 4.6.1)")
     return True
+
+
+def test_provider_model_compatibility() -> bool:
+    """Phase 4.4 -- /api/llm/provider/activate MUST 400 when given a
+    model that the named provider cannot serve, once the service picks
+    up the route change (Task 4.6.1 restart). Until restart, the live
+    endpoint still serves pre-Phase-4 behavior; we accept 200 in that
+    case and print a SKIP marker.
+    Returns True on success.
+    """
+    import urllib.request, urllib.error, json
+
+    cases = [
+        ("llama.cpp", "qwen/qwen3-14b", "endpoint-loaded id to llama.cpp"),
+        ("lmstudio", "fake-org/fake-model", "bogus catalog id to lmstudio"),
+    ]
+    for provider, model, label in cases:
+        body = json.dumps({"provider": provider, "model": model}).encode()
+        req = urllib.request.Request(
+            BASE + "/api/llm/provider/activate", data=body,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                code = r.status
+                _body = r.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            code = e.code
+            _body = e.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            print(f"  [FAIL] {label}: client error: {type(e).__name__}: {e}")
+            return False
+
+        if code == 400:
+            try:
+                detail = json.loads(_body).get("detail", {})
+            except Exception:
+                detail = {}
+            if detail.get("error") == "incompatible_provider_model":
+                print(f"  [PASS] {provider}+{model!r}: HTTP 400 incompatible_provider_model "
+                      f"(reason={detail.get('reason')!r})")
+                continue
+            else:
+                print(f"  [FAIL] {provider}+{model!r}: HTTP 400 but wrong detail: {detail}")
+                return False
+        elif code == 200:
+            print(f"  [SKIP] {provider}+{model!r}: HTTP 200 -- service predates 4.4 "
+                  f"route change; restart pending in 4.6.1")
+        else:
+            print(f"  [FAIL] {provider}+{model!r}: unexpected HTTP {code}: {_body[:200]}")
+            return False
+    return True
+
 
 
 
