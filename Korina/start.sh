@@ -30,6 +30,23 @@ fi
 systemctl --user start kokoro-streaming-server.service
 systemctl --user start korina-voice-lab.service
 
+# systemctl --user start for Type=simple is non-blocking and returns
+# before the service has bound its socket. Wait briefly for both ports
+# to come up so the is_listening checks below do not false-warn.
+wait_for_listening() {
+  local port="$1" max_iters="${2:-40}"
+  for _ in $(seq 1 "$max_iters"); do
+    if is_listening "$port"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+  return 1
+}
+
+wait_for_listening 8880 || true
+wait_for_listening 8001 || true
+
 systemctl --user --no-pager -l status kokoro-streaming-server.service korina-voice-lab.service || true
 
 if is_listening 8880; then
