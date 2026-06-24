@@ -6,7 +6,7 @@ single, import-light module.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -29,3 +29,15 @@ class CapabilitiesResponse(BaseModel):
     providers: dict[str, ProviderCapabilities]
     agent_providers: dict[str, ProviderCapabilities]
     version: int = 1
+
+
+# Phase 4.2 model-level capabilities. Mirrors the shape returned by
+# korina.services.model_capability.get_model_capability(). The `_inference`
+# internal key is excluded from the serialized response.
+
+
+class ModelCapabilities(BaseModel):
+    supports_audio_input: bool
+    source: Literal["endpoint_loaded", "local_gguf", "catalog", "inferred"]
+    has_mmproj: bool = False
+    approx_vram_gb: Optional[float] = None
