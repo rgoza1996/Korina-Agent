@@ -336,6 +336,8 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
     test_frontend_initial_sync_uses_capabilities()
     test_capabilities_endpoint()
     test_model_capability_heuristic()
+    if not test_frontend_multimodal_stt_filter():
+        failures += 1
     test_capabilities_anthropic_default_and_editability()
 
     # Phase 1.8 / 1.9 deliverable: korina.app.main() is the canonical uvicorn
@@ -781,6 +783,56 @@ def test_api_models_includes_capabilities() -> bool:
     else:
         print("  [SKIP] /api/models live endpoint predates the capability "
               "fields (restart pending in 4.6.1)")
+    return True
+
+
+
+def test_frontend_multimodal_stt_filter() -> bool:
+    """Phase 4.3 -- served index.html must include the All models toggle,
+    served capability-filter.js must export filterModelsByCapability, and
+    served providers-ui.js must import from capability-filter.js.
+    Returns True on success.
+    """
+    import re
+
+    # 1. Toggle in index.html.
+    try:
+        with urllib.request.urlopen(BASE + "/", timeout=10) as r:
+            html = r.read().decode("utf-8")
+    except Exception as e:
+        print(f"  [FAIL] could not fetch index.html: {type(e).__name__}: {e}")
+        return False
+    if 'id="sttCapabilityFilterOverride"' not in html:
+        print("  [FAIL] sttCapabilityFilterOverride toggle missing from served index.html")
+        return False
+    print("  [PASS] served index.html has sttCapabilityFilterOverride toggle")
+
+    # 2. capability-filter.js served and contains the expected exports.
+    try:
+        with urllib.request.urlopen(BASE + "/js/capability-filter.js", timeout=10) as r:
+            js = r.read().decode("utf-8")
+    except Exception as e:
+        print(f"  [FAIL] could not fetch capability-filter.js: {type(e).__name__}: {e}")
+        return False
+    if "filterModelsByCapability" not in js:
+        print("  [FAIL] filterModelsByCapability not exported from served capability-filter.js")
+        return False
+    if "sttLlmModelRequirement" not in js:
+        print("  [FAIL] sttLlmModelRequirement not exported from served capability-filter.js")
+        return False
+    print("  [PASS] served capability-filter.js exports filterModelsByCapability + sttLlmModelRequirement")
+
+    # 3. providers-ui.js imports from capability-filter.js.
+    try:
+        with urllib.request.urlopen(BASE + "/js/providers-ui.js", timeout=10) as r:
+            pu = r.read().decode("utf-8")
+    except Exception as e:
+        print(f"  [FAIL] could not fetch providers-ui.js: {type(e).__name__}: {e}")
+        return False
+    if "capability-filter.js" not in pu:
+        print("  [FAIL] providers-ui.js does not import from capability-filter.js")
+        return False
+    print("  [PASS] served providers-ui.js imports from capability-filter.js")
     return True
 
 
