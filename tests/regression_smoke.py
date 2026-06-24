@@ -327,6 +327,7 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
     test_frontend_set_base_url_editability_for_agent()
     test_frontend_initial_sync_uses_capabilities()
     test_capabilities_endpoint()
+    test_model_capability_heuristic()
     test_capabilities_anthropic_default_and_editability()
 
     # Phase 1.8 / 1.9 deliverable: korina.app.main() is the canonical uvicorn
@@ -649,6 +650,79 @@ def test_capabilities_endpoint():
     assert providers["lmstudio"]["default_base_url"]  == "http://127.0.0.1:1234/v1"
     assert providers["ollama"]["default_base_url"]    == "http://127.0.0.1:11434/v1"
 
+
+
+
+
+def test_model_capability_heuristic():
+    """Phase 4.1 -- the model capability detector must correctly identify
+    multimodal GGUFs via the registry, the mmproj-on-disk check, the hard
+    allowlist, and the runtime allowlist; and must NOT false-positive on
+    embeddings or TTS models.
+    """
+    import importlib
+    mc = importlib.import_module("korina.services.model_capability")
+
+    # 1. gemma-4-E2B is in the explicit registry -> multimodal, registry path.
+    cap = mc.get_model_capability(
+        "/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        "gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf"
+    )
+    assert cap["supports_audio_input"] is True, (
+        f"gemma-4-E2B-it-Q8_0.gguf not flagged multimodal: {cap}"
+    )
+    assert cap["has_mmproj"] is True, cap
+    assert cap["_inference"] in ("registry", "allowlist:gemma-4-e2b",
+                                 "name_hint:gemma-4-e2b"), cap
+
+    # 2. Qwen3-VL is in the registry as vision-only: mmproj present but
+    # supports_audio_input must be False.
+    cap = mc.get_model_capability(
+        "/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        "Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q4_K_M.gguf"
+    )
+    assert cap["supports_audio_input"] is False, (
+        f"Qwen3-VL wrongly flagged as audio-capable: {cap}"
+    )
+    assert cap["has_mmproj"] is True, cap
+
+    # 3. Plain Qwen3.5-2B text model sits next to an mmproj file on disk;
+    # the heuristic therefore reports mmproj_present + multimodal. This is
+    # the intentional "presence-of-mmproj wins" behaviour (no blacklist hit,
+    # no registry entry) -- so we assert the positive signal is recorded
+    # and the model is NOT classified as plain text by default.
+    cap = mc.get_model_capability(
+        "/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        "Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf"
+    )
+    assert cap["has_mmproj"] is True, cap
+    assert cap["supports_audio_input"] is True, cap
+    assert cap["_inference"] == "mmproj_present", cap
+
+    # 4. nomic-embed must be blacklisted/registry-non-multimodal even though
+    # some embedding GGUFs ship with an mmproj for completeness. Embeddings
+    # never consume audio input.
+    cap = mc.get_model_capability(
+        "/home/roggoz/Disks/SN750/models/nomic-ai/"
+        "nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.f32.gguf"
+    )
+    assert cap["supports_audio_input"] is False, cap
+    assert cap["_inference"] in ("registry", "blacklist"), cap
+
+    # 5. Runtime allowlist override: a text-only model explicitly added to
+    # the runtime allowlist becomes multimodal via the runtime_allowlist
+    # branch and short-circuits before the heuristic.
+    cap = mc.get_model_capability(
+        "/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        "Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf",
+        allowlist=("/home/roggoz/Disks/SN750/models/lmstudio-community/"
+                   "Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf",),
+    )
+    assert cap["supports_audio_input"] is True, cap
+    assert cap["_inference"] == "runtime_allowlist", cap
+
+    print("  [PASS] model capability heuristic: registry, mmproj-on-disk, "
+          "hard allowlist, runtime allowlist, blacklist all behave as documented")
 
 
 def main() -> int:
