@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from korina.config import load_config
@@ -27,7 +28,7 @@ from korina.routes import models as _models_routes
 from korina.routes import providers as _providers_routes
 from korina.routes import stt as _stt_routes
 from korina.services.ack_service import enqueue_missing_acks
-from korina.util.paths import ACK_DEFAULT_VOICE, ACK_DIR
+from korina.util.paths import ACK_DEFAULT_VOICE, ACK_DIR, APP_DIR
 
 
 def _startup_generate_default_acks() -> None:
@@ -51,6 +52,20 @@ def create_app() -> FastAPI:
     )
     ACK_DIR.mkdir(parents=True, exist_ok=True)
     app.mount('/Ack', StaticFiles(directory=str(ACK_DIR)), name='ack')
+    # Phase 3+ frontend: serve the ES modules under /js and the external
+    # stylesheet. APP_DIR points at the runtime (/home/roggoz/Korina/) which
+    # has js/ and styles.css alongside index.html.
+    js_dir = APP_DIR / 'js'
+    if js_dir.is_dir():
+        app.mount('/js', StaticFiles(directory=str(js_dir)), name='js')
+
+    @app.get('/styles.css')
+    def _styles_css():
+        path = APP_DIR / 'styles.css'
+        if not path.exists():
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail='styles.css missing')
+        return FileResponse(path)
 
     @app.on_event('startup')
     def _startup() -> None:
