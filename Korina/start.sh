@@ -1,57 +1,57 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KORINA_ROOT="/home/roggoz/Korina"
-PY="/home/roggoz/kokoro-env4/bin/python"
-KORINA_APP="/home/roggoz/korina_voice_lab.py"
-KOKORO_APP="/home/roggoz/kokoro-streaming-server.py"
-LOG_DIR="$KORINA_ROOT/logs"
-KORINA_LOG="$LOG_DIR/korina-voice-lab.log"
-KOKORO_LOG="$LOG_DIR/kokoro-streaming-server.log"
-mkdir -p "$LOG_DIR"
+require_unit() {
+  local unit="$1"
+  if ! systemctl --user cat "$unit" >/dev/null 2>&1; then
+    echo "ERROR: $unit is not installed." >&2
+    echo "Install tracked units from the source checkout:" >&2
+    echo "  cd /home/roggoz/Korina-Agent && ./Korina/install-services.sh" >&2
+    exit 1
+  fi
+}
 
 is_listening() {
   local port="$1"
   ss -ltn "sport = :$port" 2>/dev/null | grep -q ":$port"
 }
 
-pid_for_exact_app() {
-  local app="$1"
-  pgrep -f "^$PY $app$" || true
-}
+require_unit kokoro-streaming-server.service
+require_unit korina-voice-lab.service
 
-start_app() {
-  local name="$1" port="$2" app="$3" log="$4"
-  if is_listening "$port"; then
-    echo "$name already listening on :$port"
-    return 0
-  fi
-  if [[ ! -f "$app" ]]; then
-    echo "ERROR: missing $app" >&2
-    return 1
-  fi
-  echo "Starting $name on :$port..."
-  nohup "$PY" "$app" >> "$log" 2>&1 &
-  local pid=$!
-  for _ in {1..30}; do
-    if is_listening "$port"; then
-      echo "$name started on :$port (pid $pid, log $log)"
-      return 0
-    fi
-    sleep 0.5
-  done
-  echo "ERROR: $name did not start on :$port. Last log lines:" >&2
-  tail -40 "$log" >&2 || true
-  return 1
-}
+# Detect a no-op start: if both target ports are already listening, this is
+# likely a restart-after-start invocation. Print a one-liner so the operator
+# knows to use `systemctl --user restart` for actual process refreshes.
+no_op_start=0
+if is_listening 8880 && is_listening 8001; then
+  no_op_start=1
+fi
 
-start_app "Kokoro TTS" 8880 "$KOKORO_APP" "$KOKORO_LOG"
-start_app "Korina Voice Lab" 8001 "$KORINA_APP" "$KORINA_LOG"
+systemctl --user start kokoro-streaming-server.service
+systemctl --user start korina-voice-lab.service
+
+systemctl --user --no-pager -l status kokoro-streaming-server.service korina-voice-lab.service || true
+
+if is_listening 8880; then
+  echo "Kokoro TTS is listening on :8880"
+else
+  echo "WARNING: Kokoro TTS is not listening on :8880" >&2
+fi
+
+if is_listening 8001; then
+  echo "Korina Voice Lab is listening on :8001"
+else
+  echo "WARNING: Korina Voice Lab is not listening on :8001" >&2
+fi
 
 if is_listening 1234; then
   echo "LM Studio is listening on :1234"
 else
-  echo "WARNING: LM Studio is not listening on :1234. Chat relay will fail until LM Studio is running."
+  echo "WARNING: LM Studio is not listening on :1234. Chat relay will fail until LM Studio or another configured LLM endpoint is running."
+fi
+
+if [[ "$no_op_start" -eq 1 ]]; then
+  echo "Note: start.sh is for first-launch; for restarts use \`systemctl --user restart korina-voice-lab.service\`."
 fi
 
 echo "Korina page: http://$(hostname):8001/"
