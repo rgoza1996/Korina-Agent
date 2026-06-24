@@ -20,6 +20,7 @@ import { $ } from "./dom.js";
 import { prettyModelLabel } from "./labels.js";
 import {
   llmBaseUrl,
+  effectiveSttLlmProvider,
   effectiveSttLlmBaseUrl,
   effectiveSttLlmApiKeyEnv,
   sttModel,
@@ -152,7 +153,7 @@ export async function loadModelOptions(force=false){
         const baseLabel=(j.labels&&j.labels[m])||prettyModelLabel(m);
         // Triple must match the backend's `triple_key` exactly. The backend
         // strips trailing slashes from base_url; mirror that here.
-        const _probeTriple = `${state.llmProvider||""}::${normalizeTripleBaseUrl(effectiveSttLlmBaseUrl())}::${m}`;
+        const _probeTriple = `${effectiveSttLlmProvider()}::${normalizeTripleBaseUrl(effectiveSttLlmBaseUrl())}::${m}`;
         if(state.audioUnsupported && state.audioUnsupported[_probeTriple]){
           o.textContent = `${baseLabel} [audio unsupported: ${state.audioUnsupported[_probeTriple].reason}]`;
           o.disabled = true;
