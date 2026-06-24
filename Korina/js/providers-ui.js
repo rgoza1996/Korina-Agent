@@ -137,6 +137,7 @@ export async function loadModelOptions(force=false){
       for(const m of j.llm_models){ const o=document.createElement("option"); o.value=m; o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m); $("lmModel").appendChild(o); }
       $("lmModel").value=j.llm_models.includes(current)?current:(j.llm_default||j.llm_models[0]);
     }
+    let sttFilterInfo = "";
     if($("sttLlmModel")){
       const current=sttLlmModel();
       $("sttLlmModel").innerHTML="";
@@ -165,13 +166,12 @@ export async function loadModelOptions(force=false){
       $("sttLlmModel").value=[...$("sttLlmModel").options].some(o=>o.value===current)?current:"";
       // Informational: how many were filtered out by the audio capability filter.
       const sttHidden = (j.stt_llm_models || []).length - sttModelsFiltered.length;
-      if (sttHidden > 0 && $("settingsInfo")) {
-        const currentInfo = $("settingsInfo").textContent;
-        $("settingsInfo").textContent = `${currentInfo} · ${sttHidden} hidden by audio capability filter (toggle "All models" to show)`.trim();
-      }
+      sttFilterInfo = sttHidden > 0
+        ? ` · ${sttHidden} hidden by audio capability filter (toggle "All models" to show)`
+        : "";
     }
     syncConverseSettingsUI();
-    $("settingsInfo").textContent=`Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}`.trim();
+    $("settingsInfo").textContent=`Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo}`.trim();
   }catch(e){ $("settingsInfo").textContent="Model list load failed: "+e.message; }
 }
 

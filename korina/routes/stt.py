@@ -16,7 +16,7 @@ import soundfile as sf
 from fastapi import APIRouter, File, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from korina.config import config_stt_llm_api_env, config_stt_llm_chat_url, load_config
+from korina.config import config_stt_llm_api_env, config_stt_llm_base_url, config_stt_llm_chat_url, load_config
 from korina.runtime import state
 from korina.services.multimodal_stt import lmstudio_transcribe_wav
 from korina.services.whisper_service import (
@@ -113,25 +113,38 @@ async def transcribe_stream(
                     # observed), fall back to whisper and emit the
                     # result through the same SSE stream so the
                     # frontend doesn't see a hard error.
-                    from korina.services.audio_probe import (
-                        classify_failure,
-                        maybe_fallback_to_whisper,
-                    )
+                    from korina.services.audio_probe import maybe_fallback_to_whisper
                     config = load_config()
                     stt_provider = (
                         config.get('stt_llm_provider')
                         or config.get('llm_provider')
                         or 'llama.cpp'
                     )
-                    stt_base = config_stt_llm_chat_url(config)
+                    probe_base = config_stt_llm_base_url(config)
+                    stt_chat_url = config_stt_llm_chat_url(config)
                     whisper_fallback = lambda: _whisper_fallback_payload(
                         wav, device=device, model_id=model, started=started,
                         data_len=int(len(data)), sr=int(sr),
                     )
+                    # Cached audio-unsupported triples must skip the known-failing
+                    # multimodal request entirely. The first call only checks cache;
+                    # status/body do not classify a new failure.
+                    used_fallback, payload = maybe_fallback_to_whisper(
+                        provider=stt_provider, base_url=probe_base, model=llm_model or '',
+                        stt_status_code=0, stt_response_body='',
+                        whisper_fallback_fn=whisper_fallback,
+                    )
+                    if used_fallback:
+                        for ev in _emit_fallback_sse(
+                            payload, started=started,
+                            model_id=llm_model or LMSTUDIO_MODEL,
+                        ):
+                            yield ev
+                        return
                     try:
                         result = lmstudio_transcribe_wav(
                             wav, model=llm_model,
-                            base_url=stt_base,
+                            base_url=stt_chat_url,
                             api_env=config_stt_llm_api_env(config),
                         )
                     except Exception as e:
@@ -143,7 +156,7 @@ async def transcribe_stream(
                         # return True if the message body itself
                         # matches an audio-not-supported pattern.
                         used_fallback, payload = maybe_fallback_to_whisper(
-                            provider=stt_provider, base_url=stt_base, model=llm_model or '',
+                            provider=stt_provider, base_url=probe_base, model=llm_model or '',
                             stt_status_code=400, stt_response_body=str(e),
                             whisper_fallback_fn=whisper_fallback,
                         )
@@ -167,7 +180,7 @@ async def transcribe_stream(
                             result.get('error', '') if isinstance(result, dict) else ''
                         ) or 'empty_text'
                         used_fallback, payload = maybe_fallback_to_whisper(
-                            provider=stt_provider, base_url=stt_base, model=llm_model or '',
+                            provider=stt_provider, base_url=probe_base, model=llm_model or '',
                             stt_status_code=200, stt_response_body=err_body,
                             whisper_fallback_fn=whisper_fallback,
                         )

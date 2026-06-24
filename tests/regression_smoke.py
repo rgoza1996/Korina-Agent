@@ -145,6 +145,12 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         failures += 1
     if not test_audio_probe_endpoints():
         failures += 1
+    if not test_phase4_audio_probe_cache_source_contracts():
+        failures += 1
+    if not test_phase4_qwen3_vl_is_not_audio_by_default():
+        failures += 1
+    if not test_phase4_frontend_filter_status_survives_assignment():
+        failures += 1
 
     # Agent POST endpoints.
     for name, path, payload, want in [
@@ -886,7 +892,11 @@ def test_audio_probe_classifier() -> bool:
     # Triple key normalization
     if ap.triple_key("llama.cpp", "http://127.0.0.1:8080/v1/", "model.gguf") != \
             "llama.cpp::http://127.0.0.1:8080/v1::model.gguf":
-        print(f"  [FAIL] triple_key normalization: {ap.triple_key('llama.cpp', 'http://127.0.0.1:8080/v1/', 'model.gguf')}")
+        print(f"  [FAIL] triple_key trailing-slash normalization: {ap.triple_key('llama.cpp', 'http://127.0.0.1:8080/v1/', 'model.gguf')}")
+        return False
+    if ap.triple_key("llama.cpp", "http://127.0.0.1:8080/v1/chat/completions", "model.gguf") != \
+            "llama.cpp::http://127.0.0.1:8080/v1::model.gguf":
+        print(f"  [FAIL] triple_key chat-url normalization: {ap.triple_key('llama.cpp', 'http://127.0.0.1:8080/v1/chat/completions', 'model.gguf')}")
         return False
     print("  [PASS] audio probe classifier: 5 cacheable + 4 non-cacheable + triple_key normalization")
     return True
@@ -933,6 +943,95 @@ def test_audio_probe_endpoints() -> bool:
             print(f"  [FAIL] /api/audio-probe unexpected HTTP {e.code}"); return False
     except Exception as e:
         print(f"  [FAIL] /api/audio-probe: {type(e).__name__}: {e}"); return False
+    return True
+
+
+
+
+def test_phase4_audio_probe_cache_source_contracts() -> bool:
+    """Phase 4 fixups -- audio-probe cache keys must use the canonical
+    API base URL (not /chat/completions), cached failures must be checked
+    before the multimodal STT call, and provider activation must not
+    re-save stale audio_unsupported config after clearing it."""
+    repo_root = Path(__file__).resolve().parent.parent
+    stt_src = (repo_root / "korina/routes/stt.py").read_text()
+    providers_src = (repo_root / "korina/routes/providers.py").read_text()
+    config_src = (repo_root / "korina/config.py").read_text()
+
+    if "config_stt_llm_base_url" not in stt_src:
+        print("  [FAIL] stt route must import/use config_stt_llm_base_url for probe cache keys")
+        return False
+    if "probe_base = config_stt_llm_base_url(config)" not in stt_src:
+        print("  [FAIL] stt route must set probe_base from config_stt_llm_base_url(config)")
+        return False
+    first_fallback = stt_src.find("maybe_fallback_to_whisper(")
+    first_llm_call = stt_src.find("lmstudio_transcribe_wav(")
+    if first_fallback < 0 or first_llm_call < 0 or first_fallback > first_llm_call:
+        print("  [FAIL] cached audio_unsupported check must run before lmstudio_transcribe_wav")
+        return False
+    if "base_url=probe_base" not in stt_src:
+        print("  [FAIL] maybe_fallback_to_whisper must use probe_base, not chat URL")
+        return False
+    if "base_url=stt_chat_url" not in stt_src:
+        print("  [FAIL] lmstudio_transcribe_wav must still use stt_chat_url")
+        return False
+
+    if "audio_unsupported_key(" not in config_src or "normalize_api_base_url(" not in config_src:
+        print("  [FAIL] config helpers must share canonical audio_unsupported_key/base-url normalization")
+        return False
+    api_src = (repo_root / "Korina/js/api.js").read_text()
+    if "chat/completions" not in api_src or "normalizeTripleBaseUrl" not in api_src:
+        print("  [FAIL] frontend normalizeTripleBaseUrl must mirror backend /chat/completions normalization")
+        return False
+    if "config = load_config()  # reload after cache clear" not in providers_src:
+        print("  [FAIL] activate_provider must reload config after clearing probe cache to avoid stale save")
+        return False
+
+    print("  [PASS] Phase 4 audio-probe source contracts: base-key, preflight cache, stale-save guard")
+    return True
+
+
+def test_phase4_qwen3_vl_is_not_audio_by_default() -> bool:
+    """Qwen3-VL is vision-only unless a concrete model is explicitly
+    registered or user-allowlisted. Generic qwen3-vl name hints must not
+    mark arbitrary Qwen3-VL ids audio-capable."""
+    import importlib, os as _os
+    repo_root = str(Path(__file__).resolve().parent.parent)
+    if repo_root not in _os.sys.path:
+        _os.sys.path.insert(0, repo_root)
+    mc = importlib.import_module("korina.services.model_capability")
+    samples = ["qwen3-vl-4b", "qwen3-vl-8b", "foo-qwen3-vl-bar"]
+    bad = []
+    for model in samples:
+        cap = mc.get_model_capability(model)
+        if cap.get("supports_audio_input"):
+            bad.append((model, cap))
+    if bad:
+        print(f"  [FAIL] qwen3-vl generic ids should not be audio-capable by default: {bad}")
+        return False
+    print("  [PASS] qwen3-vl generic ids are not audio-capable by default")
+    return True
+
+
+def test_phase4_frontend_filter_status_survives_assignment() -> bool:
+    """The hidden-count filter notice must be part of the final
+    settingsInfo assignment, not written and immediately overwritten."""
+    repo_root = Path(__file__).resolve().parent.parent
+    src = (repo_root / "Korina/js/providers-ui.js").read_text()
+    marker = "hidden by audio capability filter"
+    final_assignment = "$(\"settingsInfo\").textContent=`Loaded"
+    marker_pos = src.find(marker)
+    final_pos = src.find(final_assignment)
+    if marker_pos < 0:
+        print("  [FAIL] frontend missing hidden-count filter notice")
+        return False
+    if final_pos < 0:
+        print("  [FAIL] frontend missing final settingsInfo assignment")
+        return False
+    if marker_pos < final_pos and "sttFilterInfo" not in src[final_pos: final_pos + 400]:
+        print("  [FAIL] hidden-count notice is written before final settingsInfo assignment and not appended there")
+        return False
+    print("  [PASS] hidden-count filter notice survives final settingsInfo assignment")
     return True
 
 

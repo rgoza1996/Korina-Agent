@@ -120,10 +120,12 @@ export async function clearAudioProbe(provider, baseUrl, model) {
 }
 
 // Cache key normalizer. MUST match the backend's `triple_key` in
-// `korina/services/audio_probe.py` (which does `.strip().rstrip('/')` on
-// base_url). If we don't apply the same normalization here, the badge
-// lookup silently never hits when the user types a base URL with a
-// trailing slash.
+// `korina/services/audio_probe.py`: trim, strip trailing slashes, and
+// collapse `/chat/completions` to the API base URL. If we don't apply
+// the same normalization here, badge lookup silently misses.
 export function normalizeTripleBaseUrl(s) {
-  return String(s || '').trim().replace(/\/+$/, '');
+  const base = String(s || '').trim().replace(/\/+$/, '');
+  return base.endsWith('/chat/completions')
+    ? base.slice(0, -'/chat/completions'.length)
+    : base;
 }

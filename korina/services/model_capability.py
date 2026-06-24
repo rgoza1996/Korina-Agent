@@ -29,15 +29,15 @@ from korina.util.presets import (
 
 # Name-substring patterns that strongly suggest audio input support.
 # Substring (not regex) matching; lowercased.
-_MULTIMODAL_HINTS = ("vision", "audio", "ultravox", "-vl-", "qwen2-audio", "qwen3-vl")
+_MULTIMODAL_HINTS = ("vision", "audio", "ultravox", "-vl-", "qwen2-audio")
 
 # Name-substring patterns that explicitly mark a model as non-multimodal
 # even if it has an mmproj (e.g. embeddings always have one for completeness,
 # TTS models don't consume audio input).
-_NON_MULTIMODAL_HINTS = ("nomic-embed", "orpheus-", "embed-text")
+_NON_MULTIMODAL_HINTS = ("nomic-embed", "orpheus-", "embed-text", "qwen3-vl")
 
 # Hardcoded allowlist per blueprint §4.1.
-_HARD_ALLOWLIST = ("gemma-4-e2b", "gpt-4o-audio", "ultravox", "qwen2-audio", "qwen3-vl")
+_HARD_ALLOWLIST = ("gemma-4-e2b", "gpt-4o-audio", "ultravox", "qwen2-audio")
 
 
 def _has_mmproj(model_id: str) -> bool:

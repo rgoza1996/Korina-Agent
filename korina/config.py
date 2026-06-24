@@ -225,7 +225,7 @@ def config_stt_llm_provider(config: Optional[dict] = None) -> str:
 
 def config_stt_llm_base_url(config: Optional[dict] = None) -> str:
     config = config or load_config()
-    explicit = str(config.get('stt_llm_base_url') or '').strip().rstrip('/')
+    explicit = normalize_api_base_url(config.get('stt_llm_base_url') or '')
     if explicit:
         return explicit
     return config_llm_base_url(config)
@@ -340,6 +340,25 @@ def config_multimodal_stt_model_allowlist(c: dict | None = None) -> tuple[str, .
 
 
 
+def normalize_api_base_url(base_url: str) -> str:
+    """Canonical OpenAI-compatible API base URL (no trailing slash/chat path)."""
+    base = str(base_url or '').strip().rstrip('/')
+    if base.endswith('/chat/completions'):
+        base = base.rsplit('/chat/completions', 1)[0]
+    return base
+
+
+
+def audio_unsupported_key(provider: str, base_url: str, model: str) -> str:
+    """Canonical key for persistent audio-unsupported probe cache."""
+    return (
+        f"{str(provider or '').strip()}::"
+        f"{normalize_api_base_url(base_url)}::"
+        f"{str(model or '').strip()}"
+    )
+
+
+
 def config_audio_unsupported(c: dict | None = None) -> dict[str, dict]:
     """Return the persistent probe cache: {triple: {reason, since, last_error}}.
 
@@ -364,7 +383,7 @@ def config_audio_unsupported(c: dict | None = None) -> dict[str, dict]:
 def set_audio_unsupported(provider: str, base_url: str, model: str,
                           reason: str, last_error: str) -> None:
     """Persist a probe failure. Atomic write via save_config()."""
-    triple = f"{provider}::{base_url}::{model}"
+    triple = audio_unsupported_key(provider, base_url, model)
     cfg = load_config()
     cache = cfg.get("audio_unsupported") or {}
     if not isinstance(cache, dict):
@@ -381,7 +400,7 @@ def set_audio_unsupported(provider: str, base_url: str, model: str,
 
 def clear_audio_unsupported(provider: str, base_url: str, model: str) -> bool:
     """Remove one entry. Returns True if removed."""
-    triple = f"{provider}::{base_url}::{model}"
+    triple = audio_unsupported_key(provider, base_url, model)
     cfg = load_config()
     cache = cfg.get("audio_unsupported") or {}
     if not isinstance(cache, dict) or triple not in cache:
@@ -398,7 +417,7 @@ def clear_audio_unsupported_for_provider(provider: str) -> int:
     cache = cfg.get("audio_unsupported") or {}
     if not isinstance(cache, dict):
         return 0
-    prefix = f"{provider}::"
+    prefix = f"{str(provider or '').strip()}::"
     kept = {k: v for k, v in cache.items() if not k.startswith(prefix)}
     removed = len(cache) - len(kept)
     if removed > 0:

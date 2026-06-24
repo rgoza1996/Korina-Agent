@@ -18,13 +18,16 @@ router = APIRouter()
 @router.post('/api/llm/provider/activate')
 async def activate_provider(req: ProviderActivateRequest):
     config = load_config()
+    provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip()
     # Phase 4.5: clear probe cache entries for this provider. Re-activating
     # may have changed base_url or model, so old probe failures no longer apply.
+    # Reload after clearing so the later save_config(current) cannot resurrect
+    # stale audio_unsupported entries from the pre-clear config snapshot.
     from korina.config import clear_audio_unsupported_for_provider
-    cleared = clear_audio_unsupported_for_provider(str(req.provider or config.get('llm_provider') or 'openai-compatible').strip())
+    cleared = clear_audio_unsupported_for_provider(provider)
     if cleared:
-        print(f"[activate] cleared {cleared} audio probe cache entries for {req.provider}")
-    provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip()
+        print(f"[activate] cleared {cleared} audio probe cache entries for {provider}")
+        config = load_config()  # reload after cache clear
     current = dict(config)
     current['llm_provider'] = provider
     preset = provider_preset_base_url(provider)

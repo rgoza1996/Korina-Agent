@@ -64,7 +64,8 @@ def classify_failure(status_code: int, body: str) -> Tuple[bool, str]:
 
 def triple_key(provider: str, base_url: str, model: str) -> str:
     """Canonical cache key for the (provider, base_url, model) triple."""
-    return f"{str(provider or '').strip()}::{str(base_url or '').strip().rstrip('/')}::{str(model or '').strip()}"
+    from korina.config import audio_unsupported_key
+    return audio_unsupported_key(provider, base_url, model)
 
 
 def maybe_fallback_to_whisper(
