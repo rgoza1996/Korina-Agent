@@ -101,7 +101,7 @@ export async function loadModelOptions(force=false){
     });
     const query=params.toString();
     let j=state.lastModelsPayload;
-    if(force || !j || query!==state.lastModelsQuery || (Date.now()-state.lastModelsLoadedAt)>4000){
+    if(force || !j || query!==state.lastModelsQuery){
       const r=await fetch(`/api/models?${query}`);
       j=await r.json();
       state.lastModelsQuery=query;
