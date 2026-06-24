@@ -28,6 +28,20 @@ async def activate_provider(req: ProviderActivateRequest):
         current['llm_base_url'] = preset
     if req.model:
         current['lm_model'] = str(req.model).strip()
+    # Phase 4.4: pre-flight provider/model compatibility check.
+    if req.model:
+        from korina.services.provider_manager import provider_supports_model
+        supported, reason = provider_supports_model(provider, str(req.model).strip())
+        if not supported:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "incompatible_provider_model",
+                    "provider": provider,
+                    "model": str(req.model).strip(),
+                    "reason": reason,
+                },
+            )
     current = synchronize_llm_dependents(current, config)
     saved = save_config(current)
     try:
