@@ -34,6 +34,12 @@
             <div id="sttWhisperModelWrap"><label for="sttModel">Whisper model</label><select id="sttModel"><option value="tiny.en">tiny.en — fastest CPU</option><option value="base.en" selected>base.en — CPU balanced</option><option value="small.en">small.en — better, slower</option><option value="turbo">turbo — quality, slow CPU</option><option value="distil-large-v3">distil-large-v3 — faster large English</option></select></div>
             <div id="sttMultimodalProviderWrap" class="settingsHidden"><label for="sttLlmProvider">LLM provider</label><select id="sttLlmProvider"><option value="">Inherit from LLM Response</option><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
             <div id="sttMultimodalModelWrap" class="settingsHidden"><label for="sttLlmModel">Model</label><select id="sttLlmModel"><option value="">Inherit from LLM Response</option></select></div>
+            <div class="settingsGroupNote">
+              <label class="toggleLine">
+                <input type="checkbox" id="sttCapabilityFilterOverride">
+                Show all models (ignore audio-capability filter)
+              </label>
+            </div>
             <div id="sttMultimodalBaseUrlWrap"><label for="sttLlmBaseUrl">Base URL</label><input id="sttLlmBaseUrl" type="text" placeholder="blank = inherit from LLM Response"></div>
             <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit from LLM Response"></div>
             <div id="sttMultimodalReasoningWrap" class="secretNote settingsHidden"><label>Advanced</label><div class="toggleLine"><input id="sttLlmReasoningEnabled" type="checkbox"><span>Allow multimodal STT model reasoning / thinking</span></div></div>

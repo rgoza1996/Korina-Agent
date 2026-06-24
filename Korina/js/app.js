@@ -34,6 +34,7 @@ import {
   setBaseUrlEditability, maybeApplyProviderPreset,
   loadModelOptions, loadAgentModelOptions,
 } from "./providers-ui.js";
+import { setCapabilityFilterOverride } from "./capability-filter.js";
 import { loadAcks, preloadAckBuffers, playRandomAck } from "./acks.js";
 import { drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad } from "./vad.js";
 import { setupMic, makeRecorder, transcribeBlob, transcribePartialBlob } from "./recorder.js";
@@ -68,6 +69,7 @@ Object.assign(window, {
   loadCapabilities, getResponseLlmProviderCaps, getAgentProviderCaps,
   setBaseUrlEditability, maybeApplyProviderPreset,
   loadModelOptions, loadAgentModelOptions,
+  setCapabilityFilterOverride,
   loadAcks, preloadAckBuffers, playRandomAck,
   drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad,
   setupMic, makeRecorder, transcribeBlob, transcribePartialBlob,
@@ -80,6 +82,18 @@ Object.assign(window, {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
   interruptConverse, askAndSpeak, askLM, agentDebug,
 });
+
+// Wire the multimodal STT capability filter override.
+const _sttOverride = $('sttCapabilityFilterOverride');
+if (_sttOverride) {
+  _sttOverride.addEventListener('change', () => {
+    setCapabilityFilterOverride(_sttOverride.checked);
+    // Reload the model list so the dropdown reflects the change immediately.
+    (async () => {
+      try { await loadModelOptions(true); } catch (e) { /* best effort */ }
+    })();
+  });
+}
 
 // --- Boot ---
 await loadCapabilities().then(() => setBaseUrlEditability());
