@@ -108,12 +108,76 @@ async def transcribe_stream(
                                            'sample_rate': int(sr),
                                            'backend': backend})
                 if backend == 'llm':
-                    result = lmstudio_transcribe_wav(
-                        wav, model=llm_model,
-                        base_url=config_stt_llm_chat_url(load_config()),
-                        api_env=config_stt_llm_api_env(load_config()),
+                    # Phase 4.5.3: probe fallback. On
+                    # audio-not-supported failure (cached or just
+                    # observed), fall back to whisper and emit the
+                    # result through the same SSE stream so the
+                    # frontend doesn't see a hard error.
+                    from korina.services.audio_probe import (
+                        classify_failure,
+                        maybe_fallback_to_whisper,
                     )
-                    text = result.get('text', '')
+                    config = load_config()
+                    stt_provider = (
+                        config.get('stt_llm_provider')
+                        or config.get('llm_provider')
+                        or 'llama.cpp'
+                    )
+                    stt_base = config_stt_llm_chat_url(config)
+                    whisper_fallback = lambda: _whisper_fallback_payload(
+                        wav, device=device, model_id=model, started=started,
+                        data_len=int(len(data)), sr=int(sr),
+                    )
+                    try:
+                        result = lmstudio_transcribe_wav(
+                            wav, model=llm_model,
+                            base_url=stt_base,
+                            api_env=config_stt_llm_api_env(config),
+                        )
+                    except Exception as e:
+                        # Treat any exception as a failed multimodal
+                        # call. We don't have a real HTTP status from
+                        # urllib/requests error chains; infer a 400
+                        # since audio-related issues come back as 400
+                        # from llama.cpp. classify_failure will only
+                        # return True if the message body itself
+                        # matches an audio-not-supported pattern.
+                        used_fallback, payload = maybe_fallback_to_whisper(
+                            provider=stt_provider, base_url=stt_base, model=llm_model or '',
+                            stt_status_code=400, stt_response_body=str(e),
+                            whisper_fallback_fn=whisper_fallback,
+                        )
+                        if used_fallback:
+                            for ev in _emit_fallback_sse(
+                                payload, started=started,
+                                model_id=llm_model or LMSTUDIO_MODEL,
+                            ):
+                                yield ev
+                            return
+                        # Otherwise: re-raise the original error to keep
+                        # the existing 500 path.
+                        raise
+
+                    # Probe the result: empty text on a successful HTTP
+                    # call often means audio-not-supported for a
+                    # known-multimodal-but-broken triple.
+                    text = result.get('text', '') if isinstance(result, dict) else ''
+                    if not text:
+                        err_body = (
+                            result.get('error', '') if isinstance(result, dict) else ''
+                        ) or 'empty_text'
+                        used_fallback, payload = maybe_fallback_to_whisper(
+                            provider=stt_provider, base_url=stt_base, model=llm_model or '',
+                            stt_status_code=200, stt_response_body=err_body,
+                            whisper_fallback_fn=whisper_fallback,
+                        )
+                        if used_fallback:
+                            for ev in _emit_fallback_sse(
+                                payload, started=started,
+                                model_id=llm_model or LMSTUDIO_MODEL,
+                            ):
+                                yield ev
+                            return
                     if text:
                         yield sse_event('segment', {'start': None, 'end': None,
                                                     'text': text, 'index': 1})
