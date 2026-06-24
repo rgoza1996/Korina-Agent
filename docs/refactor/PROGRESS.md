@@ -47,11 +47,13 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is co
 
 ## Phase 3 — Frontend modularization
 
-- [ ] 3.1 module strategy
-- [ ] 3.2 extract modules
-- [ ] 3.3 extract styles
-- [ ] 3.4 model fetch on open
-- [ ] 3.5 verify
+Phase 3 result: frontend modularization complete on `beta`. The inline `<script>` block in `Korina/index.html` was extracted into 16 native ES modules under `Korina/js/` plus an external stylesheet `Korina/styles.css`, with no build step (Option A per blueprint §3.1). The page is now loaded as `<script type="module" src="./js/app.js">` and `app.js` imports every module and calls `initApp()`. Bare globals from the original inline script were migrated to a consolidated `state` object exported from `js/state.js`; HTML inline event handlers (`onclick=`) continue to work via `Object.assign(window, ...)` re-exports in `app.js`. Phase 3 changed only frontend files (18 files in `Korina/`); backend, tests, and other docs are untouched.
+
+- [✓] 3.1 module skeleton — `Korina/js/state.js` (consolidated state + EventBus) and `Korina/js/app.js` entrypoint stub created; `Korina/index.html` inline `<script>` block (lines 175–1303) replaced with `<script type="module" src="./js/app.js"></script>`; page temporarily broken between 3.1.3 and 3.2.15 per the plans acknowledged trade-off. Commits: `42cf7d8` (3.1.1), `bdda3cc` (3.1.2), `8df916e` (3.1.3), `7395160` (3.1.4).
+- [✓] 3.2 extract modules — 15 modules extracted under `Korina/js/`, one commit per module. Plan line numbers in `phase-3-plan.md` referenced the pre-3.1.3 inline script at `bdda3cc` (NOT `HEAD~3`, which is post-3.1.3 and missing the inline script — implementer corrected this). Commits: `9876134` (3.2.1 dom), `e9e7a73` (3.2.2 labels), `e2242ae` (3.2.3 api), `5246d12` (3.2.4 settings-ui), `f73d7c6` (3.2.5 history), `d41e17d` (3.2.6 providers-ui), `59b38d3` (3.2.7 acks), `164425f` (3.2.8 speech), `92f3886` (3.2.9 vad), `ee190e7` (3.2.10 recorder), `65dd0cc` (3.2.11 partial-queue), `3396a31` (3.2.12 barge-in), `e0cd6b9` (3.2.13 live), `6cf7e3d` (3.2.14 agent-ui), `61c1289` (3.2.15 app.js wire-up).
+- [✓] 3.3 extract styles — inline `<style>` block extracted to `Korina/styles.css`; `Korina/index.html` now has `<link rel="stylesheet" href="./styles.css">` instead. Commit: `420cbe2`.
+- [✓] 3.4 model fetch on open — 4-second TTL hack in `loadModelOptions` removed; cache invalidation now relies only on query identity + the `force` flag. Commit: `47c51de`.
+- [✓] 3.5 verify — full live regression passed (`tests/regression_smoke.py` against `http://127.0.0.1:8001`, `--no-chat --no-transcribe`); `/api/health` returns 200; `/api/health` exposes Phase 2 capabilities unchanged (5 whisper models, 200 response, etc.); 18 frontend files changed, 0 backend files changed (`git diff --stat 65df94d..HEAD -- korina/ tests/` is empty); total 22 Phase 3 commits on `beta`.
 
 ## Phase 4 — Capability registry
 
