@@ -323,4 +323,15 @@ def agent_auth_headers(config: dict) -> dict:
 
 
 
+def config_multimodal_stt_model_allowlist(c: dict | None = None) -> tuple[str, ...]:
+    """Return the user-configured allowlist as an immutable tuple.
 
+    Used by routes/models.py to override the heuristic for users who
+    want to opt in specific text-only models (e.g. running Qwen3.5-9B
+    with clever prompting as a multimodal STT).
+    """
+    cfg = c if c is not None else load_config()
+    raw = cfg.get("multimodal_stt_model_allowlist") or []
+    if not isinstance(raw, list):
+        return ()
+    return tuple(str(x) for x in raw if isinstance(x, str) and x.strip())

@@ -66,5 +66,6 @@
   "voice": "af_heart",
   "llm_reasoning": "off",
   "stt_llm_reasoning": "off",
-  "agent_injection_mode": "one-at-a-time"
+  "agent_injection_mode": "one-at-a-time",
+  "multimodal_stt_model_allowlist": []
 }
