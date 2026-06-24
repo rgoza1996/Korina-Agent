@@ -87,6 +87,7 @@ DEFAULT_CONFIG = {
     'partial_window_ms': 1800,
     'idle_ack_initial_ms': 5000,
     'idle_ack_step_ms': 5000,
+    'audio_unsupported': {},
 }
 
 CONFIG_KEYS = set(DEFAULT_CONFIG.keys())
@@ -335,3 +336,72 @@ def config_multimodal_stt_model_allowlist(c: dict | None = None) -> tuple[str, .
     if not isinstance(raw, list):
         return ()
     return tuple(str(x) for x in raw if isinstance(x, str) and x.strip())
+
+
+
+
+def config_audio_unsupported(c: dict | None = None) -> dict[str, dict]:
+    """Return the persistent probe cache: {triple: {reason, since, last_error}}.
+
+    Key format: "<provider>::<base_url>::<model>".
+    Value: {"reason": str, "since": iso8601, "last_error": str}.
+    """
+    cfg = c if c is not None else load_config()
+    raw = cfg.get("audio_unsupported") or {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for k, v in raw.items():
+        if isinstance(k, str) and isinstance(v, dict):
+            out[k] = {
+                "reason": str(v.get("reason") or ""),
+                "since": str(v.get("since") or ""),
+                "last_error": str(v.get("last_error") or ""),
+            }
+    return out
+
+
+def set_audio_unsupported(provider: str, base_url: str, model: str,
+                          reason: str, last_error: str) -> None:
+    """Persist a probe failure. Atomic write via save_config()."""
+    triple = f"{provider}::{base_url}::{model}"
+    cfg = load_config()
+    cache = cfg.get("audio_unsupported") or {}
+    if not isinstance(cache, dict):
+        cache = {}
+    from datetime import datetime, timezone
+    cache[triple] = {
+        "reason": reason,
+        "since": datetime.now(timezone.utc).isoformat(),
+        "last_error": last_error[:500],  # truncate to keep config.json small
+    }
+    cfg["audio_unsupported"] = cache
+    save_config(cfg)
+
+
+def clear_audio_unsupported(provider: str, base_url: str, model: str) -> bool:
+    """Remove one entry. Returns True if removed."""
+    triple = f"{provider}::{base_url}::{model}"
+    cfg = load_config()
+    cache = cfg.get("audio_unsupported") or {}
+    if not isinstance(cache, dict) or triple not in cache:
+        return False
+    del cache[triple]
+    cfg["audio_unsupported"] = cache
+    save_config(cfg)
+    return True
+
+
+def clear_audio_unsupported_for_provider(provider: str) -> int:
+    """Remove all entries for a given provider. Returns count removed."""
+    cfg = load_config()
+    cache = cfg.get("audio_unsupported") or {}
+    if not isinstance(cache, dict):
+        return 0
+    prefix = f"{provider}::"
+    kept = {k: v for k, v in cache.items() if not k.startswith(prefix)}
+    removed = len(cache) - len(kept)
+    if removed > 0:
+        cfg["audio_unsupported"] = kept
+        save_config(cfg)
+    return removed
