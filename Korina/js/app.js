@@ -345,13 +345,6 @@ function wireSettingsInputs() {
   if (minSpeechMsEl) minSpeechMsEl.oninput = () => { $('minSpeechMsDisplay').textContent = (minSpeechMs() / 1000).toFixed(1) + 's'; saveConfigSoon(); };
   const partialWindowMsEl = $('partialWindowMs');
   if (partialWindowMsEl) partialWindowMsEl.oninput = () => { state.partialWindowMs = partialWindowMsSetting(); $('partialWindowMsDisplay').textContent = (state.partialWindowMs / 1000).toFixed(1) + 's'; saveConfigSoon(); };
-  ['lmModel','sttLlmModel'].forEach(id => {
-    const el = $(id);
-    if (!el) return;
-    const trigger = () => loadModelOptions(false).catch(e => console.warn('model load failed', e));
-    el.addEventListener('pointerdown', trigger);
-    el.addEventListener('focus', trigger);
-  });
 }
 
 function wireUiHandlers() {
