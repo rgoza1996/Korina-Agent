@@ -239,9 +239,9 @@ CI intentionally does not require live llama.cpp, LM Studio, Kokoro, Whisper wei
 
 ## Current architecture issues to track
 
-These are the items that should be mirrored into GitHub Issues / wiki/backlog pages.
+These items are mirrored into GitHub Issues #3 through #9 and into the repo-backed wiki fallback under `docs/wiki/`.
 
-### ARCH-1 — Formalize the Korina Converse agent protocol
+### ARCH-1 / #3 — Formalize the Korina Converse agent protocol
 
 Define a versioned external-agent contract for:
 
@@ -255,7 +255,7 @@ Define a versioned external-agent contract for:
 
 Why: this is what turns Converse from "the UI for the bundled Korina Agent" into a reusable local-first design chat channel for Korina Agent, Hermes Agent, OpenClaw, or other agents.
 
-### ARCH-2 — Finish Korina Agent as a local-first execution runtime
+### ARCH-2 / #4 — Finish Korina Agent as a local-first execution runtime
 
 Korina Agent currently generates state reports and events. It needs an execution layer if it is meant to be a real local-first agent:
 
@@ -266,7 +266,7 @@ Korina Agent currently generates state reports and events. It needs an execution
 - transport abstraction for OpenAI-compatible/Anthropic-compatible/local runners,
 - a clean separation between "report to Converse" and "act on the world".
 
-### ARCH-3 — Add composite readiness for the local voice stack
+### ARCH-3 / #5 — Add composite readiness for the local voice stack
 
 Create one clear readiness contract for the user-facing conversation path:
 
@@ -279,11 +279,11 @@ Create one clear readiness contract for the user-facing conversation path:
 
 Why: today the backend can report healthy while the selected LLM service is intentionally stopped or still loading.
 
-### ARCH-4 — Make deployment paths, model roots, and local binaries portable
+### ARCH-4 / #6 — Make deployment paths, model roots, and local binaries portable
 
 Move hardcoded local runtime/model/binary assumptions behind config/env settings and document a generic install contract. Keep private host paths and hardware specs out of public-facing docs.
 
-### ARCH-5 — Replace static model capability assumptions with probe-backed metadata
+### ARCH-5 / #7 — Replace static model capability assumptions with probe-backed metadata
 
 The current capability registry is useful, but audio/multimodal support should eventually be confirmed by a probe-backed model metadata layer that records:
 
@@ -293,11 +293,11 @@ The current capability registry is useful, but audio/multimodal support should e
 - last probe status/error,
 - suggested fallback.
 
-### ARCH-6 — Add an optional live/self-hosted regression tier
+### ARCH-6 / #8 — Add an optional live/self-hosted regression tier
 
 Keep GitHub Actions lightweight, but add an opt-in live regression job/script that can run on a local/self-hosted runner with real services and model weights. It should publish a concise readiness + smoke report without turning CI red when local services are intentionally offline.
 
-### ARCH-7 — Audit stale public docs after each architecture phase
+### ARCH-7 / #9 — Audit stale public docs after each architecture phase
 
 README is now scrubbed of personal machine specs, but other historical refactor plans intentionally contain host-specific operational notes. Decide which docs are public-facing vs. internal runbooks, then either scrub or clearly mark the internal ones.
 

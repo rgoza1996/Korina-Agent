@@ -47,6 +47,7 @@ Browser (Korina Converse UI) Korina backend (FastAPI :8001)
 - `Korina/start.sh` / `stop.sh` — Service lifecycle.
 - `Korina/Ack/ack_phrases.json` — tagged acknowledgement phrase manifest. Generated WAVs are cache files and are ignored by git.
 - `tests/` — pytest unit/API/static tests for CI plus `tests/regression_smoke.py` for live server smoke tests. CI tests avoid live model servers; live regression can optionally exercise provider activation, chat, and transcription when local services are up.
+- `docs/wiki/` — repo-backed wiki fallback pages that mirror the architecture overview and issue backlog until the GitHub Wiki repo is initialized.
 
 ## Process supervision
 
