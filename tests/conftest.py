@@ -82,9 +82,10 @@ def isolated_korina_app_dir(monkeypatch):
     monkeypatch.setenv("KORINA_LLAMA_SERVER_BIN", str(_TEST_LLAMA_BIN))
     monkeypatch.setenv("KORINA_LLAMA_SERVER_USER_UNIT", str(_TEST_LLAMA_UNIT))
     _write_minimal_runtime(_TEST_APP_DIR)
-    _TEST_MODEL_ROOT.mkdir(parents=True, exist_ok=True)
-    _TEST_LMSTUDIO_ROOT.mkdir(parents=True, exist_ok=True)
-    _TEST_LLAMA_BIN.parent.mkdir(parents=True, exist_ok=True)
+    for root in (_TEST_MODEL_ROOT, _TEST_LMSTUDIO_ROOT, _TEST_LLAMA_BIN.parent, _TEST_LLAMA_UNIT.parent):
+        if root.exists():
+            shutil.rmtree(root)
+        root.mkdir(parents=True, exist_ok=True)
     yield _TEST_APP_DIR
 
 

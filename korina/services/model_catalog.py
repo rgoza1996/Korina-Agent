@@ -74,4 +74,8 @@ def llm_models_for(base_url: str, api_env: str) -> list:
         mid = item.get("id")
         if isinstance(mid, str) and mid.strip():
             models.append(mid.strip())
+    if base == "http://127.0.0.1:8080/v1":
+        for local_model in discover_local_gguf_models():
+            if local_model not in models:
+                models.append(local_model)
     return models

@@ -31,6 +31,7 @@ DEFAULT_CONFIG = {
     'stt_llm_api_key_env': '',
     'stt_llm_model': '',
     'stt_llm_reasoning': 'off',
+    'multimodal_stt_model_allowlist': [],
     'lm_model': LMSTUDIO_MODEL,
     'tts_device': 'cpu',
     'tts_provider': 'kokoro',
