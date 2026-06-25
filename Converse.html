@@ -95,7 +95,7 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 </div>
 
 <h2>Minimum System Requirements (Korina Converse)</h2>
-<p style="color:var(--sub);margin-bottom:1rem">Estimates based on <code>faster-whisper base</code> + <code>Qwen3.5-0.8B</code> as the lightweight STT + LLM baseline.</p>
+<p style="color:var(--sub);margin-bottom:1rem">Estimates based on <code>faster-whisper base</code> + <code>Qwen3.5-0.5B</code> as the lightweight STT + LLM baseline.</p>
 
 <table class="req-table">
 <thead>
@@ -109,7 +109,7 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <td>—</td>
 <td>4 GB</td>
 <td>2 GB</td>
-<td>CPU inference. whisper base (~74M) + Qwen3.5-0.8B Q8 (~1GB). Slow but functional. STT may hit CPU bottlenecks on older CPUs.</td>
+<td>CPU inference. whisper base (~74M) + Qwen3.5-0.5B Q8 (~1GB). Slow but functional. STT may hit CPU bottlenecks on older CPUs.</td>
 </tr>
 <tr>
 <td>
@@ -118,7 +118,7 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <td>2–4 GB</td>
 <td>8 GB</td>
 <td>5 GB</td>
-<td>GPU-assisted STT (faster-whisper with CUDA). whisper base + Qwen3.5-0.8B Q8 loaded simultaneously. Single-turn latency in the 3–8s range on a mid-range GPU (e.g. RX 580, GTX 1080).</td>
+<td>GPU-assisted STT (faster-whisper with CUDA). whisper base + Qwen3.5-0.5B Q8 loaded simultaneously. Single-turn latency in the 3–8s range on a mid-range GPU (e.g. RX 580, GTX 1080).</td>
 </tr>
 <tr>
 <td>
@@ -127,7 +127,7 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <td>6–8 GB</td>
 <td>16 GB</td>
 <td>10 GB</td>
-<td>GPU-heavy. whisper base + Qwen3.5-3B Q8 (~3.2GB) or medium whisper model. Smooth multi-turn conversation with sub-3s perceived latency on modern GPUs (e.g. RTX 3060, RX 6600 XT).</td>
+<td>GPU-heavy. whisper base + Qwen3.5-4B Q8 (~4.5GB) or medium whisper model. Smooth multi-turn conversation with sub-3s perceived latency on modern GPUs (e.g. RTX 3060, RX 6600 XT).</td>
 </tr>
 </tbody>
 </table>
@@ -136,7 +136,7 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <strong>STT models:</strong> faster-whisper base.en (~74M params, ~150MB INT8) is the minimum. Larger models (medium.en ~418M, large-v3 ~1.5B) improve accuracy at the cost of VRAM/speed.
 </p>
 <p style="color:var(--sub);font-size:0.85em">
-<strong>LLM models:</strong> Qwen3.5-0.8B Q8 (~1GB) is the minimum viable for basic conversational quality. Qwen3.5-3B Q8 (~3.2GB) is the practical floor for decent response quality. Larger models (7B, 13B+) dramatically improve output quality but require corresponding VRAM headroom.
+<strong>LLM models:</strong> Qwen3.5-0.5B Q8 (~1GB) is the minimum viable for basic conversational quality. Qwen3.5-4B Q8 (~4.5GB) is the practical floor for decent response quality. Larger models (7B, 13B+) dramatically improve output quality but require corresponding VRAM headroom.
 </p>
 <p style="color:var(--sub);font-size:0.85em">
 <strong>Kokoro TTS:</strong> TTS runs on CPU (omnivoice is lightweight, ~100MB RAM). No discrete GPU needed for TTS.
