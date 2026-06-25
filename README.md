@@ -1,11 +1,11 @@
 # Korina Agent
 
-Local voice conversation agent: browser UI → faster-whisper STT → LM Studio LLM → Kokoro TTS, running on roggoz (RX 6800 XT / Ryzen 7 5800X).
+Korina Agent is a local-first agent stack built for voice-first work through Korina Converse. Korina Converse is the local-first design chat channel: browser voice UI → STT → response LLM → TTS, with a side channel that can host agents such as the custom Korina Agent, Hermes Agent, OpenClaw, or another OpenAI-compatible/local agent.
 
 ## Architecture
 
 ```
-Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
+Browser (Korina Converse UI) Korina backend (FastAPI :8001)
   │                                │
   │  mic → VAD chunking            │  faster-whisper
   │  ─────────────────────────────►│  /api/transcribe/partial  (live rolling)
@@ -14,7 +14,7 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
   │                                │
   │  ◄── transcription text ────── │
   │                                │
-  │  ─── user transcript ────────► │  /api/chat  →  configured OpenAI-compatible LLM
+  │  ─── user transcript ────────► │  /api/chat  →  configured local/OpenAI-compatible LLM
   │                                │          ◄── LLM reply
   │                                │
   │  ◄── reply text ─────────────  │
@@ -22,6 +22,10 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
   │  ─── reply + voice ──────────► │  configured Kokoro/OpenAI-compatible TTS
   │                                │
   │  ◄── audio stream ───────────  │
+  │                                │
+  │                                │
+  │  ─── transcript/events ───────► │  Korina Agent / external agent side channel
+  │  ◄── injection/interrupts ───── │  /api/agent/*
   │                                │
   └────────── Web Audio playback ──┘
 ```
@@ -42,7 +46,7 @@ Browser (Korina UI)          Korina Voice Lab (FastAPI :8001)
 - `Korina/config.json` — runtime test-site settings (gitignored). The tracked example is at `Korina/config/config.example.json`.
 - `Korina/start.sh` / `stop.sh` — Service lifecycle.
 - `Korina/Ack/ack_phrases.json` — tagged acknowledgement phrase manifest. Generated WAVs are cache files and are ignored by git.
-- `tests/regression_smoke.py` — live regression suite: 38 checks against the running server, including provider-activation, real LLM chat round-trip, and the `/api/capabilities` contract.
+- `tests/` — pytest unit/API/static tests for CI plus `tests/regression_smoke.py` for live server smoke tests. CI tests avoid live model servers; live regression can optionally exercise provider activation, chat, and transcription when local services are up.
 
 ## Process supervision
 
@@ -55,10 +59,10 @@ Korina-owned long-running services are managed with `systemd --user`:
 
 > Note: `start.sh` is for first-launch; for restarts use `systemctl --user restart korina-voice-lab.service`.
 
-Install/update user units from the source checkout:
+Install/update user units from a source checkout:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 ./Korina/install-services.sh
 ```
 
@@ -112,7 +116,7 @@ pip install faster-whisper
 pip install kokoro-onnx pydub
 # Download voice manifests / models separately (see Kokoro docs)
 
-# 4. Run an OpenAI-compatible LLM server, e.g. LM Studio on :1234
+# 4. Run an OpenAI-compatible LLM server, e.g. llama.cpp on :8080/v1 or LM Studio on :1234/v1
 
 # 5. Start
 ./Korina/start.sh
@@ -125,7 +129,9 @@ pip install kokoro-onnx pydub
 |----------------|------|
 | Korina UI      | 8001 |
 | Kokoro TTS     | 8880 |
+| llama.cpp LLM  | 8080 |
 | LM Studio LLM  | 1234 |
+| Ollama LLM      | 11434 |
 
 ## Configuration
 
@@ -173,7 +179,7 @@ Korina supports two speech-to-text backends via the Settings modal:
 1. **faster-whisper** (default, stable) — CTranslate2-based Whisper inference, CPU or CUDA.
    - Models: `tiny.en`, `base.en`, `small.en`, `turbo`, `distil-large-v3`
    - Recommended for CPU: `base.en` or `tiny.en`
-2. **LM Studio multimodal LLM** (experimental) — Routes audio to a loaded multimodal/audio LLM via OpenAI-compatible `/v1/chat/completions` with `input_audio` content blocks. Depends on model and server support.
+2. **OpenAI-compatible multimodal LLM** (experimental) — Routes audio to a loaded multimodal/audio model via `/v1/chat/completions` with `input_audio` content blocks. This can be a local llama.cpp/LM Studio-compatible server or another compatible endpoint, depending on model and server support.
 
 Cloud STT fields are persisted in config for provider experiments, but the stable active STT path is still faster-whisper.
 
@@ -197,10 +203,10 @@ Kokoro TTS with Web Audio SSE streaming by default. Voices selectable in the UI.
 
 The settings modal has two tabs:
 
-- **Korina Converse** — live voice conversation, STT/TTS/LLM, endpointing, and provider settings.
-- **Korina Agent** — agentic state-report settings.
+- **Korina Converse** — the local-first, voice-first design chat channel. It owns live conversation UX: microphone capture, VAD/endpointing, STT/TTS/response-LLM settings, spoken playback, interruptions, and the human-facing permission flow. Converse is intended to be the chat channel for whichever agent is attached: the custom Korina Agent, Hermes Agent, OpenClaw, or another local/OpenAI-compatible agent.
+- **Korina Agent** — a local-first agent designed specifically for Korina Converse's voice-input focus. It receives transcript deliveries, maintains compact state, emits background reports, and can ask Converse to inject context or speak important/critical interrupts.
 
-Korina Agent is a lightweight agentic layer inspired by Pi Agent Harness / Pi Coding Agent concepts. Korina Converse and Korina Agent run as independent loops: Converse stays focused on real-time voice while Agent receives transcript deliveries through `/api/agent/transcript`, works in the background, and emits events through `/api/agent/events`. The frontend polls those events and either stores normal reports as hidden next-reply injections or routes important/critical reports through Converse as voice interrupts. Permission requests are spoken by Converse and answered through `/api/agent/permission-answer`, so Converse remains the human-facing permission UX while Agent remains the background worker.
+Korina Converse and Korina Agent run as independent loops: Converse stays focused on real-time voice while Agent receives transcript deliveries through `/api/agent/transcript`, works in the background, and emits events through `/api/agent/events`. The frontend polls those events and either stores normal reports as hidden next-reply injections or routes important/critical reports through Converse as voice interrupts. Permission requests are spoken by Converse and answered through `/api/agent/permission-answer`, so Converse remains the human-facing permission UX while Agent remains the background worker.
 
 Agent debugging is visible in the **Korina Agent Debug** panel. It logs transcript deliveries/prompts, queued injection updates, Agent events, and Agent output. The top bar includes **Clear Session**, which clears visible transcript/conversation/debug state, client-side model history, Agent delivery counters/cooldowns, and calls `/api/agent/reset` to clear backend Agent state/events. Agent interrupts and ack phrases are added to the visible conversation transcript as explicit labels (`Korina Agent Interrupt` and `Ack Phrase`). Ack phrase labels are UI-only: they are not stored in model history, and model/Agent contexts are sanitized before delivery. Agent interrupt labels are also excluded from later model/Agent context so interrupts cannot recursively trigger new interrupts. Agent interrupts use a cooldown: while an Agent interrupt is speaking, and until its scheduled audio end plus configurable padding (`agent_interrupt_cooldown_padding_ms`, default 3000ms), new Agent reports are deferred/injected rather than interrupting again. `speakText()` strips transcript labels and `<think>` blocks before sending text to Kokoro, so Korina should never say “Ack Phrase” or hidden reasoning out loud even if a model emits those strings. Ack phrase playback is suppressed briefly during Agent interrupts so a thinking/idle ack does not overlap an interrupt.
 
@@ -232,12 +238,12 @@ Korina uses a browser-side adaptive energy VAD (root mean square of audio buffer
 - **Reading/dictation**: 3200ms silence before finalizing a turn.
 - **Conversation**: 950ms silence.
 
-Partial transcription windows (~1.8s each) are queued rather than dropped, so slow CPU inference catches up gracefully.
+Partial transcription windows (~1.8s each) are queued rather than dropped, so slower STT inference catches up gracefully.
 
 ## Branching
 
 - `master` — stable, production-ready snapshots
 - `beta` — release candidates
-- `alpha` — active development
+- `alpha` — development branch / pre-release work
 
-In practice, recent refactor work (Phase 1 backend modularization, Phase 2 single source of truth) has been done on `beta` rather than `alpha`. Treat `alpha` and `beta` as the active working branches; reserve `master` for snapshots you have decided to ship. When a refactor spans both, see `docs/refactor/PROGRESS.md` for the working branch the last increment used.
+Recent refactor work has been landing on `beta` as the release-candidate branch. Check `docs/refactor/PROGRESS.md` before starting a multi-step change so the active branch, last verified commit, and live-regression status are explicit.

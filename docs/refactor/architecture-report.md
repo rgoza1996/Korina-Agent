@@ -1,756 +1,320 @@
 # Korina Agent — Architecture Report
 
-> Code-grounded review of the repo at `alpha` (commit `355e6bb`). Every claim below references the actual files in the repo, not a mental model.
+Updated: 2026-06-25 10:20 PDT
+
+Branch/snapshot reviewed: `beta` at `b629409d9faf` (`docs: close out Phase 6 testing and CI`)
 
 ## Executive summary
 
-Korina is currently a **small but highly coupled voice app** built from:
-
-- **1 monolithic backend**: `korina_voice_lab.py` — 1731 lines
-- **1 monolithic frontend**: `Korina/index.html` — 1120 lines of HTML/CSS/JS
-- **1 separate TTS microservice**: `kokoro-streaming-server.py` — 284 lines
-- thin shell scripts + config/docs
-
-It works because the scope is still manageable, but the architecture is now at the point where **feature velocity is being paid for with coupling risk**.
-
-### My high-level judgment
-This is not a bad prototype. It already has real useful structure:
-- clear HTTP API boundaries
-- persistent config
-- provider activation layer
-- separate TTS process
-- hidden agent/event loop separate from converse loop
-- thoughtful VAD/partial queue logic
-- fallback behavior for multimodal STT
-
-But it is **past the safe size for "single-file app" architecture**.
-
-The biggest problem is not one bug. It's this:
-
-> **Too many responsibilities are shared between the same few files, with duplicated rules in frontend and backend.**
-
-That creates:
-- regressions from innocent changes
-- rename drift
-- config drift
-- UI/backend mismatch
-- hidden runtime behavior changes
-- hard-to-test stateful logic
-
-If you want Korina to keep growing, the next move should be **modularization before more feature layering**.
-
----
-
-# 1. Actual project shape
-
-Tracked files in repo:
-
-- `.gitignore`
-- `README.md`
-- `THIRD_PARTY_NOTICES.md`
-- `korina_voice_lab.py`
-- `kokoro-streaming-server.py`
-- `Korina/index.html`
-- `Korina/config.json`
-- `Korina/start.sh`
-- `Korina/stop.sh`
-- `Korina/Ack/ack_phrases.json`
-
-### What's missing
-- **No tests**
-- **No package/module structure**
-- **No typed shared schema layer between frontend/backend**
-- **No deployment abstraction**
-- **No central state model**
-- **No build step**
-- **No migration system for config**
-
-So the codebase is effectively a **runtime script bundle**, not yet an app with durable internal boundaries.
-
----
-
-# 2. Runtime architecture
-
-## 2.1 Main runtime topology
-
-There are **three runtime layers**:
-
-### A. Browser UI
-`Korina/index.html`
-
-Responsibilities:
-- settings modal
-- local UI state
-- microphone capture
-- browser-side VAD
-- partial recording windows
-- final turn capture
-- barge-in detection
-- transcript display
-- chat history
-- TTS playback
-- agent event polling
-- provider activation triggers
-- config save/load
-
-### B. Voice backend
-`korina_voice_lab.py` on port `8001`
-
-Responsibilities:
-- serves UI
-- persists config
-- exposes model lists
-- manages LLM provider activation
-- manages llama.cpp / LM Studio / Ollama process switching
-- performs Whisper STT
-- proxies multimodal STT
-- proxies response LLM chat
-- manages ack phrase generation queue
-- manages agent state-report loop/events
-- exposes health/status
-
-### C. TTS backend
-`kokoro-streaming-server.py` on port `8880`
-
-Responsibilities:
-- loads Kokoro pipeline
-- streams SSE PCM chunks
-- returns buffered WAV
-- reports health and voices
-
----
-
-## 2.2 Conversation data flow
-
-### Standard live conversation path
-1. Browser captures mic via `MediaRecorder`
-2. Browser VAD decides speech start/end
-3. While user is speaking:
-   - browser creates partial windows
-   - sends to `/api/transcribe/partial`
-4. On end-of-turn:
-   - browser either uses queued partial text, or
-   - sends full blob to `/api/transcribe/stream`
-5. Browser sends text to `/api/chat`
-6. Backend forwards to configured response LLM
-7. Browser receives reply
-8. Browser plays TTS via Kokoro `/stream/speech` or `/v1/audio/speech`
-
-### Agent side channel
-Separately:
-1. Browser slices transcript/history
-2. Sends to `/api/agent/transcript`
-3. Backend runs state-report generation
-4. Backend stores/publishes agent events
-5. Browser polls `/api/agent/events`
-6. Browser either:
-   - injects report into next reply
-   - or interrupts voice playback for important/critical events
-
-That separation is actually one of the stronger design decisions in the codebase.
-
----
-
-# 3. File-by-file architecture
-
-## 3.1 `korina_voice_lab.py`
-This is the core monolith.
-
-It currently contains **at least 8 subsystems**:
-
-1. **config system**
-2. **provider preset / dependency sync**
-3. **provider process orchestration**
-4. **model discovery**
-5. **ack phrase asset generation**
-6. **Whisper STT**
-7. **multimodal STT + response chat proxy**
-8. **agent event/state-report system**
-9. **FastAPI routes for all of the above**
-
-That is too much for one file now.
-
-### Key route surface
-- `/`
-- `/api/health`
-- `/api/config`
-- `/api/models`
-- `/api/llm/provider/activate`
-- `/api/acks`
-- `/api/acks/status`
-- `/api/acks/rebuild`
-- `/api/agent/status`
-- `/api/agent/events`
-- `/api/agent/transcript`
-- `/api/agent/permission-answer`
-- `/api/agent/reset`
-- `/api/agent/models`
-- `/api/agent/state-report`
-- `/api/transcribe`
-- `/api/transcribe/partial`
-- `/api/transcribe/stream`
-- `/api/chat`
-
-That's already big enough to justify routers/modules.
-
----
-
-## 3.2 `Korina/index.html`
-This is also a monolith.
-
-It combines:
-- full HTML
-- full CSS
-- full app JS
-- settings logic
-- API client logic
-- audio playback
-- VAD
-- partial STT queue
-- agent UX
-- history sanitization
-- provider-switching behavior
-
-The frontend is basically a mini SPA without modularization.
-
-### Strong part
-The live mode logic is more thoughtful than average:
-- adaptive noise floor
-- separate partial queue
-- idle recalibration
-- delayed finalization
-- barge-in handling
-- ack suppression during interrupts
-
-That's valuable logic and worth preserving.
-
-### Weak part
-That logic is buried in a single global-script file with lots of mutable globals.
-
----
-
-## 3.3 `kokoro-streaming-server.py`
-This file is simpler and relatively clean.
-
-Subsystems:
-- device normalization
-- pipeline caching
-- SSE PCM streaming
-- full WAV generation
-- progressive WAV streaming
-- health/voices
-
-This is the most self-contained component in the repo.
-
-### But:
-It still has some architecture issues:
-- global pipeline cache
-- no concurrency strategy around `/tmp/kokoro_stream.wav`
-- shared temp path for progressive stream endpoint
-- minimal schema validation
-
----
-
-# 4. State model
-
-## 4.1 Backend state
-The backend relies heavily on **module-level mutable globals**.
-
-Examples:
-- `_asr_models`
-- `_asr_loaded_at_by_device`
-- `_asr_device`
-- `_asr_compute_type`
-- `_ack_queue`
-- `_ack_in_progress`
-- `_ack_worker_running`
-- `_agent_events`
-- `_agent_busy`
-- `_agent_status`
-- `_agent_pending_injections`
-- `_agent_last_report`
-
-This is acceptable for a prototype, but it means:
-- state is implicit
-- testing is hard
-- concurrency assumptions are fragile
-- restart behavior matters a lot
-- route behavior depends on prior route usage
-
-## 4.2 Frontend state
-The frontend also uses many global mutable variables:
-- recording state
-- live state
-- partial queue state
-- VAD state
-- TTS state
-- agent state
-- ack cache state
-- config cache state
-
-This creates similar problems:
-- hidden coupling
-- order-dependent behavior
-- harder debugging
-- easy regression surface
-
----
-
-# 5. Config architecture
-
-## 5.1 What's good
-The app does have a coherent persisted config model:
-- `DEFAULT_CONFIG`
-- `load_config()`
-- `save_config()`
-- config endpoints
-- some backward compatibility logic
-
-That's good.
-
-## 5.2 What's weak
-The config layer is doing too many jobs:
-- defaults
-- migration
-- provider inheritance
-- backend sync
-- UI sync assumptions
-- process reload triggers
-
-### Concrete issue: config migration is incomplete
-You renamed steering → injection, but the tracked config still contains:
-
-- `agent_busy_delivery_mode: "steer"`
-
-in `Korina/config.json`.
-
-The code still accepts legacy delivery values in some paths:
-- `submit_agent_transcript()` accepts `('injection', 'steer')`
-
-So the rename is not fully normalized yet.
-
-### Concrete issue: docs and runtime disagree on secrets
-README says API keys are not stored directly and env vars are preferred.
-
-But config schema includes:
-- `agent_api_key`
-
-and UI explicitly saves it to config for dev/test use.
-
-That's not necessarily wrong, but it is a **documented architecture inconsistency**.
-
-### Concrete issue: config is both runtime state and repo artifact
-`Korina/config.json` is tracked, but also treated as generated runtime state.
-
-That split causes confusion:
-- example config?
-- live config?
-- test config?
-- migration target?
-- source of truth?
-
-Right now it is doing all of those at once.
-
----
-
-# 6. Provider/model architecture
-
-## 6.1 Current design
-There are really **three provider systems**:
-
-1. **Converse response LLM**
-2. **Multimodal STT LLM**
-3. **Agent LLM**
-
-And they partially inherit from each other.
-
-That inheritance logic is spread across:
-- backend `synchronize_llm_dependents()`
-- backend config helper functions
-- frontend `effectiveSttLlm*()` functions
-- frontend UI enable/disable behavior
-
-This is one of the highest-coupling areas in the app.
-
-## 6.2 Good design choice
-The new provider activation endpoint is directionally right:
-- click provider
-- backend stops others
-- backend starts selected one
-- backend returns saved/activation result
-
-That's the right abstraction.
-
-## 6.3 Weakness: frontend and backend both know provider rules
-Provider presets are duplicated in both places:
-
-Backend:
-- `provider_preset_base_url()`
-
-Frontend:
-- `PROVIDER_BASE_URL_PRESETS`
-
-Also:
-- base URL editability logic is frontend-only
-- dependent synchronization is backend-only
-- model label prettifying exists in both frontend and backend
-
-That duplication guarantees drift over time.
-
-## 6.4 Concrete finding related to the model dropdown issue
-This is important.
-
-### Why llama.cpp `/v1/models` doesn't show all models
-From the code:
-
-- `llm_models_for()` hits `/models`
-- if base is `http://127.0.0.1:8080/v1`, it appends `discover_local_gguf_models()`
-- `discover_local_gguf_models()` only scans `LOCAL_MODEL_ROOTS`
-- default `LOCAL_MODEL_ROOTS` is `/home/roggoz/Disks/SN750/models`
-- LM Studio catalog manifests are discovered separately by `discover_lmstudio_catalog_models()`
-- but the frontend model dropdown uses `llm_models`, not `lmstudio_catalog_models`
-
-So:
+Korina is now two related systems sharing one local-first runtime:
+
+1. **Korina Converse** — the local-first, voice-first design chat channel. It owns microphone capture, browser VAD, endpointing, STT, response-LLM calls, TTS playback, barge-in, interrupts, and the human-facing permission loop. Converse is intended to be a channel that can host multiple agents: the custom Korina Agent, Hermes Agent, OpenClaw, or any compatible local/OpenAI-style agent.
+2. **Korina Agent** — the local-first agent designed around that Converse channel. Today it is a background state-report/injection loop: it receives transcript deltas, maintains compact state, classifies report priority, emits events, and asks Converse to inject context or speak important/critical interrupts. It is not yet a full autonomous tool-execution runner.
+
+The architecture has moved substantially since the original report. The old single-file FastAPI monolith and inline frontend script have been split into a Python package, route modules, service modules, ES modules, pytest coverage, and GitHub Actions CI. The remaining work is no longer "create structure"; it is to formalize contracts, finish the agent execution layer, harden local-provider lifecycle/readiness, and make deployment/config paths portable.
+
+## Current grade
+
+**Grade: B / B+.**
+
+Strong points:
+
+- Backend package boundaries are now real: `korina/app.py`, `korina/app_factory.py`, `korina/routes/*`, `korina/services/*`, `korina/runtime/*`.
+- Frontend code is modularized under `Korina/js/*` rather than a large inline script.
+- Provider metadata has a backend-owned registry (`PROVIDER_CAPABILITIES`) and `/api/capabilities` API.
+- Runtime state is gathered under typed dataclasses instead of scattered top-level globals.
+- CI now exists and covers unit, API, and static frontend behavior without requiring live local model servers.
+
+Main gaps:
+
+- Korina Agent is still a state-report sidecar, not a complete local-first agent runtime with tool/action execution.
+- The Converse ↔ agent protocol is implemented but not yet a formal, versioned contract for third-party agents.
+- Local provider lifecycle still has decoupled service-readiness edge cases.
+- Deployment paths/model roots are still environment-specific in parts of the code and operational docs.
+- The live regression tier exists but is not automated in CI because it requires local services and model weights.
+
+## Repository shape
+
+Measured from the reviewed checkout:
+
+| Area | Current shape |
+|---|---|
+| Backend package | 6 top-level Python files under `korina/` |
+| Route modules | 10 route modules under `korina/routes/` plus package init |
+| Service modules | 9 service modules under `korina/services/` plus package init |
+| Runtime state | `korina/runtime/state.py` with `AsrState`, `AckState`, `AgentState`, `RuntimeState` |
+| Frontend | `Korina/index.html`, `Korina/styles.css`, 17 ES modules under `Korina/js/` |
+| Tests | pytest unit/API/static tests plus `tests/regression_smoke.py` live smoke |
+| CI | `.github/workflows/test.yml` for Python 3.10 / 3.11 / 3.12 |
+
+High-level file map:
+
+```text
+korina/
+  app.py                 # canonical uvicorn entrypoint
+  app_factory.py         # FastAPI app construction, static mounts, router include list
+  config.py              # defaults, migration, load/save, derived config getters
+  schemas.py             # request/response models for runtime APIs
+  schemas_capabilities.py
+  routes/                # HTTP routes by concern
+  services/              # provider/model/STT/TTS/agent domain logic
+  runtime/               # singleton mutable runtime state and HTTP auth helpers
+
+Korina/
+  korina_voice_lab.py    # compatibility shim into korina.app.main()
+  index.html             # browser shell
+  js/*.js                # modular frontend
+  styles.css             # static stylesheet
+  config/config.example.json
+  start.sh / stop.sh / install-services.sh
+```
+
+## Runtime topology
+
+```text
+Browser / Korina Converse UI
+  ├─ mic capture + adaptive VAD
+  ├─ partial STT queue
+  ├─ response-LLM chat UI/history
+  ├─ TTS playback and barge-in
+  └─ agent-event polling / injection / voice interrupts
+        │
+        ▼
+FastAPI backend on :8001
+  ├─ /api/transcribe*       -> faster-whisper or multimodal LLM STT
+  ├─ /api/chat              -> configured response LLM
+  ├─ /api/acks*             -> ACK phrase cache/manifest
+  ├─ /api/models            -> endpoint + local model catalog
+  ├─ /api/capabilities      -> provider registry contract
+  ├─ /api/llm/provider/activate -> local provider lifecycle
+  └─ /api/agent/*           -> Korina Agent state/event side channel
+        │
+        ├─ local/OpenAI-compatible LLM service
+        ├─ Kokoro/OpenAI-compatible TTS service
+        └─ optional external/local agent-compatible endpoint
+```
+
+`korina/app_factory.py:create_app()` is the app composition point (`korina/app_factory.py:40-79`). It creates the FastAPI app, adds CORS, mounts `/Ack`, conditionally mounts `/js`, serves `/styles.css`, attaches the ACK startup hook, and includes the route modules.
+
+`korina/app.py:21-24` is now the canonical uvicorn runner. `Korina/korina_voice_lab.py` remains as the compatibility entrypoint used by service wrappers.
+
+## Route surface
+
+The active API surface is split by concern:
+
+| Module | Routes |
+|---|---|
+| `routes/index.py` | `GET /` |
+| `routes/health.py` | `GET /api/health` |
+| `routes/config.py` | `GET /api/config`, `POST /api/config` |
+| `routes/models.py` | `GET /api/models` |
+| `routes/capabilities.py` | `GET /api/capabilities` |
+| `routes/providers.py` | `POST /api/llm/provider/activate`, `GET /api/audio-probe`, `DELETE /api/audio-probe` |
+| `routes/stt.py` | `POST /api/transcribe`, `POST /api/transcribe/partial`, `POST /api/transcribe/stream` |
+| `routes/chat.py` | `POST /api/chat` |
+| `routes/acks.py` | `GET /api/acks`, `GET /api/acks/status`, `POST /api/acks/rebuild` |
+| `routes/agent.py` | `GET /api/agent/status`, `GET /api/agent/events`, `POST /api/agent/transcript`, `POST /api/agent/permission-answer`, `POST /api/agent/reset`, `GET /api/agent/models`, `POST /api/agent/state-report` |
 
-> **The code already knows about LM Studio catalog models, but the UI does not consume that list.**
-
-That explains the symptom.
-
-### Meaning
-If models exist only under:
-`/home/roggoz/.lmstudio/hub/models`
+This is a much healthier shape than the original monolith. The main caveat is that route modules are still thin wrappers around service functions that share the singleton runtime state; there is not yet dependency injection or per-session isolation.
 
-and not as discovered `.gguf` files under `LOCAL_MODEL_ROOTS`,
-they won't appear in the main model dropdown even though the backend can see their manifests.
+## Backend services
 
-That is a real architecture mismatch.
+| Service module | Responsibility |
+|---|---|
+| `ack_service.py` | ACK manifest loading, WAV cache naming/status, missing-ACK queue, worker, rebuild/clear behavior |
+| `agent_service.py` | Korina Agent state-report generation, sanitization, priority classification, event queue, transcript job submission, model listing |
+| `audio_probe.py` | Audio-model failure classification and fallback cache |
+| `model_capability.py` | Per-model audio capability classification |
+| `model_catalog.py` | Local GGUF discovery, LM Studio catalog discovery, mmproj pairing, `/models` merging |
+| `multimodal_stt.py` | OpenAI-compatible audio-input STT request path |
+| `provider_manager.py` | Local provider start/stop/activation for llama.cpp, LM Studio, and Ollama-style providers |
+| `response_llm.py` | Response-LLM chat request and voice-reply formatting |
+| `whisper_service.py` | faster-whisper loading, device normalization, upload/stream transcription, SSE helpers |
 
----
+The backend split is mostly by runtime concern, which is the right direction. The next design improvement should be contract boundaries: define service interfaces for "agent runner", "provider lifecycle", and "model catalog" so external agent backends and local-provider variants can be plugged in without route-level edits.
 
-# 7. STT architecture
+## Config and runtime state
 
-## 7.1 Strong parts
-The STT stack is actually fairly thoughtful.
+`korina/config.py:21-92` contains `DEFAULT_CONFIG` and the canonical config key set. `load_config()` and `save_config()` (`korina/config.py:112-153`) merge persisted config with defaults and normalize legacy values. `synchronize_llm_dependents()` (`korina/config.py:160-193`) keeps the response LLM, STT-LLM, and Agent endpoint/model fields aligned when the selected response provider changes.
 
-### Whisper path
-- lazy load by model/device
-- serialized inference via `_asr_infer_lock`
-- ffmpeg normalization to 16k mono WAV
-- partial and final endpoints
-- partial minimum duration gate
-- fallback path from multimodal STT to Whisper when audio unsupported
+The tracked example is `Korina/config/config.example.json`; runtime config is `Korina/config.json` and should be treated as local state. That split is correct. The remaining weakness is that some local-dev conveniences, especially direct `agent_api_key` storage, still coexist with the preferred env-var-secret model. The repo should keep moving toward "env var names in config, actual keys only in environment" for every provider path.
 
-That's solid for a prototype.
-
-## 7.2 Live partial queue design
-This is one of the best parts of the app.
+Runtime mutables are centralized in `korina/runtime/state.py:27-79`:
 
-The browser:
-- records bounded partial windows
-- queues them
-- processes sequentially
-- does not drop slow inference by default
-- can use queued chunks instead of retranscribing full utterance
+- `AsrState` for model cache/device/inference locks.
+- `AckState` for ACK generation queue and cache status.
+- `AgentState` for agent events, busy flag, pending injections, report dedupe, and last error.
+- `RuntimeState` as the singleton container.
 
-That matches the user's preference well.
+This is an improvement over scattered globals, but it is still process-global state. If Korina later supports multiple users/sessions, this layer will need session keys or an external store.
 
-## 7.3 Weakness
-The STT architecture is split across browser and backend in a way that's hard to reason about:
-- browser decides when to record windows
-- backend decides how to interpret them
-- browser decides whether final uses chunks or full pass
-- backend has no session-level notion of utterance assembly
+## Provider and model architecture
 
-It works, but the logic boundary is muddy.
+Provider metadata is backend-owned in `korina/util/presets.py:30-81`. The current provider split is:
 
-## 7.4 Likely root cause of the earlier "live conversation got no response"
-This is evidence-backed:
+- Response LLM providers: `llama.cpp`, `lmstudio`, `ollama`, `openai-compatible`.
+- Agent providers: `openai-compatible`, `anthropic`.
+- Local providers have default localhost-style base URLs and `manageable: true` where the backend can start/stop them.
+- Cloud/custom providers are editable and not lifecycle-managed.
 
-Current tracked config has:
-- `stt_backend = "llm"`
-- `stt_llm_provider = "llama.cpp"`
-- `stt_llm_model = "qwen3.5-2b-uncensored-hauhaucs-aggressive"`
+Model discovery is split across:
 
-Earlier regression results showed that text-only Qwen path rejected audio input.
+- Endpoint-loaded models from `/v1/models` (`model_catalog.py:59-81`).
+- Local GGUF discovery (`model_catalog.py:21-31`).
+- LM Studio catalog manifests (`model_catalog.py:33-45`).
+- mmproj sidecar detection (`model_catalog.py:47-52`).
+- Static/per-model capability registry plus heuristics (`model_capability.py`, `util/presets.py:130-169`).
 
-So the likely chain was:
+This is good enough for the current local-first workflow, but the architecture still has a portability gap: local model roots and service binaries are environment-specific. Those should move behind explicit config/env settings before the repo is treated as cleanly portable.
 
-1. live conversation used multimodal STT mode
-2. selected model was text-only
-3. audio transcription request failed or fell back awkwardly
-4. response loop never completed as expected
+## Frontend architecture
 
-That's not just a one-off bug. It reflects an architecture issue:
+The frontend is now a modular native-ES-module app:
 
-> **The app allows STT backend selection independently of model capability, without a capability registry.**
+| Module | Role |
+|---|---|
+| `app.js` | App boot orchestration |
+| `api.js` | Backend calls and capability/model loading |
+| `state.js` | Shared frontend state |
+| `settings-ui.js` | Settings modal state/apply/collect wiring |
+| `providers-ui.js` | Provider/model dropdown behavior |
+| `capability-filter.js` | Model capability filtering helpers |
+| `live.js`, `recorder.js`, `partial-queue.js`, `vad.js` | Live mic/STT/VAD/partial-transcription flow |
+| `speech.js`, `barge-in.js`, `acks.js` | TTS playback, barge-in, ACK phrase behavior |
+| `agent-ui.js` | Agent event polling, debug UI, injection/interrupt UX |
+| `history.js`, `labels.js`, `dom.js` | Conversation/history/display helpers |
 
----
+The important architectural win is that Converse owns human-facing voice UX while Agent remains a side-channel producer of state/events. The risk is that this boundary is still encoded mostly in JS functions and route payloads, not in a formal protocol document that another agent runtime could implement independently.
 
-# 8. TTS architecture
+## Korina Converse ↔ Korina Agent boundary
 
-## 8.1 Strong parts
-- separate TTS process
-- SSE chunk streaming
-- buffered fallback
-- per-device lazy load
-- browser-side audio scheduling
+Current behavior:
 
-That separation is good.
+1. Converse sends transcript/context deltas to `POST /api/agent/transcript`.
+2. Agent either queues an injection or starts a background thread (`agent_service.py:241-251`).
+3. The worker builds a compact state request, calls the configured agent endpoint, sanitizes output, classifies priority, deduplicates recent reports, and emits events (`agent_service.py:181-236`).
+4. Converse polls `GET /api/agent/events` and either:
+   - stores a normal/low report as next-reply hidden injection, or
+   - routes important/critical/permission reports through the spoken interrupt path.
+5. Permission answers flow through `POST /api/agent/permission-answer`.
 
-## 8.2 Concrete weakness
-`kokoro-streaming-server.py` progressive WAV path uses:
+This is the core idea that makes Korina distinct: the agent does not need to own the voice UI. Converse owns the voice channel, interruption policy, and human permission loop. The agent owns state and suggested action/report content.
 
-- fixed temp file `/tmp/kokoro_stream.wav`
+The next architecture step is to make this boundary explicit enough that Hermes Agent, OpenClaw, or another local agent can implement it without being coupled to Korina's current Python service internals.
 
-That is unsafe for concurrency.
+## STT architecture
 
-If two requests hit `/stream/wav`, they can stomp each other.
+STT has two paths:
 
-Even if you rarely use that endpoint, it's an architectural smell.
+- faster-whisper path: stable local transcription, model/device normalization, cache locks, upload and stream handling (`whisper_service.py`).
+- Multimodal LLM path: OpenAI-compatible `input_audio` request flow (`multimodal_stt.py`) with model support mediated by model capability metadata and audio-probe fallback state.
 
-## 8.3 Another weak point
-No request schema. Everything is raw `dict`.
+The frontend queues partial transcription windows so slower STT inference can catch up instead of dropping audio. That is the right voice-first design choice. The risk is still around model capability truth: whether a model supports audio input depends on runtime server behavior, local sidecar files, and per-model quirks. The static registry should eventually be supplemented by live probes and persisted probe results.
 
-This means:
-- no validation
-- no typed contract
-- poor error surfacing
+## TTS and ACK architecture
 
----
+Kokoro/OpenAI-compatible TTS remains a separate service path. The browser uses Web Audio playback; ACK phrases are manifest-driven and generated/cached per voice. This is a good local-first UX primitive because it lets Converse feel responsive while longer STT/LLM/TTS turns are running.
 
-# 9. Agent architecture
+ACK generation is now queued and statused in `ack_service.py`, and startup generation is isolated enough for pytest to monkeypatch. The remaining architecture issue is operational: TTS health/readiness is not yet expressed as part of a single composite readiness contract for the whole voice stack.
 
-## 9.1 Conceptually
-The agent layer is designed as a **background state-report generator**, not a full autonomous executor.
+## Process supervision
 
-That's a good scope choice.
+Korina-owned long-lived services are represented by tracked systemd user units and lifecycle wrappers. `provider_manager.py` can write/restart the llama.cpp user unit for the selected model and waits for `/v1/models` readiness after activation (`provider_manager.py:69-117`).
 
-## 9.2 What works well
-- separate status/events endpoints
-- transcript slicing
-- duplicate suppression
-- priority classification
-- permission-request path
-- converse interrupt cooldown logic
-- state report not recursively fed back as normal dialogue
+The known weakness is decoupled service state: the FastAPI process can be healthy while the selected local LLM service is stopped or not yet ready. `/api/health` and `/api/models` expose pieces of that state, but there is no single user-facing "conversation stack ready" contract yet.
 
-That's thoughtful.
+## Testing and CI
 
-## 9.3 Architectural weakness
-The agent is still too tightly embedded into the converse app:
-- same config file
-- same backend process
-- same frontend file
-- same history sanitization logic
-- same provider inheritance path
+The Phase 6 state is materially better than the original report:
 
-So although it is conceptually a sidecar, it is not structurally one yet.
+- `pyproject.toml` defines editable install metadata and `.[test]` extras.
+- `.github/workflows/test.yml` runs `pytest -q` on Python 3.10, 3.11, and 3.12.
+- `tests/conftest.py` isolates `KORINA_APP_DIR` so pytest does not touch live runtime config.
+- Unit tests cover config migration, model catalog/capability helpers, provider manager behavior, audio-probe fallback, response formatting, labels, and agent priority/sanitization.
+- API tests use FastAPI `TestClient` for config/capabilities/models/audio-probe/provider activation/validation behavior.
+- Frontend static tests cover module shape, fragile UI markers, adaptive barge-in thresholds, and the no-refresh-on-focus regression.
+- `tests/regression_smoke.py` remains the live service smoke layer.
 
----
+CI intentionally does not require live llama.cpp, LM Studio, Kokoro, Whisper weights, GGUF files, or systemd. That split is correct. The remaining gap is an optional self-hosted/live regression tier for the local services.
 
-# 10. Concrete architectural risks / code smells
+## Current architecture issues to track
 
-These are the biggest ones.
+These are the items that should be mirrored into GitHub Issues / wiki/backlog pages.
 
-## 10.1 Two monoliths
-- backend monolith
-- frontend monolith
+### ARCH-1 — Formalize the Korina Converse agent protocol
 
-This is the main maintainability risk.
+Define a versioned external-agent contract for:
 
-## 10.2 Duplicated domain logic
-Examples:
-- provider presets in frontend and backend
-- model labels in frontend and backend
-- inheritance rules in frontend and backend
-- naming migration partially in backend, partially in config, partially in UI text
+- transcript delivery payloads,
+- event stream format,
+- injection vs. interrupt semantics,
+- permission-request/answer flow,
+- priority levels,
+- sanitization rules,
+- capability discovery for attached agents.
 
-## 10.3 Hardcoded deployment assumptions
-Examples:
-- `/home/roggoz/Korina`
-- `/home/roggoz/Disks/SN750/models`
-- `/opt/LM-Studio/lm-studio`
-- user systemd path for llama-server
-- GUI/Xauthority assumptions
+Why: this is what turns Converse from "the UI for the bundled Korina Agent" into a reusable local-first design chat channel for Korina Agent, Hermes Agent, OpenClaw, or other agents.
 
-This is okay for roggoz, but it means architecture is really:
-> "app + host-specific control plane"
-not a portable app.
-
-## 10.4 Global mutable state everywhere
-Both frontend and backend.
-
-## 10.5 No tests
-This is now a serious issue, not a nice-to-have.
-
-## 10.6 Mixed process supervision strategies
-- `start.sh` uses `nohup`
-- `llama.cpp` uses user systemd unit
-- ollama uses systemd/user fallback
-- LM Studio uses GUI launch + pkill
-
-This is operationally inconsistent.
-
-## 10.7 Incomplete migration hygiene
-Example:
-- steering → injection rename partly normalized, partly legacy
-
-## 10.8 Placeholder/dead features in active config
-Examples:
-- `stt_cloud_*` persisted but not truly part of stable path
-- agent settings saved now for future behavior
-- some UI/runtime affordances exist before capability checks exist
-
-That increases confusion surface.
-
-## 10.9 Runtime bug verified in current frontend
-The barge-in logic references:
-- `SPEECH_THRESHOLD`
-- `SILENCE_THRESHOLD`
-
-But the file only defines:
-- `VAD_BASE_SPEECH_THRESHOLD`
-- `VAD_BASE_SILENCE_THRESHOLD`
-- `vadSpeechThreshold`
-- `vadSilenceThreshold`
-
-So unless those constants are injected elsewhere, this is a real bug.
-
-### Why it matters
-When barge-in path runs, it can throw a `ReferenceError`, or at minimum it is not using the same adaptive thresholds as live VAD.
-
-This is exactly the kind of regression monolithic duplicated logic causes.
-
----
-
-# 11. What is architecturally strong and worth preserving
-
-Don't throw these away in a refactor:
-
-1. **Adaptive browser VAD**
-2. **Queued partial transcription windows**
-3. **Choice between chunk-final and full-final STT**
-4. **Agent state-report as separate conceptual loop**
-5. **Provider activation endpoint**
-6. **Model label/display vs stored ID split**
-7. **Reasoning toggle split for response vs multimodal STT**
-8. **Ack phrase manifest + generated asset model**
-9. **Interrupt cooldown / deferred interrupt design**
-10. **Whisper fallback when multimodal STT rejects audio**
+### ARCH-2 — Finish Korina Agent as a local-first execution runtime
 
-Those are good product ideas.
+Korina Agent currently generates state reports and events. It needs an execution layer if it is meant to be a real local-first agent:
 
----
+- tool/action adapters,
+- durable task state,
+- permission gates before side effects,
+- project trust policy enforcement,
+- transport abstraction for OpenAI-compatible/Anthropic-compatible/local runners,
+- a clean separation between "report to Converse" and "act on the world".
 
-# 12. Refactor plan (summary)
+### ARCH-3 — Add composite readiness for the local voice stack
 
-Full plan lives in `blueprint.md`. Quick version:
-
-### Phase 0 — Stabilization
-- Fix barge-in threshold bug
-- Finish steering → injection migration
-- Resolve config role ambiguity
-- Fix doc/behavior mismatch on `agent_api_key`
-- Document secret-storage contract
-- Display labels in the Agent model dropdown
-- Verify on roggoz
+Create one clear readiness contract for the user-facing conversation path:
 
-### Phase 1 — Backend modularization
-- New `korina/` package layout
-- Move path/config bootstrapping
-- Gather globals into a `RuntimeState` dataclass
-- Extract services: whisper, multimodal_stt, response_llm, agent, ack, provider_manager, model_catalog
-- Move config-derived getters
-- Split FastAPI routes into routers
-- Extract Pydantic schemas
-- Keep `korina_voice_lab.py` as a backward-compat shim
-- Verify
+- FastAPI backend ready,
+- selected response LLM reachable/loaded,
+- STT backend ready or degraded with a known fallback,
+- TTS endpoint ready,
+- ACK cache state known,
+- frontend static assets served from the current source/runtime sync.
 
-### Phase 2 — Single source of truth
-- New `GET /api/capabilities` endpoint
-- Frontend reads from `/api/capabilities` instead of hardcoding presets
-- Document the provider-switch contract
+Why: today the backend can report healthy while the selected LLM service is intentionally stopped or still loading.
 
-### Phase 3 — Frontend modularization
-- Move CSS to a stylesheet
-- Split inline JS into `Korina/js/*.js` modules (no build step)
-- Replace focus/pointerdown re-query with open-only fetch
-- Verify
+### ARCH-4 — Make deployment paths, model roots, and local binaries portable
 
-### Phase 4 — Capability registry
-- Per-model capability metadata
-- `/api/models` returns capabilities
-- Frontend filters dropdowns by capability
-- Provider/model compatibility check on activation
-- Verify
+Move hardcoded local runtime/model/binary assumptions behind config/env settings and document a generic install contract. Keep private host paths and hardware specs out of public-facing docs.
 
-### Phase 5 — Process supervision unification
-- Decide: keep hybrid, full systemd --user, or s6
-- Write unit files if going systemd
-- Verify
+### ARCH-5 — Replace static model capability assumptions with probe-backed metadata
 
-### Phase 6 — Testing + CI
-- pytest scaffold
-- Backend tests for config migration, provider resolution, priority classifier, sanitizers
-- Frontend smoke tests
-- GitHub Actions CI
+The current capability registry is useful, but audio/multimodal support should eventually be confirmed by a probe-backed model metadata layer that records:
 
----
+- model source,
+- sidecar/mmproj presence,
+- supports-audio-input result,
+- last probe status/error,
+- suggested fallback.
 
-# 13. Recommended implementation order
+### ARCH-6 — Add an optional live/self-hosted regression tier
 
-### Track A — low-risk cleanup
-1. fix barge-in threshold bug
-2. finish legacy naming/value normalization
-3. clean docs/config contradictions
-4. clarify model-source semantics
+Keep GitHub Actions lightweight, but add an opt-in live regression job/script that can run on a local/self-hosted runner with real services and model weights. It should publish a concise readiness + smoke report without turning CI red when local services are intentionally offline.
 
-### Track B — backend modularization
-5. extract config/services/routes
-6. add schemas
-7. add provider capability endpoint
+### ARCH-7 — Audit stale public docs after each architecture phase
 
-### Track C — frontend modularization
-8. move JS out of `index.html`
-9. centralize state + API client
-10. isolate audio/VAD/provider logic
+README is now scrubbed of personal machine specs, but other historical refactor plans intentionally contain host-specific operational notes. Decide which docs are public-facing vs. internal runbooks, then either scrub or clearly mark the internal ones.
 
-### Track D — reliability
-11. add tests
-12. unify service supervision
+## Recommended next implementation order
 
----
+1. **Docs/protocol:** Write `docs/agent-protocol.md` for the Converse ↔ agent contract.
+2. **Agent runtime:** Add a minimal local tool/action execution loop behind the existing permission UX.
+3. **Readiness:** Add `/api/readiness` or extend `/api/health` with explicit component readiness and selected-provider state.
+4. **Portability:** Move paths/model roots/binaries into env/config with documented defaults.
+5. **Model probes:** Persist audio-probe/model-capability observations and use them in dropdown filtering.
+6. **Live regression tier:** Add an opt-in self-hosted script/job for the full local stack.
 
-# 14. My recommendation on scope
+## Bottom line
 
-I would **not** do a huge rewrite first.
+Korina's architecture is no longer primarily a cleanup problem. The foundation is now serviceable: package split, route split, modular frontend, provider registry, tests, and CI are in place. The next phase should focus on product contracts and local-first agent semantics:
 
-Best path is:
-
-- **surgical stabilization**
-- then **backend split**
-- then **frontend split**
-- then **capability system**
-- then **tests + ops cleanup**
-
-That preserves current behavior while reducing future breakage.
-
----
-
-# 15. Bottom line
-
-## Current architecture grade
-For a prototype that became a real tool:
-- **Product design:** good
-- **Runtime ideas:** strong
-- **Maintainability:** now weak
-- **Extensibility:** declining
-- **Operational consistency:** mixed
-- **Regression resistance:** poor without tests
-
-## The main truth
-Korina's problem is **not that the architecture is bad**.
-
-It's that the architecture is **still prototype-shaped while the feature set is no longer prototype-sized**.
-
-That mismatch is what is being felt now.
+- Converse as the reusable voice/design chat channel.
+- Korina Agent as one attached local-first agent built for that channel.
+- A formal protocol so Hermes Agent, OpenClaw, or other agents can attach cleanly.
+- A readiness/portability layer that makes the local stack predictable outside one machine.

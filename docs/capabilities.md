@@ -71,26 +71,21 @@ in `korina/util/presets.py`.
    (e.g. `gemini-agent`), it goes in `agent_providers` only with
    `agent_only: true`.
 
-5. **`/api/capabilities` is fetch-once.** The frontend caches the
-   response for the session via `loadCapabilities()` (defined in
-   `Korina/index.html`). There is no `/api/capabilities/refresh`
-   endpoint; if the registry changes, the user reloads the page. This
-   is a Phase 2 simplification; a future phase may add an explicit
-   refresh if a hot-swap use case shows up.
+5. **`/api/capabilities` is fetch-once per page session unless forced.** The frontend caches the
+   response via `loadCapabilities()` in `Korina/js/providers-ui.js`. There is no
+   `/api/capabilities/refresh` endpoint; if the backend registry changes, the
+   user reloads the page or code calls `loadCapabilities(true)` as part of an
+   explicit provider/model refresh.
 
 6. **Capability keys are always snake_case in JSON.** `editable_base_url`
    in the wire format, `editableBaseUrl` only in the JS object (no
    current JS object — we read fields directly from the JSON).
 
-7. **`initApp` does not await `loadCapabilities()`.** The boot
-   warm-up happens via a top-level
-   `loadCapabilities().then(()=>setBaseUrlEditability())` call placed
-   just before `async function initApp()`. This keeps the
-   `setBaseUrlEditability()` call in `run()`'s normal flow without
-   forcing `initApp` to be async-on-capabilities (it already is
-   async for other reasons, but the discipline is: keep the
-   capabilities warm-up outside `initApp` so future refactors don't
-   accidentally couple the two).
+7. **Capabilities warm before app init.** `Korina/js/app.js` calls
+   `await loadCapabilities().then(() => setBaseUrlEditability())` before
+   `initApp()`. `initApp()` still performs normal config/model loading in
+   `Korina/js/api.js`; the discipline is to keep capability warm-up explicit
+   so provider/base-URL UI state is correct before the rest of the page wiring runs.
 
 ## Adding a new provider
 
@@ -157,27 +152,24 @@ silently re-introduce this class of bug.
 ## Verification
 
 - Backend: `GET /api/capabilities` returns 200 with both sections
-  populated. Covered by `test_capabilities_endpoint` in
-  `tests/regression_smoke.py`.
-- Frontend wiring: served `index.html` has `loadCapabilities`,
-  `getResponseLlmProviderCaps`, `getAgentProviderCaps`, references
-  `agentBaseUrl` from `setBaseUrlEditability`, and has the
-  `loadCapabilities().then(()=>setBaseUrlEditability())` boot warm-up.
-  Covered by 3 new tests in 2.2.3:
-  `test_frontend_uses_capabilities`,
-  `test_frontend_set_base_url_editability_for_agent`,
-  `test_frontend_initial_sync_uses_capabilities`.
-- Per-provider fields: `editable_base_url`, `manageable`, `is_local`
-  are booleans; `default_base_url` is the right URL for local
-  providers and empty for cloud providers; `agent_only` is true for
-  `anthropic`. Covered by `test_capabilities_anthropic_default_and_editability`
-  in 2.3.2.
+  populated. Covered by `tests/api/test_config_capabilities_models.py` and
+  the live `tests/regression_smoke.py` contract check.
+- Frontend wiring: `Korina/js/app.js` imports and runs capability warm-up,
+  `Korina/js/providers-ui.js` owns `loadCapabilities()` and base-URL
+  editability, and `Korina/js/capability-filter.js` consumes model capability
+  metadata for dropdown filtering. Covered by `tests/frontend/test_static_frontend.py`.
+- Per-provider fields: `editable_base_url`, `manageable`, `is_local`,
+  `agent_only`, and `response_llm_only` are typed and section-filtered by
+  the backend registry. API and unit coverage lives under `tests/api/` and
+  `tests/unit/test_provider_manager.py`.
 
 ## Out of scope for Phase 2
 
-- Per-model capability metadata (audio_input, mmproj, vram) — Phase 4.
-- Provider/model compatibility matrix — Phase 4.
-- Live reload of `/api/capabilities` — only on full page reload.
+- Fully automatic/probe-backed model capability metadata. Phase 4 added the
+  first registry/probe layer, but persistent probe-backed metadata remains a
+  follow-up.
+- Live reload endpoint for `/api/capabilities`; current refresh is frontend-side
+  via page reload or explicit `loadCapabilities(true)`.
 - `/api/capabilities` filtering by user (all providers are returned
   to all users; the current auth model is localhost-only, so this is
   a non-issue today).
