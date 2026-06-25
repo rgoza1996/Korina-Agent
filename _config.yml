@@ -1,0 +1,7 @@
+title: Korina Agent / Korina Converse
+description: Local-first voice/design chat channel and the local-first agent built for it.
+theme: minima
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
