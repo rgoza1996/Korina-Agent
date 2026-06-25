@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Architecture - Korina Agent / Korina Converse</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1rem; }
+  nav { margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid #ccc2; }
+  nav a { margin-right: 1rem; }
+  h1, h2, h3 { line-height: 1.25; }
+  pre, code { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace; }
+  pre { background: #f4f4f4; padding: 0.75rem; overflow-x: auto; border-radius: 6px; }
+  @media (prefers-color-scheme: dark) { pre { background: #1f1f1f; } body { color: #eee; } a { color: #9ec1ff; } }
+  blockquote { border-left: 4px solid #8886; padding-left: 1rem; color: inherit; }
+  table { border-collapse: collapse; } th, td { border: 1px solid #8884; padding: 0.35rem 0.6rem; }
+</style>
+</head>
+<body>
+<nav>
+  <a href="index.html">Home</a>
+  <a href="Architecture.html">Architecture</a>
+  <a href="https://github.com/rgoza1996/Korina-Agent">Repo</a>
+  <a href="https://github.com/rgoza1996/Korina-Agent/issues">Issues</a>
+</nav>
+<h1 id="architecture-overview">Architecture Overview</h1>
+<p>Full source-grounded report: <a href="../refactor/architecture-report.md">docs/refactor/architecture-report.md</a></p>
+<h2 id="product-split">Product split</h2>
+<ul>
+<li><strong>Korina Converse</strong> — local-first voice/design chat channel for agents. It owns the human-facing loop: microphone, VAD, STT, response LLM, TTS, barge-in, interrupts, and permission prompts.</li>
+<li><strong>Korina Agent</strong> — local-first agent designed around Korina Converse's voice-input focus. It currently maintains state reports/events and is planned to grow into a fuller execution runtime.</li>
+</ul>
+<h2 id="runtime-shape">Runtime shape</h2>
+<pre><code class="language-text">Browser / Korina Converse UI
+  -&gt; FastAPI backend on :8001
+    -&gt; STT path: faster-whisper or compatible multimodal/audio LLM
+    -&gt; Response LLM path: local/OpenAI-compatible provider
+    -&gt; TTS path: Kokoro/OpenAI-compatible endpoint
+    -&gt; Agent side channel: /api/agent/* events, injections, permission answers
+</code></pre>
+<h2 id="current-implementation-highlights">Current implementation highlights</h2>
+<ul>
+<li>Python backend package under <code>korina/</code> with route modules and service modules.</li>
+<li>Browser frontend split into native ES modules under <code>Korina/js/</code>.</li>
+<li>Backend-owned provider registry exposed by <code>GET /api/capabilities</code>.</li>
+<li>Model catalog/capability helpers for endpoint-loaded models, local GGUFs, LM Studio catalogs, and mmproj sidecars.</li>
+<li>CI-safe pytest suite plus separate live regression smoke script.</li>
+</ul>
+<h2 id="main-follow-up-themes">Main follow-up themes</h2>
+<ol>
+<li>Formal agent protocol for third-party agents.</li>
+<li>Korina Agent execution/runtime layer beyond state reports.</li>
+<li>Composite readiness across backend, LLM, STT, TTS, ACK, and static assets.</li>
+<li>Portable install/config paths.</li>
+<li>Probe-backed model capabilities.</li>
+<li>Optional live/self-hosted regression tier.</li>
+<li>Public-doc vs internal-runbook cleanup.</li>
+</ol>
+<hr>
+<p><small>Source: <code>docs/wiki/</code> on <code>beta</code> branch. Generated for <a href="https://rgoza1996.github.io/Korina-Agent/">GitHub Pages</a>.</small></p>
+</body>
+</html>

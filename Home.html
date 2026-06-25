@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Home - Korina Agent / Korina Converse</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 880px; margin: 2rem auto; padding: 0 1rem; }
+  nav { margin-bottom: 2rem; padding-bottom: 1rem; border-bottom: 1px solid #ccc2; }
+  nav a { margin-right: 1rem; }
+  h1, h2, h3 { line-height: 1.25; }
+  pre, code { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace; }
+  pre { background: #f4f4f4; padding: 0.75rem; overflow-x: auto; border-radius: 6px; }
+  @media (prefers-color-scheme: dark) { pre { background: #1f1f1f; } body { color: #eee; } a { color: #9ec1ff; } }
+  blockquote { border-left: 4px solid #8886; padding-left: 1rem; color: inherit; }
+  table { border-collapse: collapse; } th, td { border: 1px solid #8884; padding: 0.35rem 0.6rem; }
+</style>
+</head>
+<body>
+<nav>
+  <a href="index.html">Home</a>
+  <a href="Architecture.html">Architecture</a>
+  <a href="https://github.com/rgoza1996/Korina-Agent">Repo</a>
+  <a href="https://github.com/rgoza1996/Korina-Agent/issues">Issues</a>
+</nav>
+<h1 id="korina-agent-korina-converse">Korina Agent / Korina Converse</h1>
+<p>Korina Converse is the local-first, voice-first design chat channel. It owns microphone input, VAD/endpointing, STT, response-LLM calls, TTS playback, barge-in, agent interrupts, and permission prompts.</p>
+<p>Korina Agent is the local-first agent built for that channel. Today it receives transcript deliveries, maintains compact state, emits background reports/events, and asks Converse to inject context or speak important/critical interrupts. The intended direction is for Converse to host Korina Agent plus other compatible agents such as Hermes Agent, OpenClaw, or another local/OpenAI-style agent.</p>
+<h2 id="key-repo-docs">Key repo docs</h2>
+<ul>
+<li><a href="../../README.md">README</a></li>
+<li><a href="../refactor/architecture-report.md">Current architecture report</a></li>
+<li><a href="../capabilities.md">Provider capability contract</a></li>
+<li><a href="../testing.md">Testing guide</a></li>
+</ul>
+<h2 id="architecture-backlog-mirrored-to-github-issues">Architecture backlog mirrored to GitHub Issues</h2>
+<ul>
+<li><a href="https://github.com/rgoza1996/Korina-Agent/issues/3">#3 Formalize Korina Converse agent protocol</a></li>
+<li><a href="https://github.com/rgoza1996/Korina-Agent/issues/4">#4 Finish Korina Agent local-first execution runtime</a></li>
+<li><a href="https://github.com/rgoza1996/Korina-Agent/issues/5">#5 Add composite readiness for local voice stack</a></li>
+<li><a href="https://github.com/rgoza1996/Korina-Agent/issues/6">#6 Make deployment paths, model roots, and local binaries portable</a></li>
+<li><a href="https://github.com/rgoza1996/Korina-Agent/issues/7">#7 Replace static model capability assumptions with probe-backed metadata</a></li>
+<li><a href="https://github.com/rgoza1996/Korina-Agent/issues/8">#8 Add optional live/self-hosted regression tier</a></li>
+<li><a href="https://github.com/rgoza1996/Korina-Agent/issues/9">#9 Audit public docs for environment-specific/private details</a></li>
+</ul>
+<h2 id="note-on-github-wiki">Note on GitHub Wiki</h2>
+<p>The GitHub wiki feature is enabled for the repository, but the <code>.wiki.git</code> repository was not available to clone or push during the 2026-06-25 docs pass. These <code>docs/wiki/</code> pages are the repo-backed fallback and can be copied directly into the GitHub Wiki once it is initialized from the web UI.</p>
+<hr>
+<p><small>Source: <code>docs/wiki/</code> on <code>beta</code> branch. Generated for <a href="https://rgoza1996.github.io/Korina-Agent/">GitHub Pages</a>.</small></p>
+</body>
+</html>
