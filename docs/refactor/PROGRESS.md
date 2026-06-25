@@ -3,8 +3,8 @@
 Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is completed and keep a short evidence note so future work can resume without reconstructing git history.
 
 **Branch:** `beta`
-**Current `beta` HEAD:** `e21fc2f` — `docs: blueprint branch policy is beta, not alpha` (docs-only; no code change)
-**Last code-touching commit:** `d3d6932` — `docs: mark Phase 2 complete in PROGRESS.md (2.4.2)`
+**Current `beta` HEAD:** `a29502d` — `docs: mark Phase 5 process supervision complete` (docs-only; no code change)
+**Last code-touching commit:** `cb60b4d` — `fix(start.sh): wait for ports to bind after systemctl start`
 **Last full verification:** 2026-06-23 on roggoz. `tests/regression_smoke.py` passed **38/38** with real `/api/chat` enabled; `/api/chat` returned HTTP 200 with a live LLM reply in 0.18s. OpenAPI exposes 20 paths (Phase 1 baseline 19 + `/api/capabilities`); all prior paths present, none removed. Provider activation works: `started: ['llama-server.service']`, `stopped: ['lmstudio', 'ollama']`.
 
 ## Phase 0 — Stabilization
