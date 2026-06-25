@@ -7,7 +7,6 @@ import soundfile as sf
 import subprocess
 import tempfile
 import time
-import torch
 
 from korina.config import (
     config_stt_llm_api_env,
@@ -32,13 +31,22 @@ from pathlib import Path
 from typing import Optional
 
 
+def cuda_available() -> bool:
+    """Return whether torch reports CUDA, without making torch a CI dependency."""
+    try:
+        import torch
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
 def normalize_device(requested: Optional[str], *, default_env: Optional[str] = None) -> str:
     value = (requested or default_env or '').strip().lower()
     if value in ('gpu', 'cuda'):
         return 'cuda'
     if value == 'cpu':
         return 'cpu'
-    return 'cuda' if torch.cuda.is_available() else 'cpu'
+    return 'cuda' if cuda_available() else 'cpu'
 
 def compute_type_for(device: str) -> str:
     if WHISPER_COMPUTE_TYPE:

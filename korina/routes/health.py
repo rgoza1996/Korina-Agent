@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-import torch
 from korina.config import (
     agent_base_url,
     agent_chat_url,
@@ -25,7 +24,7 @@ from korina.config import (
 )
 from korina.runtime import state
 from korina.services.ack_service import ack_files_for, ack_status
-from korina.services.whisper_service import compute_type_for, normalize_device
+from korina.services.whisper_service import compute_type_for, cuda_available, normalize_device
 from korina.util.paths import (
     LMSTUDIO_MODEL,
     PARTIAL_MIN_SECONDS,
@@ -43,6 +42,7 @@ router = APIRouter()
 @router.get('/api/health')
 def health():
     config = load_config()
+    has_cuda = cuda_available()
     return {
         'ok': True,
         'service': 'korina-voice-lab',
@@ -54,13 +54,13 @@ def health():
         'whisper_loaded_at_by_device': state.asr.loaded_at_by_device,
         'whisper_device': state.asr.device or normalize_device(None, default_env=WHISPER_DEVICE),
         'whisper_compute_type': state.asr.compute_type or compute_type_for(normalize_device(None, default_env=WHISPER_DEVICE)),
-        'cuda_available': torch.cuda.is_available(),
+        'cuda_available': has_cuda,
         'whisper_beam_size': WHISPER_BEAM_SIZE,
         'whisper_cpu_threads': WHISPER_CPU_THREADS,
         'partial_min_seconds': PARTIAL_MIN_SECONDS,
         'min_speech_ms': config_min_speech_ms(config),
         'partial_window_ms': config_partial_window_ms(config),
-        'cuda': torch.cuda.is_available(),
+        'cuda': has_cuda,
         'response_llm_provider': str(config.get('llm_provider') or 'llama.cpp'),
         'response_llm_base_url': config_llm_base_url(config),
         'response_llm_chat_url': config_llm_chat_url(config),

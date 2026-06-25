@@ -274,14 +274,19 @@ def config_partial_window_ms(config: Optional[dict] = None) -> int:
         return 1800
 
 
+def _reasoning_mode(value) -> str:
+    mode = str(value or 'off').strip().lower()
+    return mode if mode in {'on', 'off', 'auto'} else 'off'
+
+
 def config_llm_reasoning(config: Optional[dict] = None) -> str:
     config = config or load_config()
-    return 'on' if str(config.get('llm_reasoning') or 'off').strip().lower() == 'on' else 'off'
+    return _reasoning_mode(config.get('llm_reasoning'))
 
 
 def config_stt_llm_reasoning(config: Optional[dict] = None) -> str:
     config = config or load_config()
-    return 'on' if str(config.get('stt_llm_reasoning') or 'off').strip().lower() == 'on' else 'off'
+    return _reasoning_mode(config.get('stt_llm_reasoning'))
 
 
 

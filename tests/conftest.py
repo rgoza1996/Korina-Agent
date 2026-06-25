@@ -112,6 +112,9 @@ def reload_korina_modules():
         loaded = []
         ordered = ["korina.util.paths", *module_names]
         for name in ordered:
+            parent_name = name.rpartition('.')[0]
+            if parent_name and parent_name not in sys.modules:
+                importlib.import_module(parent_name)
             if name in sys.modules:
                 loaded.append(importlib.reload(sys.modules[name]))
             else:
