@@ -1,30 +1,142 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Issues - Korina Agent / Korina Converse</title>
-<style>body{font:16px/1.55 system-ui,-apple-system,sans-serif;max-width:880px;margin:2rem auto;padding:0 1rem}</style>
-</head><body><nav><a href="index.html">Home</a><a href="Architecture.html">Architecture</a><a href="Issues.html">Issues</a></nav><h1>Issues</h1>
-<table>
-<thead>
-<tr>
-<th style="text-align: right;">#</th>
-<th>Title</th>
-<th>Section</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: right;">#3</td>
-<td>Formalize Korina Converse agent protocol</td>
-<td>ARCH-1</td>
-</tr>
-<tr>
-<td style="text-align: right;">#4</td>
-<td>Finish Korina Agent local-first execution runtime</td>
-<td>ARCH-2</td>
-</tr>
-<tr>
-<td style="text-align: right;">#5</td>
-<td>Add composite readiness for local voice stack</td>
-<td>ARCH-3</td>
-</tr>
-</tbody>
-</table></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Korina Agent — Local-first voice AI">
+<title>Issues — Korina</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
+:root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--bg4:#21262d;--border:#30363d;--border2:#484f58;--cyan:#58a6ff;--teal:#3fb950;--purple:#bc8cff;--orange:#ffa657;--red:#f85149;--text:#e6edf3;--sub:#8b949e;--sub2:#6e7681;--code-bg:#161b22;--font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono,"JetBrains Mono",Menlo,monospace}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;font-size:16px}
+body{background:var(--bg);color:var(--text);font:var(--font);line-height:1.65;min-height:100vh}
+a{color:var(--cyan);text-decoration:none}a:hover{text-decoration:underline}
+img{max-width:100%;display:block;border-radius:8px}
+pre,code{font-family:var(--mono);font-size:0.875em}
+code{background:var(--code-bg);padding:0.15em 0.4em;border-radius:4px;color:var(--cyan)}
+pre{background:var(--code-bg);padding:1rem 1.25rem;border-radius:8px;overflow-x:auto;border:1px solid var(--border);line-height:1.5}
+pre code{background:none;padding:0;font-size:1em}
+blockquote{border-left:3px solid var(--border2);padding-left:1rem;color:var(--sub);font-style:italic}
+table{width:100%;border-collapse:collapse;font-size:0.9em}
+th,td{border:1px solid var(--border);padding:0.5rem 0.75rem;text-align:left}
+th{background:var(--bg4);color:var(--text);font-weight:600}
+tr:nth-child(even){background:var(--bg2)}
+hr{border:none;border-top:1px solid var(--border);margin:2rem 0}
+h1,h2,h3,h4,h5,h6{line-height:1.3;font-weight:700;margin-top:1.75em;margin-bottom:0.5em;color:var(--text)}
+h1{font-size:2rem;border-bottom:1px solid var(--border);padding-bottom:0.5rem;margin-top:0}
+h2{font-size:1.4rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem}
+h3{font-size:1.15rem;color:var(--cyan)}
+h4{font-size:1rem;color:var(--sub)}
+.wrap{max-width:1100px;margin:0 auto;padding:0 1.5rem}
+.hero-svg{width:100%;border-radius:12px;border:1px solid var(--border);margin:1.5rem 0}
+.chart-img{width:100%;border-radius:10px;border:1px solid var(--border);margin:1.5rem 0}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1.5rem 0}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;transition:border-color 0.2s}
+.card:hover{border-color:var(--border2)}
+.card h3{color:var(--cyan);margin-top:0;font-size:1.05em}
+.card .card-meta{color:var(--sub2);font-size:0.8em;font-family:var(--mono);margin-bottom:0.5rem}
+.card p{color:var(--sub);font-size:0.9em}
+.card .card-footer{margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)}
+.site-nav{position:sticky;top:0;z-index:100;background:rgba(13,17,23,0.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+.site-nav .wrap{display:flex;align-items:center;gap:1.5rem;padding-top:0.75rem;padding-bottom:0.75rem}
+.site-logo{display:flex;align-items:center;gap:0.6rem;font-weight:700;font-size:1.05em;color:var(--text);flex-shrink:0}
+.site-logo svg{width:28px;height:28px}
+.site-nav-links{display:flex;gap:1.25rem;flex-wrap:wrap}
+.site-nav-links a{padding:0.2rem 0;color:var(--sub);font-size:0.9em;font-weight:500}
+.site-nav-links a:hover,.site-nav-links a.active{color:var(--text);text-decoration:none}
+.nav-right{margin-left:auto;display:flex;gap:0.75rem;align-items:center}
+.nav-btn{display:inline-flex;align-items:center;gap:0.35rem;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:0.3em 0.8em;font-size:0.85em;color:var(--text);font-weight:500}
+.nav-btn:hover{background:var(--border);text-decoration:none}
+.quick-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin:2rem 0}
+.quick-link{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.35rem}
+.quick-link:hover{border-color:var(--cyan);text-decoration:none}
+.quick-link-title{font-weight:700;color:var(--text);font-size:1em}
+.quick-link-desc{color:var(--sub);font-size:0.85em}
+.issue-tag{display:inline-block;background:#161b22;border:1px solid var(--border);border-radius:6px;padding:0.2em 0.6em;font-size:0.8em;font-family:var(--mono);margin:0.2em}
+.issue-tag a{color:var(--cyan)}
+.issue-tag.priority-high{border-color:var(--red);color:var(--red)}
+.issue-tag.priority-med{border-color:var(--orange);color:var(--orange)}
+.issue-tag.priority-low{border-color:var(--teal);color:var(--teal)}
+footer{text-align:center;color:var(--sub2);font-size:0.8em;padding:2rem 0;border-top:1px solid var(--border);margin-top:3rem}
+footer code{color:var(--sub2)}
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="wrap">
+    <a href="index.html" class="site-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+        <rect width="32" height="32" rx="7" fill="#0d1117"/>
+        <circle cx="16" cy="16" r="10" fill="none" stroke="#58a6ff" stroke-width="2"/>
+        <circle cx="16" cy="16" r="5" fill="#bc8cff"/>
+        <path d="M10 16 Q13 11 16 16 Q19 21 22 16" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      Korina
+    </a>
+    <div class="site-nav-links">
+      <a href="index.html" class="active">Home</a>
+      <a href="Architecture.html">Architecture</a>
+      <a href="Issues.html">Issues</a>
+      <a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
+    </div>
+    <div class="nav-right">
+      <a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">⚠ Issues</a>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+  <h1>Architecture Backlog</h1>
+  <p style="color:var(--sub);margin-bottom:1.5rem">
+    7 open items from the 2026-06-25 architecture review.
+    Each maps to a GitHub Issue on <a href="https://github.com/rgoza1996/Korina-Agent/issues">rgoza1996/Korina-Agent</a>.
+  </p>
+
+  <table>
+    <thead><tr><th>#</th><th>Title</th><th>Priority</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><td><span class="issue-tag priority-high"><a href="https://github.com/rgoza1996/Korina-Agent/issues/3">#3</a></span></td><td>Formalize Korina Converse agent protocol</td><td><span class="issue-tag priority-high">high</span></td><td>ARCH-1</td></tr>
+      <tr><td><span class="issue-tag priority-high"><a href="https://github.com/rgoza1996/Korina-Agent/issues/4">#4</a></span></td><td>Finish Korina Agent local-first execution runtime</td><td><span class="issue-tag priority-high">high</span></td><td>ARCH-2</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/5">#5</a></span></td><td>Add composite readiness for local voice stack</td><td><span class="issue-tag priority-med">medium</span></td><td>ARCH-3</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/6">#6</a></span></td><td>Make deployment paths, model roots, and local binaries portable</td><td><span class="issue-tag priority-med">medium</span></td><td>ARCH-4</td></tr>
+      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/7">#7</a></span></td><td>Replace static model capability assumptions with probe-backed metadata</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-5</td></tr>
+      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/8">#8</a></span></td><td>Add optional live/self-hosted regression tier</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-6</td></tr>
+      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/9">#9</a></span></td><td>Audit public docs for environment-specific/private details</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-7</td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:2rem">Issue Details</h2>
+
+  <h3>#3 — Formalize Korina Converse agent protocol <span class="issue-tag priority-high">high</span> <span class="issue-tag">ARCH-1</span></h3>
+  <p>Define a versioned external-agent contract for transcript delivery, event stream format, injection vs. interrupt semantics, permission-request/answer flow, priorities, sanitization, and attached-agent capability discovery. <em>Goal: make Korina Converse a reusable local-first design chat channel for Korina Agent, Hermes Agent, OpenClaw, or another compatible agent.</em></p>
+
+  <h3>#4 — Finish Korina Agent local-first execution runtime <span class="issue-tag priority-high">high</span> <span class="issue-tag">ARCH-2</span></h3>
+  <p>Korina Agent currently emits state reports/events. Add: tool/action adapters, durable task state, side-effect permission gates, project trust enforcement, transport abstraction, and a clean separation between reporting to Converse and acting on the world.</p>
+
+  <h3>#5 — Add composite readiness for local voice stack <span class="issue-tag priority-med">medium</span> <span class="issue-tag">ARCH-3</span></h3>
+  <p>Expose one clear readiness contract covering backend, selected response LLM, STT backend/degraded fallback, TTS endpoint, ACK cache state, and served frontend asset freshness. <em>Removes ambiguity where the FastAPI backend is healthy but the selected local LLM service is stopped or still loading.</em></p>
+
+  <h3>#6 — Make deployment paths, model roots, and local binaries portable <span class="issue-tag priority-med">medium</span> <span class="issue-tag">ARCH-4</span></h3>
+  <p>Move local runtime paths, model roots, and service binary assumptions behind config/env settings. Document a generic install contract and keep private host paths/specs out of public-facing docs.</p>
+
+  <h3>#7 — Replace static model capability assumptions with probe-backed metadata <span class="issue-tag priority-low">low</span> <span class="issue-tag">ARCH-5</span></h3>
+  <p>Turn model capability metadata into a probe-backed layer that records model source, sidecar/mmproj presence, audio-input support, last probe status/error, and suggested fallback.</p>
+
+  <h3>#8 — Add optional live/self-hosted regression tier <span class="issue-tag priority-low">low</span> <span class="issue-tag">ARCH-6</span></h3>
+  <p>Keep GitHub Actions lightweight, but add an opt-in live regression job/script for a local/self-hosted runner with real services and model weights. Publish concise readiness + smoke output without making normal CI depend on local services.</p>
+
+  <h3>#9 — Audit public docs for environment-specific/private details <span class="issue-tag priority-low">low</span> <span class="issue-tag">ARCH-7</span></h3>
+  <p>README and the current architecture report are scrubbed, but historical refactor plans intentionally contain environment-specific operational notes. Decide which docs are public-facing vs internal runbooks, then scrub or clearly mark internal-only docs.</p>
+</div>
+
+
+<footer>
+  <div class="wrap">
+    <p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
+    <p><code>docs/wiki/</code> on <code>beta</code> branch &middot; Generated 2026-06-25</p>
+  </div>
+</footer>
+</body>
+</html>
