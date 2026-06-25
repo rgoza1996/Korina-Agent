@@ -3,7 +3,7 @@
 Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is completed and keep a short evidence note so future work can resume without reconstructing git history.
 
 **Branch:** `beta`
-**Current `beta` HEAD:** `04e5cde` — `docs: expand Phase 6 pytest and CI plan` (docs-only; no code change)
+**Current `beta` HEAD:** `77c40bc` — `ci: add pytest workflow`
 **Last code-touching commit:** `cb60b4d` — `fix(start.sh): wait for ports to bind after systemctl start`
 **Last full verification:** 2026-06-23 on roggoz. `tests/regression_smoke.py` passed **38/38** with real `/api/chat` enabled; `/api/chat` returned HTTP 200 with a live LLM reply in 0.18s. OpenAPI exposes 20 paths (Phase 1 baseline 19 + `/api/capabilities`); all prior paths present, none removed. Provider activation works: `started: ['llama-server.service']`, `stopped: ['lmstudio', 'ollama']`.
 
@@ -90,7 +90,11 @@ Phase 5 result: Korina Voice Lab and Kokoro streaming TTS are both managed by `s
 
 ## Phase 6 — Testing + CI
 
-- [ ] 6.1 scaffold
-- [ ] 6.2 backend tests
-- [ ] 6.3 frontend smoke
-- [ ] 6.4 CI
+Phase 6 result: pytest and CI are live on `beta`. The repo now has editable-install packaging (`pyproject.toml`), isolated pytest fixtures that avoid live `/home/roggoz/Korina` state, backend unit tests, FastAPI TestClient API tests, static frontend smoke tests, a GitHub Actions pytest workflow, and testing docs. Live roggoz regression was synced source → runtime (including `Korina/js/`) and verified against the running service.
+
+- [✓] 6.1 scaffold — added `pyproject.toml` with `.[test]`, `tests/conftest.py`, temp `KORINA_APP_DIR`, temp model roots, and ACK startup monkeypatching.
+- [✓] 6.2 backend tests — added unit coverage for config migrations/load-save/audio probe cache, provider synchronization and model resolution, model capability/catalog detection, audio probe fallback, agent priority/sanitization, voice-reply formatting, and labels/slug helpers.
+- [✓] 6.3 API tests — added TestClient coverage for app/static mounts, `/api/config`, `/api/capabilities`, `/api/models` capability fields, `/api/audio-probe`, provider activation compatibility errors, and validation failures.
+- [✓] 6.4 frontend smoke — added static tests for module entrypoint, stylesheet link, module import integrity, fragile UI marker IDs, adaptive barge-in threshold names, and the no-refresh-on-focus model-dropdown regression.
+- [✓] 6.5 CI — added `.github/workflows/test.yml` for Python 3.10/3.11/3.12 and documented local pytest vs. live roggoz regression in `docs/testing.md`.
+- [✓] 6.6 live verification — source → runtime sync completed; `/api/health` returned `ok: true`; `/js/app.js`, `/js/state.js`, `/js/providers-ui.js`, `/js/capability-filter.js`, and `/styles.css` all returned HTTP 200; pytest passed **55/55** (`25` warnings); no-chat/no-transcribe regression smoke passed **48/48**. Full chat/transcribe regression was skipped because `llama-server.service` was inactive and `:8080` was unreachable.
