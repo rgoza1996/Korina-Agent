@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Issues — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Providers — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--bg4:#21262d;--border:#30363d;--border2:#484f58;--cyan:#58a6ff;--teal:#3fb950;--purple:#bc8cff;--orange:#ffa657;--red:#f85149;--text:#e6edf3;--sub:#8b949e;--sub2:#6e7681;--code-bg:#161b22;--font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono,"JetBrains Mono",Menlo,monospace}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth;font-size:16px}
@@ -21,7 +21,6 @@ h2{font-size:1.4rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem}
 h3{font-size:1.15rem;color:var(--cyan)}
 h4{font-size:1rem;color:var(--sub)}
 .wrap{max-width:1100px;margin:0 auto;padding:0 1.5rem}
-.hero-svg{width:100%;border-radius:12px;border:1px solid var(--border);margin:1.5rem 0}
 .chart-img{width:100%;border-radius:10px;border:1px solid var(--border);margin:1.5rem 0}
 .card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1.5rem 0}
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;transition:border-color 0.2s}
@@ -29,12 +28,13 @@ h4{font-size:1rem;color:var(--sub)}
 .card h3{color:var(--cyan);margin-top:0;font-size:1.05em}
 .card p{color:var(--sub);font-size:0.9em}
 .card .card-footer{margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)}
-.card a{color:var(--cyan);font-size:0.85em}
-.quick-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin:2rem 0}
-.quick-link{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.35rem}
-.quick-link:hover{border-color:var(--cyan);text-decoration:none}
-.quick-link-title{font-weight:700;color:var(--text);font-size:1em}
-.quick-link-desc{color:var(--sub);font-size:0.85em}
+.back-link{display:inline-flex;align-items:center;gap:0.35rem;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:0.3em 0.8em;font-size:0.85em;color:var(--sub);margin-bottom:1.5rem}
+.back-link:hover{border-color:var(--cyan);color:var(--text);text-decoration:none}
+.issue-tag{display:inline-block;background:#161b22;border:1px solid var(--border);border-radius:6px;padding:0.2em 0.6em;font-size:0.8em;font-family:var(--mono);margin:0.2em}
+.issue-tag a{color:var(--cyan)}
+.issue-tag.priority-high{border-color:var(--red);color:var(--red)}
+.issue-tag.priority-med{border-color:var(--orange);color:var(--orange)}
+.issue-tag.priority-low{border-color:var(--teal);color:var(--teal)}
 footer{text-align:center;color:var(--sub2);font-size:0.8em;padding:2rem 0;border-top:1px solid var(--border);margin-top:3rem}
 footer code{color:var(--sub2)}
 .site-nav{position:sticky;top:0;z-index:100;background:rgba(13,17,23,0.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
@@ -65,27 +65,43 @@ footer code{color:var(--sub2)}
 <a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
 </div>
 <div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">⚠ Issues</a></div>
-</div></nav>
-<div class="wrap">
-  <h1>Architecture Backlog</h1>
-  <p style="color:var(--sub);margin-bottom:1.5rem">
-    7 open items from the 2026-06-25 architecture review.
-    Each maps to a GitHub Issue on <a href="https://github.com/rgoza1996/Korina-Agent/issues">rgoza1996/Korina-Agent</a>.
-  </p>
-  <table>
-    <thead><tr><th>#</th><th>Title</th><th>Priority</th><th>Section</th></tr></thead>
-    <tbody>
-      <tr><td><span class="issue-tag priority-high"><a href="https://github.com/rgoza1996/Korina-Agent/issues/3">#3</a></span></td><td>Formalize Korina Converse agent protocol</td><td><span class="issue-tag priority-high">high</span></td><td>ARCH-1</td></tr>
-      <tr><td><span class="issue-tag priority-high"><a href="https://github.com/rgoza1996/Korina-Agent/issues/4">#4</a></span></td><td>Finish Korina Agent local-first execution runtime</td><td><span class="issue-tag priority-high">high</span></td><td>ARCH-2</td></tr>
-      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/5">#5</a></span></td><td>Add composite readiness for local voice stack</td><td><span class="issue-tag priority-med">medium</span></td><td>ARCH-3</td></tr>
-      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/6">#6</a></span></td><td>Make deployment paths, model roots, and local binaries portable</td><td><span class="issue-tag priority-med">medium</span></td><td>ARCH-4</td></tr>
-      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/7">#7</a></span></td><td>Replace static model capability assumptions with probe-backed metadata</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-5</td></tr>
-      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/8">#8</a></span></td><td>Add optional live/self-hosted regression tier</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-6</td></tr>
-      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/9">#9</a></span></td><td>Audit public docs for environment-specific/private details</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-7</td></tr>
-    </tbody>
-  </table>
+</div></nav><div class="wrap"><a href="index.html" class="back-link">&#8592; Back to Home</a>
+<h1>Provider Architecture</h1>
+<p style="color:var(--sub);font-size:1.05em;margin-bottom:1.5rem">
+Provider metadata is <strong>backend-owned</strong> in <code>korina/util/presets.py</code>
+and exposed by <code>GET /api/capabilities</code>. The frontend reads from this
+registry — no JS file may hardcode provider rules.
+</p>
+<h2>Response-LLM Providers</h2>
+<table>
+<thead><tr><th>Provider</th><th>Default URL</th><th>Editable</th><th>Manageable</th><th>Local</th></tr></thead>
+<tbody>
+<tr><td><code>llama.cpp</code></td><td><code>http://127.0.0.1:8080/v1</code></td><td>No</td><td>Yes</td><td>Yes</td></tr>
+<tr><td><code>lmstudio</code></td><td><code>http://127.0.0.1:1234/v1</code></td><td>No</td><td>Yes</td><td>Yes</td></tr>
+<tr><td><code>ollama</code></td><td><code>http://127.0.0.1:11434/v1</code></td><td>No</td><td>Yes</td><td>Yes</td></tr>
+<tr><td><code>openai-compatible</code></td><td>(empty)</td><td>Yes</td><td>No</td><td>No</td></tr>
+</tbody>
+</table>
+<h2>Agent Providers</h2>
+<table>
+<thead><tr><th>Provider</th><th>Default URL</th><th>Editable</th><th>Agent-only</th></tr></thead>
+<tbody>
+<tr><td><code>openai-compatible</code></td><td>(empty)</td><td>Yes</td><td>No</td></tr>
+<tr><td><code>anthropic</code></td><td>(empty)</td><td>Yes</td><td>Yes</td></tr>
+</tbody>
+</table>
+<h2>Capability Contract</h2>
+<p>The full contract is documented in <a href="https://github.com/rgoza1996/Korina-Agent/blob/beta/docs/capabilities.md"><code>docs/capabilities.md</code></a>. Key invariant: <strong>editable base URL iff</strong> <code>editable_base_url: true</code>.</p>
+<h2>Local Provider Lifecycle</h2>
+<p>When a <code>manageable: true</code> provider is selected, <code>POST /api/llm/provider/activate</code> starts/stops the local server. The activation response includes <code>started</code> and <code>stopped</code> lists so the UI can show what changed.</p>
+<h2>Adding a New Provider</h2>
+<ol>
+<li>Add an entry to <code>PROVIDER_CAPABILITIES</code> in <code>korina/util/presets.py</code>.</li>
+<li>Add <code>start_*/stop_*</code> branches in <code>korina/services/provider_manager.py</code> if the provider is local.</li>
+<li>Run <code>pytest</code> and <code>python3 tests/regression_smoke.py</code>.</li>
+<li>Commit on <code>beta</code>.</li>
+</ol>
 </div>
-
 <footer><div class="wrap">
 <p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
 <p><code>docs/wiki/</code> on <code>beta</code> branch &middot; Generated 2026-06-25</p>

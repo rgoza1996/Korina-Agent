@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Architecture — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><style>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Agent Side Channel — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--bg4:#21262d;--border:#30363d;--border2:#484f58;--cyan:#58a6ff;--teal:#3fb950;--purple:#bc8cff;--orange:#ffa657;--red:#f85149;--text:#e6edf3;--sub:#8b949e;--sub2:#6e7681;--code-bg:#161b22;--font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono,"JetBrains Mono",Menlo,monospace}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth;font-size:16px}
@@ -21,7 +21,6 @@ h2{font-size:1.4rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem}
 h3{font-size:1.15rem;color:var(--cyan)}
 h4{font-size:1rem;color:var(--sub)}
 .wrap{max-width:1100px;margin:0 auto;padding:0 1.5rem}
-.hero-svg{width:100%;border-radius:12px;border:1px solid var(--border);margin:1.5rem 0}
 .chart-img{width:100%;border-radius:10px;border:1px solid var(--border);margin:1.5rem 0}
 .card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1.5rem 0}
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;transition:border-color 0.2s}
@@ -29,12 +28,13 @@ h4{font-size:1rem;color:var(--sub)}
 .card h3{color:var(--cyan);margin-top:0;font-size:1.05em}
 .card p{color:var(--sub);font-size:0.9em}
 .card .card-footer{margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)}
-.card a{color:var(--cyan);font-size:0.85em}
-.quick-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin:2rem 0}
-.quick-link{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.35rem}
-.quick-link:hover{border-color:var(--cyan);text-decoration:none}
-.quick-link-title{font-weight:700;color:var(--text);font-size:1em}
-.quick-link-desc{color:var(--sub);font-size:0.85em}
+.back-link{display:inline-flex;align-items:center;gap:0.35rem;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:0.3em 0.8em;font-size:0.85em;color:var(--sub);margin-bottom:1.5rem}
+.back-link:hover{border-color:var(--cyan);color:var(--text);text-decoration:none}
+.issue-tag{display:inline-block;background:#161b22;border:1px solid var(--border);border-radius:6px;padding:0.2em 0.6em;font-size:0.8em;font-family:var(--mono);margin:0.2em}
+.issue-tag a{color:var(--cyan)}
+.issue-tag.priority-high{border-color:var(--red);color:var(--red)}
+.issue-tag.priority-med{border-color:var(--orange);color:var(--orange)}
+.issue-tag.priority-low{border-color:var(--teal);color:var(--teal)}
 footer{text-align:center;color:var(--sub2);font-size:0.8em;padding:2rem 0;border-top:1px solid var(--border);margin-top:3rem}
 footer code{color:var(--sub2)}
 .site-nav{position:sticky;top:0;z-index:100;background:rgba(13,17,23,0.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
@@ -65,47 +65,37 @@ footer code{color:var(--sub2)}
 <a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
 </div>
 <div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">⚠ Issues</a></div>
-</div></nav>
-<div class="wrap">
-  <h1>Architecture Overview</h1>
-  <p style="color:var(--sub);margin-bottom:1rem">
-    Full source-grounded report:
-    <a href="https://github.com/rgoza1996/Korina-Agent/blob/beta/docs/refactor/architecture-report.md"><code>docs/refactor/architecture-report.md</code></a>
-    on <code>beta</code>.
-  </p>
-  <img class="chart-img" src="arch_diagram.png" alt="Korina system architecture" loading="lazy">
-  <hr>
-  <h2 id="product-split">Product Split</h2>
-<p><strong>Korina Converse</strong> — the local-first, voice-first design chat channel. It owns the human-facing loop: microphone input, VAD/endpointing, STT, response-LLM calls, TTS playback, barge-in, agent interrupts, and permission prompts. Converse is intended to be a channel that can host multiple agents: Korina Agent, Hermes Agent, OpenClaw, or another compatible local/OpenAI-style agent.</p>
-<p><strong>Korina Agent</strong> — the local-first agent built for that channel. Today it receives transcript deliveries, maintains compact state, emits background reports/events, and asks Converse to inject context or speak important/critical interrupts.</p>
-<h2 id="runtime-shape">Runtime Shape</h2>
-<p>Korina Converse ↔ Korina Agent ↔ external agents all share one local FastAPI backend on port 8001.</p>
-<h2 id="current-implementation-highlights">Current Implementation Highlights</h2>
+</div></nav><div class="wrap"><a href="index.html" class="back-link">&#8592; Back to Home</a>
+<h1>Agent Side Channel</h1>
+<p style="color:var(--sub);font-size:1.05em;margin-bottom:1.5rem">
+Korina Converse is designed as a <strong>reusable voice/design chat channel for multiple agents</strong>.
+The side channel exposes a clean protocol so Korina Agent, Hermes Agent, OpenClaw,
+or any OpenAI-compatible agent can attach without being coupled to Korina's internal service code.
+</p>
+<h2>Protocol Overview</h2>
+<table>
+<thead><tr><th>Direction</th><th>Endpoint</th><th>Payload</th></tr></thead>
+<tbody>
+<tr><td>Converse to Agent</td><td><code>POST /api/agent/transcript</code></td><td>Transcript delta, reason, turn count, delivery mode</td></tr>
+<tr><td>Agent to Converse</td><td><code>GET /api/agent/events</code></td><td>Event stream: state_report, permission_request, agent_status, agent_error</td></tr>
+<tr><td>Converse to Agent</td><td><code>POST /api/agent/permission-answer</code></td><td>User answer to a permission request</td></tr>
+<tr><td>Either</td><td><code>POST /api/agent/reset</code></td><td>Clear agent state and events</td></tr>
+</tbody>
+</table>
+<h2>Event Priority Levels</h2>
 <ul>
-<li><strong>Python backend package</strong> under <code>korina/</code> with 10 route modules and 9 service modules.</li>
-<li><strong>Browser frontend</strong> split into native ES modules under <code>Korina/js/</code> (17 modules, 2333 lines).</li>
-<li><strong>Backend-owned provider registry</strong> exposed by <code>GET /api/capabilities</code>.</li>
-<li><strong>Model catalog/capability helpers</strong> for endpoint-loaded models, local GGUFs, LM Studio catalogs, and mmproj sidecars.</li>
-<li><strong>CI-safe pytest suite</strong> (81 tests across unit/API/static layers) plus separate live regression smoke script.</li>
-<li><strong>GitHub Actions</strong> workflow running pytest on Python 3.10 / 3.11 / 3.12.</li>
+<li><code>normal</code> — Stored as hidden next-reply injection in Converse history.</li>
+<li><code>important</code> — Spoken by Converse as a voice interrupt.</li>
+<li><code>critical</code> — Spoken immediately; bypasses cooldown. Permission requests are always critical.</li>
 </ul>
-<h2 id="main-follow-up-themes">Main Follow-up Themes</h2>
-<h3 id="1-formal-agent-protocol-for-third-party-agents">1. Formal Agent Protocol for Third-Party Agents</h3>
-<p>Define a versioned external-agent contract for transcript delivery, event stream format, injection vs. interrupt semantics, permission-request/answer flow, priorities, sanitization, and attached-agent capability discovery.</p>
-<h3 id="2-korina-agent-executionruntime-layer-beyond-state-reports">2. Korina Agent Execution/runtime Layer Beyond State Reports</h3>
-<p>Korina Agent currently emits state reports/events. Add: tool/action adapters, durable task state, side-effect permission gates, project trust enforcement, transport abstraction.</p>
-<h3 id="3-composite-readiness-across-backend-llm-stt-tts-ack">3. Composite Readiness Across Backend, LLM, STT, TTS, ACK</h3>
-<p>One clear readiness contract covering backend, selected response LLM, STT backend/degraded fallback, TTS endpoint, ACK cache state, and served frontend asset freshness.</p>
-<h3 id="4-portable-installconfig-paths">4. Portable Install/config Paths</h3>
-<p>Move local runtime paths, model roots, and service binary assumptions behind config/env settings. Document a generic install contract.</p>
-<h3 id="5-probe-backed-model-capabilities">5. Probe-backed Model Capabilities</h3>
-<p>Turn model capability metadata into a probe-backed layer recording model source, sidecar/mmproj presence, audio-input support, last probe status/error.</p>
-<h3 id="6-optional-liveself-hosted-regression-tier">6. Optional Live/Self-hosted Regression Tier</h3>
-<p>Add an opt-in live regression job/script for a local/self-hosted runner with real services and model weights.</p>
-<h3 id="7-public-doc-vs-internal-runbook-cleanup">7. Public-doc vs Internal-runbook Cleanup</h3>
-<p>Scrub or clearly mark internal-only docs. README and architecture report are already clean.</p>
+<h2>Open Questions for Third-Party Agents</h2>
+<ul>
+<li>What is the exact transcript delivery payload shape for external agents?</li>
+<li>How does an external agent signal injection vs. interrupt priority?</li>
+<li>What is the capability discovery contract for an attached agent?</li>
+</ul>
+<p>See <a href="https://github.com/rgoza1996/Korina-Agent/issues/3">Issue #3</a> for the full formalization backlog.</p>
 </div>
-
 <footer><div class="wrap">
 <p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
 <p><code>docs/wiki/</code> on <code>beta</code> branch &middot; Generated 2026-06-25</p>
