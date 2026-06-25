@@ -2,7 +2,7 @@
 
 > Companion to `architecture-report.md`. Reads that first for the "why". This document is the "what" and the "in what order".
 
-**Status:** in progress — Phase 0 (stabilization), Phase 1 (backend modularization), and Phase 2 (single source of truth) are complete on `beta`. Phase 3+ remain to be planned and executed. See `docs/refactor/PROGRESS.md` for the commit-by-commit audit trail.
+**Status:** in progress — Phases 0–5 are complete on `beta`; Phase 6 (pytest + CI) is planned and next to execute. See `docs/refactor/PROGRESS.md` for the commit-by-commit audit trail.
 **Target branch:** `beta` (refactor work lands on `beta`; `alpha` is the stable branch from before the refactor series started. Per user direction, the refactor series lives on `beta` until release — see `docs/refactor/PROGRESS.md` for what has actually landed and on which branch.)
 **Default principle:** **every refactor step is behavior-preserving** unless the step title says otherwise. If a step changes behavior, it ships in its own commit with tests.
 
