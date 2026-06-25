@@ -35,6 +35,16 @@ h4{font-size:1rem;color:var(--sub)}
 .quick-link:hover{border-color:var(--cyan);text-decoration:none}
 .quick-link-title{font-weight:700;color:var(--text);font-size:1em}
 .quick-link-desc{color:var(--sub);font-size:0.85em}
+.req-table th{background:var(--bg3)}
+.req-tier{padding:0.5rem 0.75rem;border-radius:6px;border:1px solid var(--border);margin:0.25rem 0;background:var(--bg2)}
+.req-tier.minimal{background:#1a1a0d;border-color:#3f3f00}
+.req-tier.basic{background:#0d1a0d;border-color:#00b848}
+.req-tier.good{background:#0d1117;border-color:var(--cyan)}
+.tier-label{display:inline-block;font-weight:700;font-size:0.8em;padding:0.15em 0.6em;border-radius:4px;margin-right:0.5em}
+.tier-label.minimal{background:#3f3f00;color:#e6edf3}
+.tier-label.basic{background:#003b10;color:#e6edf3}
+.tier-label.good{background:#0d2540;color:var(--cyan)}
+.req-note{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:1rem;margin:1rem 0;font-size:0.9em;color:var(--sub)}
 footer{text-align:center;color:var(--sub2);font-size:0.8em;padding:2rem 0;border-top:1px solid var(--border);margin-top:3rem}
 footer code{color:var(--sub2)}
 .site-nav{position:sticky;top:0;z-index:100;background:rgba(13,17,23,0.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
@@ -47,6 +57,13 @@ footer code{color:var(--sub2)}
 .nav-right{margin-left:auto;display:flex;gap:0.75rem;align-items:center}
 .nav-btn{display:inline-flex;align-items:center;gap:0.35rem;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:0.3em 0.8em;font-size:0.85em;color:var(--text);font-weight:500}
 .nav-btn:hover{background:var(--border);text-decoration:none}
+.back-link{display:inline-flex;align-items:center;gap:0.35rem;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:0.3em 0.8em;font-size:0.85em;color:var(--sub);margin-bottom:1.5rem}
+.back-link:hover{border-color:var(--cyan);color:var(--text);text-decoration:none}
+.issue-tag{display:inline-block;background:#161b22;border:1px solid var(--border);border-radius:6px;padding:0.2em 0.6em;font-size:0.8em;font-family:var(--mono);margin:0.2em}
+.issue-tag a{color:var(--cyan)}
+.issue-tag.priority-high{border-color:var(--red);color:var(--red)}
+.issue-tag.priority-med{border-color:var(--orange);color:var(--orange)}
+.issue-tag.priority-low{border-color:var(--teal);color:var(--teal)}
 </style></head><body>
 <nav class="site-nav"><div class="wrap">
 <a href="index.html" class="site-logo">
@@ -90,14 +107,14 @@ footer code{color:var(--sub2)}
     </g>
     <text x="450" y="95" font-family="system-ui,-apple-system,sans-serif" font-size="40" font-weight="800" fill="#e6edf3" text-anchor="middle">Korina Agent</text>
     <text x="450" y="128" font-family="system-ui,-apple-system,sans-serif" font-size="17" fill="#58a6ff" text-anchor="middle" font-weight="500">Local-First Voice AI for Design, Code &amp; Collaboration</text>
-    <rect x="155" y="148" width="148" height="30" rx="8" fill="#21262d" stroke="#3fb950" stroke-width="1"/>
-    <text x="229" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#3fb950" text-anchor="middle">★ 100% Local</text>
-    <rect x="318" y="148" width="125" height="30" rx="8" fill="#21262d" stroke="#58a6ff" stroke-width="1"/>
-    <text x="380" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#58a6ff" text-anchor="middle">⚡ No Cloud</text>
-    <rect x="458" y="148" width="138" height="30" rx="8" fill="#21262d" stroke="#bc8cff" stroke-width="1"/>
-    <text x="527" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#bc8cff" text-anchor="middle">🗣 Voice-Native</text>
-    <rect x="611" y="148" width="155" height="30" rx="8" fill="#21262d" stroke="#ffa657" stroke-width="1"/>
-    <text x="688" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#ffa657" text-anchor="middle">🤖 Agent-Ready</text>
+    <rect x="120" y="148" width="168" height="30" rx="8" fill="#21262d" stroke="#58a6ff" stroke-width="1"/>
+    <text x="204" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#58a6ff" text-anchor="middle">⚡ Local-First</text>
+    <rect x="303" y="148" width="135" height="30" rx="8" fill="#21262d" stroke="#bc8cff" stroke-width="1"/>
+    <text x="370" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#bc8cff" text-anchor="middle">🗣 Voice-Native</text>
+    <rect x="453" y="148" width="148" height="30" rx="8" fill="#21262d" stroke="#ffa657" stroke-width="1"/>
+    <text x="527" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#ffa657" text-anchor="middle">🤖 Agent-Ready</text>
+    <rect x="616" y="148" width="160" height="30" rx="8" fill="#21262d" stroke="#8b949e" stroke-width="1"/>
+    <text x="696" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#8b949e" text-anchor="middle">☁️ Cloud Optional</text>
     <text x="450" y="212" font-family="system-ui,-apple-system,sans-serif" font-size="12.5" fill="#8b949e" text-anchor="middle">Browser UI · faster-whisper STT · Response LLM · Kokoro TTS · Agent Side Channel</text>
     <line x1="120" y1="228" x2="780" y2="228" stroke="#30363d" stroke-width="1" opacity="0.5"/>
     <text x="860" y="248" font-family="ui-monospace,monospace" font-size="10" fill="#484f58" text-anchor="end">beta · 2026-06</text>
@@ -109,7 +126,8 @@ footer code{color:var(--sub2)}
   <p style="font-size:1.1em;color:var(--sub);max-width:720px;margin:0.5rem 0 1.5rem">
     Korina is two related systems sharing one local runtime. <strong>Korina Converse</strong> is the
     voice-first design chat channel. <strong>Korina Agent</strong> is the local-first agent built for it.
-    Both run entirely on your hardware — no cloud dependency, no per-turn API costs.
+    Korina is designed to keep your voice data and inference on your own hardware —
+    but it can fall back to cloud providers when local resources are insufficient.
   </p>
 
   <div class="card-grid">

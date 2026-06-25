@@ -21,6 +21,7 @@ h2{font-size:1.4rem;border-bottom:1px solid var(--border);padding-bottom:0.4rem}
 h3{font-size:1.15rem;color:var(--cyan)}
 h4{font-size:1rem;color:var(--sub)}
 .wrap{max-width:1100px;margin:0 auto;padding:0 1.5rem}
+.hero-svg{width:100%;border-radius:12px;border:1px solid var(--border);margin:1.5rem 0}
 .chart-img{width:100%;border-radius:10px;border:1px solid var(--border);margin:1.5rem 0}
 .card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1.5rem 0}
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1.25rem;transition:border-color 0.2s}
@@ -28,13 +29,22 @@ h4{font-size:1rem;color:var(--sub)}
 .card h3{color:var(--cyan);margin-top:0;font-size:1.05em}
 .card p{color:var(--sub);font-size:0.9em}
 .card .card-footer{margin-top:0.75rem;padding-top:0.75rem;border-top:1px solid var(--border)}
-.back-link{display:inline-flex;align-items:center;gap:0.35rem;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:0.3em 0.8em;font-size:0.85em;color:var(--sub);margin-bottom:1.5rem}
-.back-link:hover{border-color:var(--cyan);color:var(--text);text-decoration:none}
-.issue-tag{display:inline-block;background:#161b22;border:1px solid var(--border);border-radius:6px;padding:0.2em 0.6em;font-size:0.8em;font-family:var(--mono);margin:0.2em}
-.issue-tag a{color:var(--cyan)}
-.issue-tag.priority-high{border-color:var(--red);color:var(--red)}
-.issue-tag.priority-med{border-color:var(--orange);color:var(--orange)}
-.issue-tag.priority-low{border-color:var(--teal);color:var(--teal)}
+.card a{color:var(--cyan);font-size:0.85em}
+.quick-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin:2rem 0}
+.quick-link{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:1rem 1.25rem;display:flex;flex-direction:column;gap:0.35rem}
+.quick-link:hover{border-color:var(--cyan);text-decoration:none}
+.quick-link-title{font-weight:700;color:var(--text);font-size:1em}
+.quick-link-desc{color:var(--sub);font-size:0.85em}
+.req-table th{background:var(--bg3)}
+.req-tier{padding:0.5rem 0.75rem;border-radius:6px;border:1px solid var(--border);margin:0.25rem 0;background:var(--bg2)}
+.req-tier.minimal{background:#1a1a0d;border-color:#3f3f00}
+.req-tier.basic{background:#0d1a0d;border-color:#00b848}
+.req-tier.good{background:#0d1117;border-color:var(--cyan)}
+.tier-label{display:inline-block;font-weight:700;font-size:0.8em;padding:0.15em 0.6em;border-radius:4px;margin-right:0.5em}
+.tier-label.minimal{background:#3f3f00;color:#e6edf3}
+.tier-label.basic{background:#003b10;color:#e6edf3}
+.tier-label.good{background:#0d2540;color:var(--cyan)}
+.req-note{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:1rem;margin:1rem 0;font-size:0.9em;color:var(--sub)}
 footer{text-align:center;color:var(--sub2);font-size:0.8em;padding:2rem 0;border-top:1px solid var(--border);margin-top:3rem}
 footer code{color:var(--sub2)}
 .site-nav{position:sticky;top:0;z-index:100;background:rgba(13,17,23,0.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
@@ -47,6 +57,13 @@ footer code{color:var(--sub2)}
 .nav-right{margin-left:auto;display:flex;gap:0.75rem;align-items:center}
 .nav-btn{display:inline-flex;align-items:center;gap:0.35rem;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:0.3em 0.8em;font-size:0.85em;color:var(--text);font-weight:500}
 .nav-btn:hover{background:var(--border);text-decoration:none}
+.back-link{display:inline-flex;align-items:center;gap:0.35rem;background:var(--bg4);border:1px solid var(--border);border-radius:6px;padding:0.3em 0.8em;font-size:0.85em;color:var(--sub);margin-bottom:1.5rem}
+.back-link:hover{border-color:var(--cyan);color:var(--text);text-decoration:none}
+.issue-tag{display:inline-block;background:#161b22;border:1px solid var(--border);border-radius:6px;padding:0.2em 0.6em;font-size:0.8em;font-family:var(--mono);margin:0.2em}
+.issue-tag a{color:var(--cyan)}
+.issue-tag.priority-high{border-color:var(--red);color:var(--red)}
+.issue-tag.priority-med{border-color:var(--orange);color:var(--orange)}
+.issue-tag.priority-low{border-color:var(--teal);color:var(--teal)}
 </style></head><body>
 <nav class="site-nav"><div class="wrap">
 <a href="index.html" class="site-logo">
@@ -72,6 +89,59 @@ The <strong>local-first, voice-first design chat channel</strong>. It owns the h
 microphone capture, VAD/endpointing, STT, response-LLM calls, TTS playback, barge-in,
 interrupts, and permission prompts. Converse is designed to be a channel that hosts any compatible agent.
 </p>
+
+<div class="req-note">
+<strong>Design principle:</strong> Korina is local-first — it is designed to keep your voice data and inference on your own hardware. However, it can fall back to cloud providers when your local hardware cannot fit the selected model. For example, running Qwen3-27B at Q8 (requires ~32GB VRAM) or GPT-OSS-120B at MXFP4 (requires ~64GB VRAM) is not realistic on typical consumer hardware.
+</div>
+
+<h2>Minimum System Requirements (Korina Converse)</h2>
+<p style="color:var(--sub);margin-bottom:1rem">Estimates based on <code>faster-whisper base</code> + <code>Qwen3.5-0.8B</code> as the lightweight STT + LLM baseline.</p>
+
+<table class="req-table">
+<thead>
+<tr><th>Tier</th><th>VRAM</th><th>System RAM</th><th>Storage</th><th>Notes</th></tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<span class="tier-label minimal">Minimal</span>basic functionality
+</td>
+<td>—</td>
+<td>4 GB</td>
+<td>2 GB</td>
+<td>CPU inference. whisper base (~74M) + Qwen3.5-0.8B Q8 (~1GB). Slow but functional. STT may hit CPU bottlenecks on older CPUs.</td>
+</tr>
+<tr>
+<td>
+<span class="tier-label basic" style="background:#003b10">Basic</span>acceptable experience
+</td>
+<td>2–4 GB</td>
+<td>8 GB</td>
+<td>5 GB</td>
+<td>GPU-assisted STT (faster-whisper with CUDA). whisper base + Qwen3.5-0.8B Q8 loaded simultaneously. Single-turn latency in the 3–8s range on a mid-range GPU (e.g. RX 580, GTX 1080).</td>
+</tr>
+<tr>
+<td>
+<span class="tier-label good">Good</span>good experience
+</td>
+<td>6–8 GB</td>
+<td>16 GB</td>
+<td>10 GB</td>
+<td>GPU-heavy. whisper base + Qwen3.5-3B Q8 (~3.2GB) or medium whisper model. Smooth multi-turn conversation with sub-3s perceived latency on modern GPUs (e.g. RTX 3060, RX 6600 XT).</td>
+</tr>
+</tbody>
+</table>
+
+<p style="color:var(--sub);font-size:0.85em;margin-top:0.75rem">
+<strong>STT models:</strong> faster-whisper base.en (~74M params, ~150MB INT8) is the minimum. Larger models (medium.en ~418M, large-v3 ~1.5B) improve accuracy at the cost of VRAM/speed.
+</p>
+<p style="color:var(--sub);font-size:0.85em">
+<strong>LLM models:</strong> Qwen3.5-0.8B Q8 (~1GB) is the minimum viable for basic conversational quality. Qwen3.5-3B Q8 (~3.2GB) is the practical floor for decent response quality. Larger models (7B, 13B+) dramatically improve output quality but require corresponding VRAM headroom.
+</p>
+<p style="color:var(--sub);font-size:0.85em">
+<strong>Kokoro TTS:</strong> TTS runs on CPU (omnivoice is lightweight, ~100MB RAM). No discrete GPU needed for TTS.
+</p>
+
 <h2>Core Features</h2>
 <div class="card-grid">
 <div class="card"><h3>🎤 Live VAD</h3><p>Browser-side adaptive energy voice activity detection with configurable endpointing thresholds: 3200ms silence for reading/dictation, 950ms for conversation mode.</p></div>
@@ -81,6 +151,7 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <div class="card"><h3>⏸️ Barge-in &amp; Interrupts</h3><p>Speak during playback to interrupt. Agent interrupts use a configurable cooldown (default 3000ms padding) to prevent recursive interruption.</p></div>
 <div class="card"><h3>🔑 Permission UX</h3><p>Permission requests from the agent are spoken by Converse and answered through the agent permission endpoint. Converse is always the human-facing permission surface.</p></div>
 </div>
+
 <h2>Technology Stack</h2>
 <table>
 <thead><tr><th>Component</th><th>Implementation</th></tr></thead>
