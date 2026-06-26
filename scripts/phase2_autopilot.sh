@@ -43,12 +43,30 @@ live_smoke() {
   curl -fsS --max-time 10 http://127.0.0.1:8001/api/health | head -c 80 \
     || fail "/api/health smoke failed"
   echo
+  # Modular frontend smoke checks (Phase 3 split, 2026-06-25).
+  # Without these, mirror_live could silently leave the user on the broken
+  # monolithic again. 200-only — we do not care about file contents here.
+  local code
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8001/js/api.js) \
+    || fail "/js/api.js probe failed"
+  [ "$code" = "200" ] || fail "/js/api.js returned $code (modular frontend not deployed — did mirror_live copy Korina/js/?)"
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:8001/styles.css) \
+    || fail "/styles.css probe failed"
+  [ "$code" = "200" ] || fail "/styles.css returned $code (modular frontend not deployed — did mirror_live copy Korina/styles.css?)"
 }
 
 mirror_live() {
   rm -rf "$LIVE/korina"
   cp -r "$REPO/korina" "$LIVE/korina"
+  cp "$REPO/Korina/korina_voice_lab.py" "$LIVE/korina_voice_lab.py"
   cp "$REPO/Korina/index.html" "$LIVE/index.html"
+  # Modular frontend (Phase 3 split): copy js/ modules and extracted stylesheet
+  # alongside the html. Without these, the page imports './js/api.js' which 404s
+  # and the user is silently dropped back to whatever stale index.html happens
+  # to be at runtime (see 2026-06-25 incident).
+  mkdir -p "$LIVE/js"
+  cp "$REPO"/Korina/js/*.js "$LIVE/js/"
+  cp "$REPO/Korina/styles.css" "$LIVE/styles.css"
   cp "$REPO/tests/regression_smoke.py" "$LIVE/tests/regression_smoke.py"
 }
 
