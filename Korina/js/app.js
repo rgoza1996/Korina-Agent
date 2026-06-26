@@ -29,10 +29,10 @@ import {
 import {
   collectConfig, applyConfig, markActivity,
   syncConverseSettingsUI,
-  ttsDevice, ttsProvider, ttsBaseUrl,
+  ttsDevice, ttsProvider, ttsBaseUrl, ttsPort, ttsModel,
   sttDevice, sttModel, sttBackend,
   llmProvider, llmBaseUrl, lmModel,
-  sttLlmModel, effectiveSttLlmModel, effectiveSttLlmBaseUrl,
+  sttLlmModel, effectiveSttLlmModel, effectiveSttLlmBaseUrl, effectiveSttLlmProvider,
   finalSttMode, endpointMode, minSpeechMs, partialWindowMsSetting,
 } from "./settings-ui.js";
 import {
@@ -108,6 +108,20 @@ function bindClick(id, handler) {
 }
 
 async function closeSettings() {
+  // GUARANTEE: the modal MUST hide, no matter what save/activate throws.
+  // A previous version called functions that weren't imported, which
+  // threw on every close attempt and trapped the user inside the modal.
+  // Wrap the entire body so a future regression in either path can't
+  // reproduce that.
+  try {
+    await _closeSettingsImpl();
+  } catch (e) {
+    console.error('closeSettings uncaught error (modal will still hide):', e);
+  }
+  $('settingsModal')?.classList.remove('open');
+}
+
+async function _closeSettingsImpl() {
   // Persist any unsaved field changes first. saveConfigNow() is a no-op
   // if the form values already match what's on disk; the activation
   // diff below is what we actually care about.
@@ -159,10 +173,10 @@ async function closeSettings() {
     }
   }
 
-  // Hide the modal last so the user is never trapped by a thrown error.
-  $('settingsModal')?.classList.remove('open');
-
   // Refresh the debug strip so the pills reflect the new state.
+  // Wrapped in its own try so a health() failure cannot escape the
+  // inner function and prevent the outer closeSettings from hiding
+  // the modal.
   try { await health(); } catch (e) { console.warn('health refresh failed:', e); }
 }
 
