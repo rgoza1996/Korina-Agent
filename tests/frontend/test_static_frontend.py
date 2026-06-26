@@ -116,3 +116,16 @@ def test_providers_ui_consumes_backend_model_status_fields():
     assert "llm_models_status" in js
     assert "stt_llm_models_status" in js
     assert "modelOptionBad" in js
+
+
+
+def test_local_models_js_calls_probe_models_after_refresh():
+    js = read(JS_DIR / "local-models.js")
+    assert "/api/llm/probe-models" in js
+    assert "probeActiveModels" in js
+    assert "probed" in js.lower() or "Probed" in js
+
+
+def test_local_models_js_filters_mmproj_from_probe_candidates():
+    js = read(JS_DIR / "local-models.js")
+    assert "mmproj" in js
