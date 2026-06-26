@@ -24,8 +24,8 @@ Browser (Korina Converse UI) Korina backend (FastAPI :8001)
   │  ◄── audio stream ───────────  │
   │                                │
   │                                │
-  │  ─── transcript/events ───────► │  Korina Agent / external agent side channel
-  │  ◄── injection/interrupts ───── │  /api/agent/*
+  │  ─── transcript/events ───────►│  Korina Agent / external agent side channel
+  │  ◄── injection/interrupts ─────│  /api/agent/*
   │                                │
   └────────── Web Audio playback ──┘
 ```
