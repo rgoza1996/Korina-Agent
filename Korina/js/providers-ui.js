@@ -136,6 +136,32 @@ export async function loadModelOptions(force=false){
       const current=lmModel(); $("lmModel").innerHTML="";
       for(const m of j.llm_models){ const o=document.createElement("option"); o.value=m; o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m); $("lmModel").appendChild(o); }
       $("lmModel").value=j.llm_models.includes(current)?current:(j.llm_default||j.llm_models[0]);
+    } else if($("lmModel")){
+      // Endpoint returned nothing (LM Studio / llama.cpp / Ollama is down). Fall back
+      // to the local model catalog the backend attached to the same response so the
+      // dropdown is never empty on this page.
+      const localPool = [
+        ...((j.llama_cpp_local_models || []).map(id => ({ id, group: 'llama.cpp (local GGUF)' }))),
+        ...((j.lmstudio_catalog_models || []).map(id => ({ id, group: 'lmstudio (catalog)' }))),
+      ];
+      if(localPool.length){
+        const current=lmModel();
+        $("lmModel").innerHTML="";
+        let lastGroup = null;
+        for(const entry of localPool){
+          const o=document.createElement("option");
+          o.value=entry.id;
+          o.textContent=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
+          if(entry.group !== lastGroup){
+            o.textContent = `[${entry.group}] ${o.textContent}`;
+            lastGroup = entry.group;
+          }
+          $("lmModel").appendChild(o);
+        }
+        const saved = current || j.llm_default;
+        const match = saved && localPool.some(e => e.id === saved);
+        $("lmModel").value = match ? saved : localPool[0].id;
+      }
     }
     let sttFilterInfo = "";
     if($("sttLlmModel")){
@@ -163,7 +189,33 @@ export async function loadModelOptions(force=false){
         }
         $("sttLlmModel").appendChild(o);
       }
-      $("sttLlmModel").value=[...$("sttLlmModel").options].some(o=>o.value===current)?current:"";
+      const allSttIds = Array.from($("sttLlmModel").options).map(o => o.value).filter(Boolean);
+      if(allSttIds.length === 0){
+        // Endpoint returned nothing. Seed from the same local catalog so multimodal
+        // STT has selectable models even when the response LLM endpoint is offline.
+        const localPool = [
+          ...((j.llama_cpp_local_models || []).map(id => ({ id, group: 'llama.cpp (local GGUF)' }))),
+          ...((j.lmstudio_catalog_models || []).map(id => ({ id, group: 'lmstudio (catalog)' }))),
+        ];
+        if(localPool.length){
+          let lastGroup = null;
+          for(const entry of localPool){
+            const o=document.createElement("option");
+            o.value=entry.id;
+            o.textContent=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
+            if(entry.group !== lastGroup){
+              o.textContent = `[${entry.group}] ${o.textContent}`;
+              lastGroup = entry.group;
+            }
+            $("sttLlmModel").appendChild(o);
+          }
+          const saved = current || j.stt_llm_default;
+          const match = saved && localPool.some(e => e.id === saved);
+          $("sttLlmModel").value = match ? saved : localPool[0].id;
+        }
+      } else {
+        $("sttLlmModel").value=[...$("sttLlmModel").options].some(o=>o.value===current)?current:"";
+      }
       // Informational: how many were filtered out by the audio capability filter.
       const sttHidden = (j.stt_llm_models || []).length - sttModelsFiltered.length;
       sttFilterInfo = sttHidden > 0
