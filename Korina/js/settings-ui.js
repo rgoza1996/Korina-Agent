@@ -212,17 +212,22 @@ export function applyConfig(c = {}) {
   // changes. Use only the keys that affect which provider/model is
   // serving requests, plus tts — comparing everything would also
   // re-activate on voice/speed/etc. changes.
+  // Snapshot only the keys that affect which provider/model is serving
+  // requests, plus tts info for the debug strip. Use the loaded config
+  // (the function parameter `c`), not a free variable. This was a
+  // regression previously (used `current.X` which threw
+  // ReferenceError on every modal close).
   state.appConfigSnapshot = {
-    llm_provider: current.llm_provider,
-    lm_model: current.lm_model,
-    llm_base_url: current.llm_base_url,
-    stt_llm_provider: current.stt_llm_provider,
-    stt_llm_base_url: current.stt_llm_base_url,
-    stt_llm_model: current.stt_llm_model,
-    tts_provider: current.tts_provider,
-    tts_base_url: current.tts_base_url,
-    tts_port: current.tts_port,
-    tts_model: current.tts_model,
+    llm_provider: c.llm_provider,
+    lm_model: c.lm_model,
+    llm_base_url: c.llm_base_url,
+    stt_llm_provider: c.stt_llm_provider,
+    stt_llm_base_url: c.stt_llm_base_url,
+    stt_llm_model: c.stt_llm_model,
+    tts_provider: c.tts_provider,
+    tts_base_url: c.tts_base_url,
+    tts_port: c.tts_port,
+    tts_model: c.tts_model,
   };
 }
 
