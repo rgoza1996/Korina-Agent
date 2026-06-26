@@ -13,12 +13,15 @@ from typing import Optional
 
 import numpy as np
 import soundfile as sf
-from fastapi import APIRouter, File, Query, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from korina.config import config_stt_llm_api_env, config_stt_llm_base_url, config_stt_llm_chat_url, load_config
 from korina.runtime import state
-from korina.services.multimodal_stt import lmstudio_transcribe_wav
+from korina.services.multimodal_stt import (
+    lmstudio_transcribe_wav,
+    transient_whisper_fallback_reason,
+)
 from korina.services.whisper_service import (
     convert_to_16k_wav,
     normalize_device,
@@ -258,6 +261,17 @@ async def transcribe_stream(
                             ):
                                 yield ev
                             return
+                        temp_reason = transient_whisper_fallback_reason(str(e))
+                        if temp_reason:
+                            payload = whisper_fallback()
+                            payload['warning'] = str(e)
+                            payload['fallback_reason'] = temp_reason
+                            for ev in _emit_fallback_sse(
+                                payload, started=started,
+                                model_id=llm_model or LMSTUDIO_MODEL,
+                            ):
+                                yield ev
+                            return
                         # Otherwise: re-raise the original error to keep
                         # the existing 500 path.
                         raise
@@ -276,6 +290,17 @@ async def transcribe_stream(
                             whisper_fallback_fn=whisper_fallback,
                         )
                         if used_fallback:
+                            for ev in _emit_fallback_sse(
+                                payload, started=started,
+                                model_id=llm_model or LMSTUDIO_MODEL,
+                            ):
+                                yield ev
+                            return
+                        temp_reason = transient_whisper_fallback_reason(err_body)
+                        if temp_reason:
+                            payload = whisper_fallback()
+                            payload['warning'] = err_body
+                            payload['fallback_reason'] = temp_reason
                             for ev in _emit_fallback_sse(
                                 payload, started=started,
                                 model_id=llm_model or LMSTUDIO_MODEL,

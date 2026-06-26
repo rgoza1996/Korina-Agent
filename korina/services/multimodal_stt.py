@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 import urllib.error
 import urllib.request
@@ -23,6 +24,29 @@ from korina.services.model_catalog import llm_models_for
 from pathlib import Path
 
 from typing import Optional
+
+
+_TRANSIENT_WHISPER_FALLBACK_PATTERNS = (
+    (re.compile(r"failed to load model", re.IGNORECASE), "model_load_failed"),
+    (re.compile(r"model has crashed", re.IGNORECASE), "model_crashed"),
+    (re.compile(r"empty_text", re.IGNORECASE), "empty_text"),
+)
+
+
+def transient_whisper_fallback_reason(detail: str) -> str | None:
+    """Return a non-cacheable Whisper-fallback reason for transient multimodal failures.
+
+    These are not "audio unsupported forever" signals, so they should not be
+    written into config.audio_unsupported. They *should* still degrade live STT
+    back to Whisper so the conversation keeps moving.
+    """
+    detail = str(detail or '').strip()
+    if not detail:
+        return None
+    for pat, reason in _TRANSIENT_WHISPER_FALLBACK_PATTERNS:
+        if pat.search(detail):
+            return reason
+    return None
 
 
 def lmstudio_models() -> list[str]:
