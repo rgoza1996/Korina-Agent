@@ -25,7 +25,7 @@
 import { state } from "./state.js";
 import { $, status } from "./dom.js";
 import { stripTranscriptLabels } from "./history.js";
-import { markActivity } from "./settings-ui.js";
+import { markActivity, ttsBaseUrl, ttsDevice, ttsModel, ttsProvider } from "./settings-ui.js";
 
 // --- Audio context lifecycle (verbatim from index.html:775) ---
 //
