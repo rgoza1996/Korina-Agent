@@ -4,16 +4,25 @@ import json
 
 from korina.util.labels import display_model_label
 
-from korina.util.paths import (
-    LMSTUDIO_HUB_ROOT,
-    LOCAL_MODEL_ROOTS,
-)
+from korina.util.paths import LMSTUDIO_HUB_ROOT
 
 from pathlib import Path
 
 
 def local_model_roots() -> list[Path]:
-    roots = list(LOCAL_MODEL_ROOTS)
+    """Resolve the configured GGUF search roots.
+
+    Reads from `config['local_model_roots']` first; falls back to the
+    `KORINA_LOCAL_MODEL_ROOTS` env-derived list when the config is empty.
+    LMSTUDIO_HUB_ROOT is always appended as a non-user-visible catalog root.
+    """
+    try:
+        from korina.config import config_local_model_roots
+        roots = [Path(p) for p in config_local_model_roots()]
+    except Exception:
+        # Avoid cycles during early bootstrap; fall back to env defaults.
+        from korina.util.paths import LOCAL_MODEL_ROOTS
+        roots = [Path(p) for p in LOCAL_MODEL_ROOTS]
     if LMSTUDIO_HUB_ROOT not in roots:
         roots.append(LMSTUDIO_HUB_ROOT)
     return roots

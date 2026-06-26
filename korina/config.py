@@ -89,6 +89,7 @@ DEFAULT_CONFIG = {
     'idle_ack_initial_ms': 5000,
     'idle_ack_step_ms': 5000,
     'audio_unsupported': {},
+    'local_model_roots': [],
 }
 
 CONFIG_KEYS = set(DEFAULT_CONFIG.keys())
@@ -155,6 +156,65 @@ def save_config(config: dict) -> dict:
 
 
 
+
+
+def _normalize_local_model_roots(value) -> list[str]:
+    """Coerce a config-supplied local_model_roots value into a clean list of strings."""
+    if value is None or value == '':
+        return []
+    if isinstance(value, str):
+        parts = [p for p in value.replace('\n', ':').split(':') if p.strip()]
+    elif isinstance(value, (list, tuple)):
+        parts = []
+        for entry in value:
+            if isinstance(entry, str) and entry.strip():
+                parts.append(entry.strip())
+            elif isinstance(entry, str):
+                pass
+            else:
+                parts.append(str(entry).strip())
+    else:
+        parts = [str(value).strip()]
+    seen = set()
+    out = []
+    for p in parts:
+        if p in seen:
+            continue
+        seen.add(p)
+        out.append(p)
+    return out
+
+
+def config_local_model_roots(config: Optional[dict] = None) -> list[str]:
+    """Return the configured list of GGUF search roots.
+
+    Resolution order:
+      1. config['local_model_roots'] (always a list, possibly empty)
+      2. KORINA_LOCAL_MODEL_ROOTS env var (split by os.pathsep)
+    """
+    config = config or load_config()
+    roots = config.get('local_model_roots')
+    roots = _normalize_local_model_roots(roots)
+    if roots:
+        return roots
+    from korina.util.paths import LOCAL_MODEL_ROOTS  # late import to avoid cycles
+    return [str(p) for p in LOCAL_MODEL_ROOTS]
+
+
+def set_local_model_roots(roots) -> list[str]:
+    """Persist a new local_model_roots list and return the normalized list."""
+    normalized = _normalize_local_model_roots(roots)
+    cfg = load_config()
+    cfg['local_model_roots'] = normalized
+    save_config(cfg)
+    return normalized
+
+
+def clear_local_model_roots() -> list[str]:
+    cfg = load_config()
+    cfg['local_model_roots'] = []
+    save_config(cfg)
+    return []
 
 
 def synchronize_llm_dependents(config: dict, previous: Optional[dict] = None) -> dict:
