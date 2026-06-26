@@ -207,6 +207,23 @@ export function applyConfig(c = {}) {
   // server-resolved URLs (Bug C / #19). The previous form-derived setter
   // could disagree with the server when config.tts_base_url was empty or
   // when the settings UI had a stale value.
+
+  // Snapshot the loaded config so closeSettings() can detect provider
+  // changes. Use only the keys that affect which provider/model is
+  // serving requests, plus tts — comparing everything would also
+  // re-activate on voice/speed/etc. changes.
+  state.appConfigSnapshot = {
+    llm_provider: current.llm_provider,
+    lm_model: current.lm_model,
+    llm_base_url: current.llm_base_url,
+    stt_llm_provider: current.stt_llm_provider,
+    stt_llm_base_url: current.stt_llm_base_url,
+    stt_llm_model: current.stt_llm_model,
+    tts_provider: current.tts_provider,
+    tts_base_url: current.tts_base_url,
+    tts_port: current.tts_port,
+    tts_model: current.tts_model,
+  };
 }
 
 // --- Idle activity tracking (verbatim from index.html:587-591) ---

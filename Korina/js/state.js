@@ -81,6 +81,11 @@ export const state = {
 
   // --- app config + agent state ---
   appConfig: { idle_ack_initial_ms: 5000, idle_ack_step_ms: 5000 },
+  // Snapshot of the config that was last loaded from /api/config or that
+  // last completed a /api/llm/provider/activate. Used by closeSettings()
+  // to detect whether provider-affecting fields have changed since the
+  // modal opened (or since the last save). Populated by applyConfig().
+  appConfigSnapshot: null,
   agentStateReport: '',
   agentLastTranscriptHash: '',
   pendingAgentStateReport: '',
