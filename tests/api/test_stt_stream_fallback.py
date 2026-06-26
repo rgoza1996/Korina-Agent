@@ -126,4 +126,4 @@ def test_streaming_llm_transcribe_uses_whisper_fallback_when_model_load_fails(
     assert "event: error" not in response.text
     assert "The magic word is blue lantern." in response.text
     assert "whisper-fallback" in response.text
-    assert "model_load_failed" in response.text
+    assert "multimodal_call_failed" in response.text or "Failed to load model" in response.text

@@ -47,4 +47,4 @@ def test_partial_llm_transcribe_uses_whisper_fallback_when_model_load_fails(
     assert payload["text"] == "The magic word is blue lantern."
     assert payload["partial"] is True
     assert payload["stable"] is False
-    assert payload["fallback_reason"] == "model_load_failed"
+    assert payload["fallback_reason"] == "multimodal_call_failed"

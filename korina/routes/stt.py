@@ -51,8 +51,14 @@ def _whisper_fallback_payload(
     equivalent payload helper rather than crashing when multimodal audio is
     unsupported.
     """
+    # Phase 5.1 Bug A: align with /api/transcribe/partial which uses
+    # vad_filter=False. VAD filtering here strips low-energy / clipped
+    # utterances to silence and the multimodal-fallback path returned
+    # empty text -- breaking live conversation for any audio the VAD
+    # decides is too quiet. The non-multimodal /api/transcribe endpoint
+    # keeps its original vad_filter=True behavior in transcribe_upload_file.
     parts, info = transcribe_wav_segments(
-        wav, vad_filter=True, device=device, model_id=model_id,
+        wav, vad_filter=False, device=device, model_id=model_id,
     )
     elapsed = time.time() - started
     text = ''.join(seg.text for seg in parts).strip()
@@ -242,39 +248,22 @@ async def transcribe_stream(
                             api_env=config_stt_llm_api_env(config),
                         )
                     except Exception as e:
-                        # Treat any exception as a failed multimodal
-                        # call. We don't have a real HTTP status from
-                        # urllib/requests error chains; infer a 400
-                        # since audio-related issues come back as 400
-                        # from llama.cpp. classify_failure will only
-                        # return True if the message body itself
-                        # matches an audio-not-supported pattern.
-                        used_fallback, payload = maybe_fallback_to_whisper(
-                            provider=stt_provider, base_url=probe_base, model=llm_model or '',
-                            stt_status_code=400, stt_response_body=str(e),
-                            whisper_fallback_fn=whisper_fallback,
-                        )
-                        if used_fallback:
-                            for ev in _emit_fallback_sse(
-                                payload, started=started,
-                                model_id=llm_model or LMSTUDIO_MODEL,
-                            ):
-                                yield ev
-                            return
-                        temp_reason = transient_whisper_fallback_reason(str(e))
-                        if temp_reason:
-                            payload = whisper_fallback()
-                            payload['warning'] = str(e)
-                            payload['fallback_reason'] = temp_reason
-                            for ev in _emit_fallback_sse(
-                                payload, started=started,
-                                model_id=llm_model or LMSTUDIO_MODEL,
-                            ):
-                                yield ev
-                            return
-                        # Otherwise: re-raise the original error to keep
-                        # the existing 500 path.
-                        raise
+                        # Phase 5.1 Bug C: any multimodal failure must degrade
+                        # to whisper. Previously only audio-not-supported
+                        # patterns and a few transient patterns fell back;
+                        # everything else (model_not_found, missing mmproj,
+                        # generic 4xx) re-raised and surfaced as an SSE
+                        # 'error' event, breaking live mode.
+                        detail = str(e)
+                        payload = whisper_fallback()
+                        payload['warning'] = detail
+                        payload['fallback_reason'] = 'multimodal_call_failed'
+                        for ev in _emit_fallback_sse(
+                            payload, started=started,
+                            model_id=llm_model or LMSTUDIO_MODEL,
+                        ):
+                            yield ev
+                        return
 
                     # Probe the result: empty text on a successful HTTP
                     # call often means audio-not-supported for a

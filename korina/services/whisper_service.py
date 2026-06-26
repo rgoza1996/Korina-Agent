@@ -165,12 +165,17 @@ def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, 
                 })
                 return result
             except RuntimeError as e:
+                # Phase 5.1 Bug C: any multimodal failure must degrade to
+                # whisper so live conversation always produces *some*
+                # transcript. Previously only audio-not-supported patterns
+                # and a handful of transient patterns fell back; everything
+                # else (model_not_found, missing mmproj, generic 4xx)
+                # returned 500 to the browser, breaking live mode entirely.
+                # If even the whisper fallback fails, that surfaces as a
+                # normal Exception which FastAPI converts to 500 -- but
+                # by then the user has at least seen the LLM error.
                 detail = str(e)
-                unsupported_audio = ('input_audio' in detail or "either 'text' or 'image_url'" in detail or 'No multimodal STT model available' in detail)
-                temp_reason = transient_whisper_fallback_reason(detail)
-                if not unsupported_audio and not temp_reason:
-                    raise
-                return whisper_fallback(detail, temp_reason or 'audio_unsupported')
+                return whisper_fallback(detail, 'multimodal_call_failed')
 
         started = time.time()
         parts, info = transcribe_wav_segments(wav, vad_filter=vad_filter, device=device, model_id=model_id)
