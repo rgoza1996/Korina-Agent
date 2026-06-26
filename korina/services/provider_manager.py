@@ -22,6 +22,7 @@ from korina.util.paths import (
     LLAMA_SERVER_MEDIA_PATH,
     LLAMA_SERVER_USER_UNIT,
     LMSTUDIO_BIN,
+    LMS_CLI_BIN,
 )
 
 from korina.util.presets import provider_preset_base_url
@@ -58,6 +59,92 @@ def start_lmstudio() -> None:
 def stop_ollama() -> None:
     subprocess.run(['systemctl', '--user', 'stop', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(['pkill', '-f', 'ollama serve'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+def _kill_stray_llama_servers() -> None:
+    """Kill any `llama-server` process currently bound to LM Studio's port (:1234).
+
+    Korina's systemd `llama-server.service` is handled separately by
+    `stop_llama_server()`. The remaining case is the `llama-server` that LM
+    Studio launches on demand from its GUI (`lms load` with a GUI bound to
+    :1234) and that keeps running after the GUI is closed. Without this kill,
+    picking `lmstudio` in Korina returns success but `:1234` is still owned
+    by the stray binary, so Korina's chat endpoint gets the wrong model id
+    back from `/v1/models`.
+    """
+    subprocess.run(
+        ['pkill', '-f', 'llama-server.*--port 1234'],
+        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+
+
+def _lms_run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+    """Run an `lms` CLI subcommand and return the CompletedProcess."""
+    cmd = [str(LMS_CLI_BIN), *args]
+    return subprocess.run(cmd, check=check, capture_output=True, text=True)
+
+
+def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> None:
+    """Start LM Studio's headless OpenAI-compatible server on :1234 with `model_id` loaded.
+
+    Order of operations:
+      1. Stop Korina's systemd `llama-server.service`.
+      2. Kill any stray `llama-server` that LM Studio's GUI may have started.
+      3. Make sure the LM Studio GUI/RPC is running (its in-process RPC is
+         what `lms` CLI talks to).
+      4. `lms server start --port 1234 --bind 0.0.0.0 --cors`.
+      5. `lms load <id> --yes` so /v1/models advertises the user's choice.
+      6. Poll /v1/models until 200.
+    """
+    config = dict(config or load_config())
+    model = str(model_id or config.get('lm_model') or '').strip()
+    if not LMS_CLI_BIN.exists():
+        raise RuntimeError(
+            f'lms CLI not found at {LMS_CLI_BIN}. Set KORINA_LMS_CLI_BIN or '
+            f'install LM Studio with the CLI bundle.'
+        )
+    stop_llama_server()
+    _kill_stray_llama_servers()
+    start_lmstudio()
+    _lms_run('server', 'stop', check=False)
+    start_proc = _lms_run('server', 'start', '--port', '1234', '--bind', '0.0.0.0', '--cors')
+    if start_proc.returncode != 0:
+        raise RuntimeError(
+            'lms server start failed: ' + (start_proc.stderr or start_proc.stdout or 'unknown error').strip()
+        )
+    if model:
+        load_proc = _lms_run('load', model, '--yes', check=False)
+        if load_proc.returncode != 0:
+            stderr = (load_proc.stderr or load_proc.stdout or '').strip()
+            raise RuntimeError(f'lms load {model!r} failed: {stderr}')
+    wait_for_lmstudio_server_ready()
+
+
+def stop_lmstudio_server() -> None:
+    """Tear down LM Studio's headless server and any stray llama-server on :1234."""
+    if LMS_CLI_BIN.exists():
+        try:
+            _lms_run('server', 'stop', check=False)
+        except Exception:
+            pass
+    _kill_stray_llama_servers()
+
+
+def wait_for_lmstudio_server_ready(timeout_seconds: float = 90.0) -> None:
+    """Poll http://127.0.0.1:1234/v1/models until HTTP 200."""
+    deadline = time.time() + timeout_seconds
+    last_error = ''
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:1234/v1/models', timeout=2) as resp:
+                if resp.status == 200:
+                    return
+        except Exception as e:
+            last_error = str(e)
+        time.sleep(0.5)
+    raise RuntimeError(
+        f'LM Studio server did not become ready within {timeout_seconds:.0f}s: {last_error}'
+    )
+
 
 def start_ollama() -> None:
     if shutil.which('ollama') is None:
@@ -161,17 +248,16 @@ def activate_llm_provider(provider: str, config: Optional[dict] = None, model: O
                 selected = discovered[0]
             else:
                 raise RuntimeError('No local GGUF models found for llama.cpp')
-        stop_lmstudio()
+        stop_lmstudio_server()
         stop_ollama()
         start_llama_server(selected, config=config)
         preset = provider_preset_base_url(provider)
-        return {'provider': provider, 'model': selected, 'base_url': preset or 'http://127.0.0.1:8080/v1', 'stopped': ['lmstudio', 'ollama'], 'started': ['llama-server.service']}
+        return {'provider': provider, 'model': selected, 'base_url': preset or 'http://127.0.0.1:8080/v1', 'stopped': ['lmstudio', 'ollama', 'stray-llama-server'], 'started': ['llama-server.service']}
     if provider == 'lmstudio':
-        stop_llama_server()
         stop_ollama()
-        start_lmstudio()
+        start_lmstudio_server(model or '', config=config)
         preset = provider_preset_base_url(provider)
-        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:1234/v1', 'stopped': ['llama-server.service', 'ollama'], 'started': ['lm-studio']}
+        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:1234/v1', 'stopped': ['llama-server.service', 'ollama', 'stray-llama-server'], 'started': ['lm-studio-server']}
     if provider == 'ollama':
         stop_llama_server()
         stop_lmstudio()
@@ -179,10 +265,10 @@ def activate_llm_provider(provider: str, config: Optional[dict] = None, model: O
         preset = provider_preset_base_url(provider)
         return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:11434/v1', 'stopped': ['llama-server.service', 'lmstudio'], 'started': ['ollama']}
     stop_llama_server()
-    stop_lmstudio()
+    stop_lmstudio_server()
     stop_ollama()
     saved_base = str(config.get('llm_base_url') or '').strip()
-    return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': saved_base, 'stopped': ['llama-server.service', 'lmstudio', 'ollama'], 'started': []}
+    return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': saved_base, 'stopped': ['llama-server.service', 'lmstudio', 'ollama', 'stray-llama-server'], 'started': []}
 
 
 

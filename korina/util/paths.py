@@ -30,5 +30,6 @@ LOCAL_MODEL_ROOTS = [Path(p) for p in os.environ.get('KORINA_LOCAL_MODEL_ROOTS',
 LMSTUDIO_HUB_ROOT = Path(os.environ.get('KORINA_LMSTUDIO_HUB_ROOT', '/home/roggoz/.lmstudio/hub/models'))
 LLAMA_SERVER_BIN = Path(os.environ.get('KORINA_LLAMA_SERVER_BIN', '/home/roggoz/Disks/SN750/llama.cpp/build/bin/llama-server'))
 LMSTUDIO_BIN = Path(os.environ.get('KORINA_LMSTUDIO_BIN', '/opt/LM-Studio/lm-studio'))
+LMS_CLI_BIN = Path(os.environ.get('KORINA_LMS_CLI_BIN', '/opt/LM-Studio/resources/app/.webpack/lms'))
 LLAMA_SERVER_MEDIA_PATH = os.environ.get('KORINA_LLAMA_SERVER_MEDIA_PATH', '/home/roggoz/Disks/SN750')
 LLAMA_SERVER_USER_UNIT = Path(os.environ.get('KORINA_LLAMA_SERVER_USER_UNIT', '/home/roggoz/.config/systemd/user/llama-server.service'))
