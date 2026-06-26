@@ -261,6 +261,11 @@ def config_tts_base_url(config: Optional[dict] = None) -> str:
     port = int(config.get('tts_port') or 8880)
     return f'http://127.0.0.1:{port}'
 
+def config_tts_provider(config: Optional[dict] = None) -> str:
+    """Resolved TTS provider name from config (defaults to 'kokoro')."""
+    config = config or load_config()
+    return str(config.get('tts_provider') or 'kokoro').strip() or 'kokoro'
+
 
 def config_llm_base_url(config: Optional[dict] = None) -> str:
     config = config or load_config()
