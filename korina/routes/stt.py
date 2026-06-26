@@ -21,13 +21,104 @@ from korina.runtime import state
 from korina.services.multimodal_stt import lmstudio_transcribe_wav
 from korina.services.whisper_service import (
     convert_to_16k_wav,
+    normalize_device,
     sse_event,
     transcribe_upload_file,
     transcribe_wav_segments,
 )
-from korina.util.paths import LMSTUDIO_MODEL, PARTIAL_MIN_SECONDS, WHISPER_MODEL_ID
+from korina.util.paths import LMSTUDIO_MODEL, PARTIAL_MIN_SECONDS, WHISPER_DEVICE, WHISPER_MODEL_ID
 
 router = APIRouter()
+
+
+def _whisper_fallback_payload(
+    wav: Path,
+    *,
+    device: Optional[str],
+    model_id: Optional[str],
+    started: float,
+    data_len: int,
+    sr: int,
+) -> dict:
+    """Transcribe ``wav`` with faster-whisper for multimodal-STT fallback.
+
+    ``/api/transcribe`` already has this fallback inline in
+    ``transcribe_upload_file``. The live conversation path uses
+    ``/api/transcribe/stream`` instead, so the streaming route needs an
+    equivalent payload helper rather than crashing when multimodal audio is
+    unsupported.
+    """
+    parts, info = transcribe_wav_segments(
+        wav, vad_filter=True, device=device, model_id=model_id,
+    )
+    elapsed = time.time() - started
+    text = ''.join(seg.text for seg in parts).strip()
+    config = load_config()
+    return {
+        'text': text,
+        'seconds': elapsed,
+        'samples': int(data_len),
+        'sample_rate': int(sr),
+        'model': model_id or config.get('stt_model') or WHISPER_MODEL_ID,
+        'backend': 'whisper-fallback',
+        'device': state.asr.device,
+        'requested_device': normalize_device(device, default_env=WHISPER_DEVICE),
+        'compute_type': state.asr.compute_type,
+        'language': getattr(info, 'language', None),
+        'language_probability': getattr(info, 'language_probability', None),
+        'segments': [
+            {'start': seg.start, 'end': seg.end, 'text': seg.text.strip()}
+            for seg in parts
+        ],
+    }
+
+
+def _emit_fallback_sse(payload: dict, *, started: float, model_id: str):
+    """Emit a Whisper fallback payload through the normal streaming SSE shape."""
+    segments = payload.get('segments') or []
+    emitted = 0
+    if segments:
+        for idx, seg in enumerate(segments, 1):
+            part = str(seg.get('text') or '').strip()
+            if not part:
+                continue
+            emitted += 1
+            yield sse_event('segment', {
+                'start': seg.get('start'),
+                'end': seg.get('end'),
+                'text': part,
+                'index': idx,
+                'backend': payload.get('backend', 'whisper-fallback'),
+            })
+    elif str(payload.get('text') or '').strip():
+        emitted = 1
+        yield sse_event('segment', {
+            'start': None,
+            'end': None,
+            'text': str(payload.get('text')).strip(),
+            'index': 1,
+            'backend': payload.get('backend', 'whisper-fallback'),
+        })
+
+    done = {
+        'text': str(payload.get('text') or '').strip(),
+        'seconds': payload.get('seconds', time.time() - started),
+        'samples': int(payload.get('samples') or 0),
+        'sample_rate': int(payload.get('sample_rate') or 0),
+        'model': payload.get('model') or model_id,
+        'backend': payload.get('backend', 'whisper-fallback'),
+        'device': payload.get('device'),
+        'requested_device': payload.get('requested_device'),
+        'compute_type': payload.get('compute_type'),
+        'language': payload.get('language'),
+        'language_probability': payload.get('language_probability'),
+        'segments': emitted,
+    }
+    for key in ('warning', 'fallback_reason', 'audio_unsupported_since', 'triple'):
+        if key in payload:
+            done[key] = payload[key]
+    yield sse_event('done', done)
+
 
 
 @router.post('/api/transcribe')
