@@ -12,7 +12,7 @@
 
 import { state } from './state.js';
 import { $ } from './dom.js';
-import { prettyModelLabel } from './labels.js';
+import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from './labels.js';
 
 // --- Settings getters (verbatim from index.html:311-354) ---
 
@@ -203,7 +203,7 @@ export function applyConfig(c = {}) {
   if (c.silence_ms) { state.endSilenceMs = parseInt(c.silence_ms, 10); $('silenceMs').value = state.endSilenceMs; $('silenceDisplay').textContent = state.endSilenceMs + 'ms'; }
   syncConverseSettingsUI();
   if (c.mode) { state.mode = c.mode; document.querySelectorAll('.tab[data-mode]').forEach(x => x.classList.toggle('active', x.dataset.mode === state.mode)); }
-  $('hostInfo').textContent = `${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`;
+  $('hostInfo').textContent = `${location.host} → LLM (${llmProviderLabel(llmProvider())}) ${llmBaseUrl()} → TTS (${ttsProviderLabel(ttsProvider())}) ${ttsBaseUrl()}`;
 }
 
 // --- Idle activity tracking (verbatim from index.html:587-591) ---

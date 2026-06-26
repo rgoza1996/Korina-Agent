@@ -17,8 +17,9 @@
 // with static imports in Task 3.2.15 (cleanup).
 
 import { state } from './state.js';
+import { ttsProviderLabel, llmProviderLabel } from './labels.js';
 import { $ } from './dom.js';
-import { applyConfig } from './settings-ui.js';   // lands in 3.2.4
+import { applyConfig, ttsProvider } from './settings-ui.js';
 import { loadAgentModelOptions } from './providers-ui.js';   // lands in 3.2.6
 
 export async function activateSelectedProvider(provider, model = '') {
@@ -80,7 +81,7 @@ export async function health() {
     $('ttsHealth').textContent = `Kokoro ${j.loaded ? 'ready' : 'lazy'} · selected TTS ${ttsProvider()} ${ttsDevice()} @ ${ttsBaseUrl()} · last ${j.device || 'none'} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
   } catch (e) {
     setDot('ttsDot', 'bad');
-    $('ttsHealth').textContent = 'Kokoro offline';
+    $('ttsHealth').textContent = `${ttsProviderLabel(ttsProvider())} offline`;
   }
 }
 
@@ -95,6 +96,7 @@ export async function initApp() {
   await loadConfig(); // Re-apply after model options are populated.
   await (await import('./acks.js')).loadAcks('global');
   health();
+  setInterval(health, 5000); // poll debug strip every 5s so it reflects runtime state, not last config-change
   await (await import('./live.js')).markActivity('init');
   setInterval(async () => (await import('./agent-ui.js')).maybeDeliverTranscriptToAgent('timer'), 3000);
   setInterval(async () => (await import('./agent-ui.js')).pollAgentEvents(), 2000);

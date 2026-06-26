@@ -20,7 +20,7 @@
 
 import { state, EventBus } from "./state.js";
 import { $, status, setDot, log, setSectionHidden, clamp } from "./dom.js";
-import { prettyModelLabel } from "./labels.js";
+import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from "./labels.js";
 import {
   loadConfig, saveConfigNow, saveConfigSoon, health,
   activateSelectedProvider, initApp,
@@ -320,7 +320,7 @@ function wireSettingsInputs() {
   ].forEach(id => {
     const el = $(id);
     if (el) el.onchange = () => {
-      $('hostInfo').textContent = `${location.hostname}:8001 → LLM ${llmBaseUrl()} → TTS ${ttsBaseUrl()}`;
+      $('hostInfo').textContent = `${location.host} → LLM (${llmProviderLabel(llmProvider())}) ${llmBaseUrl()} → TTS (${ttsProviderLabel(ttsProvider())}) ${ttsBaseUrl()}`;
       syncConverseSettingsUI();
       health();
       saveConfigSoon();
