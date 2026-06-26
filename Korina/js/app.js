@@ -297,9 +297,9 @@ function wireSettingsInputs() {
   const sttLlmModelEl = $('sttLlmModel');
   if (sttLlmModelEl) sttLlmModelEl.onchange = () => { status($('sttStatus'), `Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
   const sttLlmProviderEl = $('sttLlmProvider');
-  if (sttLlmProviderEl) sttLlmProviderEl.onchange = async () => { maybeApplyProviderPreset('sttLlmProvider', 'sttLlmBaseUrl', { clearWhenBlank: true }); await setBaseUrlEditability(); syncConverseSettingsUI(); health(); saveConfigSoon(); };
+  if (sttLlmProviderEl) sttLlmProviderEl.onchange = async () => { maybeApplyProviderPreset('sttLlmProvider', 'sttLlmBaseUrl', { clearWhenBlank: true }); await setBaseUrlEditability(); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
   const sttLlmBaseUrlEl = $('sttLlmBaseUrl');
-  if (sttLlmBaseUrlEl) sttLlmBaseUrlEl.onchange = async () => { await setBaseUrlEditability(); syncConverseSettingsUI(); health(); saveConfigSoon(); };
+  if (sttLlmBaseUrlEl) sttLlmBaseUrlEl.onchange = async () => { await setBaseUrlEditability(); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
   const sttLlmApiKeyEnvEl = $('sttLlmApiKeyEnv');
   if (sttLlmApiKeyEnvEl) sttLlmApiKeyEnvEl.onchange = () => { syncConverseSettingsUI(); loadModelOptions(); saveConfigSoon(); };
   const ttsDeviceEl = $('ttsDevice');

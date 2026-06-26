@@ -102,3 +102,17 @@ def test_app_js_bootstraps_local_models_ui():
     app = read(JS_DIR / 'app.js')
     assert 'wireLocalModelsUi' in app
     assert 'local-models.js' in app
+
+
+
+def test_settings_modal_mentions_red_model_warnings_not_hidden_filters():
+    html = read(KORINA_DIR / "index.html")
+    assert "shown in red" in html
+    assert "ignore audio-capability filter" not in html
+
+
+def test_providers_ui_consumes_backend_model_status_fields():
+    js = read(JS_DIR / "providers-ui.js")
+    assert "llm_models_status" in js
+    assert "stt_llm_models_status" in js
+    assert "modelOptionBad" in js

@@ -120,10 +120,11 @@ async function refreshLocalModels() {
     if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
     await loadLocalModelRoots();
     await loadModelOptions(true);
+    const cacheNote = j.cleared_audio_probes ? (' · cleared ' + j.cleared_audio_probes + ' stale audio probe cache entr' + (j.cleared_audio_probes === 1 ? 'y' : 'ies')) : '';
     if (j.restarted) {
-      setStatus('Refreshed · ' + j.discovered_count + ' models · llama.cpp restarted on ' + j.model, 'good');
+      setStatus('Refreshed · ' + j.discovered_count + ' models · llama.cpp restarted on ' + j.model + cacheNote, 'good');
     } else {
-      setStatus('Refreshed · ' + j.discovered_count + ' models · ' + (j.note || 'no restart'), 'good');
+      setStatus('Refreshed · ' + j.discovered_count + ' models · ' + (j.note || 'no restart') + cacheNote, 'good');
     }
   } catch (e) {
     setStatus('Refresh failed: ' + e.message, 'bad');

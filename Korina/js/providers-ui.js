@@ -1,19 +1,7 @@
 // js/providers-ui.js
 //
 // Frontend provider-capability and model-options helpers extracted
-// verbatim from the original inline <script> in Korina/index.html
-// (lines 359–391, 393–410, 630–696 at commit bdda3cc). Bare top-level
-// globals from the inline script have been migrated to the
-// consolidated `state` object (see state.js):
-//   - `_capabilitiesCache`  →  state._capabilitiesCache
-//   - `lastModelsQuery`     →  state.lastModelsQuery
-//   - `lastModelsLoadedAt`  →  state.lastModelsLoadedAt
-//   - `lastModelsPayload`   →  state.lastModelsPayload
-// Bare function references (e.g. `llmBaseUrl()`, `prettyModelLabel(...)`,
-// `syncConverseSettingsUI()`, `saveConfigNow()`) are imported here from
-// their owning modules (settings-ui.js, labels.js, api.js).
-//
-// Consumers (e.g. app.js) import the named exports below.
+// from the original inline script and adapted for red warning states.
 
 import { state } from "./state.js";
 import { $ } from "./dom.js";
@@ -28,19 +16,17 @@ import {
   sttLlmModel,
   syncConverseSettingsUI,
 } from "./settings-ui.js";
-import { saveConfigNow } from "./api.js";
+import {
+  saveConfigNow,
+  listAudioProbes,
+  clearAudioProbe,
+  normalizeTripleBaseUrl,
+} from "./api.js";
 import {
   filterModelsByCapability,
   sttLlmModelRequirement,
   setCapabilityFilterOverride,
 } from "./capability-filter.js";
-import {
-  listAudioProbes,
-  clearAudioProbe,
-  normalizeTripleBaseUrl,
-} from './api.js';
-
-// --- Capabilities (verbatim from index.html:359–391) ---
 
 export async function loadCapabilities(force=false){
   if(state._capabilitiesCache && !force) return state._capabilitiesCache;
@@ -70,7 +56,6 @@ export function maybeApplyProviderPreset(providerId, baseUrlId, {clearWhenBlank=
   const provider=$(providerId)?.value||"";
   const input=$(baseUrlId);
   if(!input) return false;
-  // agent provider uses agent_providers section
   const isAgent = providerId === "agentProvider";
   const caps = (isAgent ? getAgentProviderCaps(provider) : getResponseLlmProviderCaps(provider));
   const preset = caps ? String(caps.default_base_url || "") : providerPresetBaseUrl(provider);
@@ -79,33 +64,47 @@ export function maybeApplyProviderPreset(providerId, baseUrlId, {clearWhenBlank=
   return false;
 }
 
-// --- Base-URL editability (verbatim from index.html:393–410) ---
+function modelStatus(statusDict, modelId){
+  return statusDict ? (statusDict[String(modelId || "")] || null) : null;
+}
+
+function applyModelOptionStatus(option, baseLabel, status){
+  const summary = String(status?.summary || "").trim();
+  const reasons = Array.isArray(status?.reasons) ? status.reasons.map(x => String(x || "").trim()).filter(Boolean) : [];
+  option.classList.remove('modelOptionBad');
+  option.style.color = '';
+  option.style.fontWeight = '';
+  option.dataset.unusable = 'false';
+  option.textContent = baseLabel;
+  option.title = '';
+  if (status && status.usable === false) {
+    option.classList.add('modelOptionBad');
+    option.style.color = '#ff7b72';
+    option.style.fontWeight = '600';
+    option.dataset.unusable = 'true';
+    option.textContent = `${baseLabel} [red: ${summary || 'likely unusable'}]`;
+    option.title = reasons.join(' • ');
+  }
+}
 
 export async function setBaseUrlEditability(){
   await loadCapabilities();
-  // response-LLM
   const llmId = $("llmProvider")?.value || "";
   const llmCaps = getResponseLlmProviderCaps(llmId);
   const llmEditable = llmCaps ? !!llmCaps.editable_base_url : (llmId === "openai-compatible");
   if($("llmBaseUrl")) $("llmBaseUrl").disabled = !llmEditable;
-  // multimodal-STT (uses response-LLM provider list)
   const sttId = String($("sttLlmProvider")?.value || "").trim();
   const sttCaps = getResponseLlmProviderCaps(sttId);
   const sttEditable = sttCaps ? !!sttCaps.editable_base_url : (sttId === "openai-compatible");
   if($("sttLlmBaseUrl")) $("sttLlmBaseUrl").disabled = !sttEditable;
-  // agent (NEW: this was missing)
   const agentId = String($("agentProvider")?.value || "").trim();
   const agentCaps = getAgentProviderCaps(agentId);
   const agentEditable = agentCaps ? !!agentCaps.editable_base_url : (agentId === "openai-compatible" || agentId === "anthropic");
   if($("agentBaseUrl")) $("agentBaseUrl").disabled = !agentEditable;
 }
 
-// --- Model options (verbatim from index.html:630–696) ---
-
 export async function loadModelOptions(force=false){
   try{
-    // Phase 4.5.6: load audio probe cache so the dropdown can show
-    // badges for known-broken (provider, base_url, model) triples.
     try {
       const probeResp = await listAudioProbes();
       state.audioUnsupported = probeResp.entries || {};
@@ -117,6 +116,8 @@ export async function loadModelOptions(force=false){
       llm_api_key_env: String($("llmApiKeyEnv")?.value||"").trim(),
       stt_llm_base_url: effectiveSttLlmBaseUrl(),
       stt_llm_api_key_env: effectiveSttLlmApiKeyEnv(),
+      llm_provider: String($("llmProvider")?.value||"").trim(),
+      stt_llm_provider: effectiveSttLlmProvider(),
     });
     const query=params.toString();
     let j=state.lastModelsPayload;
@@ -127,19 +128,26 @@ export async function loadModelOptions(force=false){
       state.lastModelsPayload=j;
       state.lastModelsLoadedAt=Date.now();
     }
+
+    const llmStatuses = j.llm_models_status || {};
+    const sttStatuses = j.stt_llm_models_status || {};
+
     if(Array.isArray(j.whisper_models) && j.whisper_models.length){
       const current=sttModel(); $("sttModel").innerHTML="";
       for(const m of j.whisper_models){ const o=document.createElement("option"); o.value=m; o.textContent=m; $("sttModel").appendChild(o); }
       $("sttModel").value=j.whisper_models.includes(current)?current:(j.whisper_models.includes("base.en")?"base.en":j.whisper_models[0]);
     }
+
     if(Array.isArray(j.llm_models) && j.llm_models.length){
       const current=lmModel(); $("lmModel").innerHTML="";
-      for(const m of j.llm_models){ const o=document.createElement("option"); o.value=m; o.textContent=(j.labels&&j.labels[m])||prettyModelLabel(m); $("lmModel").appendChild(o); }
+      for(const m of j.llm_models){
+        const o=document.createElement("option");
+        o.value=m;
+        applyModelOptionStatus(o, (j.labels&&j.labels[m])||prettyModelLabel(m), modelStatus(llmStatuses, m));
+        $("lmModel").appendChild(o);
+      }
       $("lmModel").value=j.llm_models.includes(current)?current:(j.llm_default||j.llm_models[0]);
     } else if($("lmModel")){
-      // Endpoint returned nothing (LM Studio / llama.cpp / Ollama is down). Fall back
-      // to the local model catalog the backend attached to the same response so the
-      // dropdown is never empty on this page.
       const localPool = [
         ...((j.llama_cpp_local_models || []).map(id => ({ id, group: 'llama.cpp (local GGUF)' }))),
         ...((j.lmstudio_catalog_models || []).map(id => ({ id, group: 'lmstudio (catalog)' }))),
@@ -151,11 +159,10 @@ export async function loadModelOptions(force=false){
         for(const entry of localPool){
           const o=document.createElement("option");
           o.value=entry.id;
-          o.textContent=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
-          if(entry.group !== lastGroup){
-            o.textContent = `[${entry.group}] ${o.textContent}`;
-            lastGroup = entry.group;
-          }
+          const baseLabel=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
+          const label = entry.group !== lastGroup ? `[${entry.group}] ${baseLabel}` : baseLabel;
+          applyModelOptionStatus(o, label, modelStatus(llmStatuses, entry.id));
+          if(entry.group !== lastGroup){ lastGroup = entry.group; }
           $("lmModel").appendChild(o);
         }
         const saved = current || j.llm_default;
@@ -163,36 +170,20 @@ export async function loadModelOptions(force=false){
         $("lmModel").value = match ? saved : localPool[0].id;
       }
     }
+
     let sttFilterInfo = "";
     if($("sttLlmModel")){
       const current=sttLlmModel();
       $("sttLlmModel").innerHTML="";
       const blank=document.createElement("option"); blank.value=""; blank.textContent="Inherit from LLM Response"; $("sttLlmModel").appendChild(blank);
-      const sttRequirement = sttLlmModelRequirement();
-      const sttModelsFiltered = filterModelsByCapability(
-        j.stt_llm_models || [],
-        j.stt_llm_models_capabilities || {},
-        sttRequirement,
-      );
-      for(const m of sttModelsFiltered){
+      for(const m of (j.stt_llm_models || [])){
         const o=document.createElement("option");
         o.value=m;
-        const baseLabel=(j.labels&&j.labels[m])||prettyModelLabel(m);
-        // Triple must match the backend's `triple_key` exactly. The backend
-        // strips trailing slashes from base_url; mirror that here.
-        const _probeTriple = `${effectiveSttLlmProvider()}::${normalizeTripleBaseUrl(effectiveSttLlmBaseUrl())}::${m}`;
-        if(state.audioUnsupported && state.audioUnsupported[_probeTriple]){
-          o.textContent = `${baseLabel} [audio unsupported: ${state.audioUnsupported[_probeTriple].reason}]`;
-          o.disabled = true;
-        } else {
-          o.textContent = baseLabel;
-        }
+        applyModelOptionStatus(o, (j.labels&&j.labels[m])||prettyModelLabel(m), modelStatus(sttStatuses, m));
         $("sttLlmModel").appendChild(o);
       }
       const allSttIds = Array.from($("sttLlmModel").options).map(o => o.value).filter(Boolean);
       if(allSttIds.length === 0){
-        // Endpoint returned nothing. Seed from the same local catalog so multimodal
-        // STT has selectable models even when the response LLM endpoint is offline.
         const localPool = [
           ...((j.llama_cpp_local_models || []).map(id => ({ id, group: 'llama.cpp (local GGUF)' }))),
           ...((j.lmstudio_catalog_models || []).map(id => ({ id, group: 'lmstudio (catalog)' }))),
@@ -202,11 +193,10 @@ export async function loadModelOptions(force=false){
           for(const entry of localPool){
             const o=document.createElement("option");
             o.value=entry.id;
-            o.textContent=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
-            if(entry.group !== lastGroup){
-              o.textContent = `[${entry.group}] ${o.textContent}`;
-              lastGroup = entry.group;
-            }
+            const baseLabel=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
+            const label = entry.group !== lastGroup ? `[${entry.group}] ${baseLabel}` : baseLabel;
+            applyModelOptionStatus(o, label, modelStatus(sttStatuses, entry.id));
+            if(entry.group !== lastGroup){ lastGroup = entry.group; }
             $("sttLlmModel").appendChild(o);
           }
           const saved = current || j.stt_llm_default;
@@ -216,11 +206,31 @@ export async function loadModelOptions(force=false){
       } else {
         $("sttLlmModel").value=[...$("sttLlmModel").options].some(o=>o.value===current)?current:"";
       }
-      // Informational: how many were filtered out by the audio capability filter.
-      const sttHidden = (j.stt_llm_models || []).length - sttModelsFiltered.length;
-      sttFilterInfo = sttHidden > 0
-        ? ` · ${sttHidden} hidden by audio capability filter (toggle "All models" to show)`
-        : "";
+      const renderedSttIds = Array.from($("sttLlmModel").options).map(o => o.value).filter(Boolean);
+      const sttRed = renderedSttIds.filter(id => modelStatus(sttStatuses, id)?.usable === false).length;
+      sttFilterInfo = sttRed > 0 ? ` · ${sttRed} shown in red as likely unusable` : "";
+
+      const clearBtn = $("clearProbeBtn");
+      if (clearBtn) {
+        const selected = $("sttLlmModel").value || $("lmModel")?.value || "";
+        const provider = effectiveSttLlmProvider();
+        const baseUrl = normalizeTripleBaseUrl(effectiveSttLlmBaseUrl());
+        const triple = `${provider}::${baseUrl}::${selected}`;
+        const probe = state.audioUnsupported?.[triple];
+        if (selected && probe) {
+          clearBtn.style.display = '';
+          clearBtn.dataset.provider = provider;
+          clearBtn.dataset.baseUrl = baseUrl;
+          clearBtn.dataset.model = selected;
+          clearBtn.title = String(probe.reason || '');
+        } else {
+          clearBtn.style.display = 'none';
+          clearBtn.dataset.provider = '';
+          clearBtn.dataset.baseUrl = '';
+          clearBtn.dataset.model = '';
+          clearBtn.title = '';
+        }
+      }
     }
     syncConverseSettingsUI();
     $("settingsInfo").textContent=`Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo}`.trim();

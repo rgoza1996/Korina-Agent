@@ -135,3 +135,32 @@ def test_api_llm_llama_refresh_persists_resolved_model(isolated_korina_app_dir, 
         assert called.get('model') == str(gguf)
         assert called.get('started') == str(gguf)
         assert load_config()['lm_model'] == str(gguf)
+
+
+def test_api_llm_llama_refresh_clears_llama_audio_probe_cache(isolated_korina_app_dir, model_root, client):
+    from korina.config import audio_unsupported_key
+
+    set_local_model_roots([str(model_root)])
+    cfg = load_config()
+    cfg["llm_provider"] = "openai-compatible"
+    cfg["audio_unsupported"] = {
+        audio_unsupported_key("llama.cpp", "http://127.0.0.1:8080/v1", "bad-model.gguf"): {
+            "reason": "body_match:audio.*invalid",
+            "since": "2026-06-26T00:00:00+00:00",
+            "last_error": "bad",
+        },
+        audio_unsupported_key("lmstudio", "http://127.0.0.1:1234/v1", "keep-me"): {
+            "reason": "body_match:audio.*invalid",
+            "since": "2026-06-26T00:00:00+00:00",
+            "last_error": "bad",
+        },
+    }
+    save_config(cfg)
+
+    r = client.post('/api/llm/llama/refresh')
+    assert r.status_code == 200
+    body = r.json()
+    assert body['cleared_audio_probes'] == 1
+    cache = load_config()['audio_unsupported']
+    assert 'llama.cpp::http://127.0.0.1:8080/v1::bad-model.gguf' not in cache
+    assert 'lmstudio::http://127.0.0.1:1234/v1::keep-me' in cache

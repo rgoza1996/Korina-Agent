@@ -35,10 +35,8 @@
             <div id="sttMultimodalProviderWrap" class="settingsHidden"><label for="sttLlmProvider">LLM provider</label><select id="sttLlmProvider"><option value="">Inherit from LLM Response</option><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
             <div id="sttMultimodalModelWrap" class="settingsHidden"><label for="sttLlmModel">Model</label><select id="sttLlmModel"><option value="">Inherit from LLM Response</option></select></div>
             <div class="settingsGroupNote">
-              <label class="toggleLine">
-                <input type="checkbox" id="sttCapabilityFilterOverride">
-                Show all models (ignore audio-capability filter)
-              </label>
+              <input type="checkbox" id="sttCapabilityFilterOverride" checked hidden>
+              <div class="small mono">Models likely to fail are shown in red instead of hidden.</div>
             </div>
             <div id="sttMultimodalBaseUrlWrap"><label for="sttLlmBaseUrl">Base URL</label><input id="sttLlmBaseUrl" type="text" placeholder="blank = inherit from LLM Response"></div>
             <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit from LLM Response"></div>

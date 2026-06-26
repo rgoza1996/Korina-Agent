@@ -22,6 +22,7 @@ from korina.config import (
     load_config,
     save_config,
     set_local_model_roots,
+    clear_audio_unsupported_for_provider,
 )
 from korina.services.model_catalog import discover_local_gguf_models
 from korina.services.provider_manager import (
@@ -119,9 +120,11 @@ def refresh_llama(req: LlamaRefreshRequest = LlamaRefreshRequest()):
     provider = str(cfg.get('llm_provider') or '').strip().lower()
     selected = (req.model or cfg.get('lm_model') or '').strip()
     resolved = _resolve_llama_cpp_model_id(selected) if selected else ''
+    cleared_audio_probes = clear_audio_unsupported_for_provider('llama.cpp')
 
     found = discover_local_gguf_models()
     payload = {
+        'cleared_audio_probes': cleared_audio_probes,
         'ok': True,
         'roots': config_local_model_roots(cfg),
         'discovered_count': len(found),
