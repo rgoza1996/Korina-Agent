@@ -47,6 +47,27 @@ import { rmsLevel, updateAdaptiveVad } from "./vad.js";
 const VAD_SPEECH_FRAMES = 8;
 const VAD_SILENCE_FRAMES = 10;
 
+// --- Response-LLM reachability preflight (added for live-loop visibility) ---
+// Phase 5/visibility fix: instead of letting acks play and then going silent
+// when the configured response LLM is unreachable, do a fast preflight before
+// `askAndSpeak()` and surface a specific "bad" status so the user understands
+// why no reply is coming.
+async function responseLlmPreflight() {
+  try {
+    const r = await fetch('/api/health');
+    if (!r.ok) return { ok: false, reason: `/api/health HTTP ${r.status}` };
+    const j = await r.json();
+    // /api/health returns `llm_error` if llama-server etc. is unreachable, but
+    // does not include it on /api/capabilities. We only need to know whether
+    // the response LLM (not the page server) is up.
+    if (j && j.llm_error) return { ok: false, reason: j.llm_error };
+    if (j && j.ok === false) return { ok: false, reason: 'korina-voice-lab reports not ok' };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: `health fetch failed: ${e.message}` };
+  }
+}
+
 // --- Start live conversation (verbatim from index.html:1220) ---
 export async function startLive() {
   state.live = true; state.liveBusy = false;
@@ -199,7 +220,29 @@ export async function handleLiveTurn() {
       liveMonitor();
       return;
     }
-    await askAndSpeak(text);
+    const pre = await responseLlmPreflight();
+    if (!pre.ok) {
+      status($('sttStatus'), `Live mode: response LLM unreachable (${pre.reason}). Acks are still playing but no reply will come until llama.cpp / LM Studio is running.`, 'bad');
+      // Don't break the live loop — keep listening so the user can talk again.
+      state.liveBusy = false;
+      startLiveRecorder();
+      liveMonitor();
+      return;
+    }
+    try {
+      const replyText = await askAndSpeak(text);
+      // askAndSpeak() routes through speakText() which already clears
+      // ttsSpeaking in its `finally` block. An empty string here usually means
+      // the LLM replied with whitespace or no content; surface that loudly so
+      // the user knows it's not a stalled TTS.
+      if (!replyText || !String(replyText).trim()) {
+        status($('sttStatus'), 'Live mode: response LLM returned an empty reply. The model may need a longer context or different prompt.', 'bad');
+      }
+    } catch (e) {
+      // askAndSpeak already swallowed the error into TTS status; do not
+      // double-throw, but make sure the live loop's status is also updated.
+      status($('sttStatus'), `Live mode: askAndSpeak failed: ${e && e.message ? e.message : e}`, 'bad');
+    }
   } catch (e) {
     status($('sttStatus'), 'Live loop error: ' + e.message, 'bad');
   } finally {

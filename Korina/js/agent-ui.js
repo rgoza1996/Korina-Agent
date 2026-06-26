@@ -267,4 +267,8 @@ export async function askAndSpeak(message, context = '') {
     state.agentInterruptInProgress = false;
   }
   maybeDeliverTranscriptToAgent('turn');
+  // Phase 5/visibility fix: let callers (live loop, manual transcript)
+  // introspect what the LLM actually said so they can surface empty replies
+  // instead of going silent after the ack plays.
+  return displayReply;
 }
