@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import socket
 import subprocess
 import time
 import urllib.error
@@ -83,17 +85,90 @@ def _lms_run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=check, capture_output=True, text=True)
 
 
-def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> None:
-    """Start LM Studio's headless OpenAI-compatible server on :1234 with `model_id` loaded.
 
-    Order of operations:
-      1. Stop Korina's systemd `llama-server.service`.
-      2. Kill any stray `llama-server` that LM Studio's GUI may have started.
-      3. Make sure the LM Studio GUI/RPC is running (its in-process RPC is
-         what `lms` CLI talks to).
-      4. `lms server start --port 1234 --bind 0.0.0.0 --cors`.
-      5. `lms load <id> --yes` so /v1/models advertises the user's choice.
-      6. Poll /v1/models until 200.
+def _wait_for_port_free(port: int, timeout_seconds: float = 30.0) -> None:
+    """Block until ``port`` on 127.0.0.1 is no longer accepting connections.
+
+    Used between ``lms server stop`` and the next bind attempt. Polls the
+    kernel via ``socket.connect_ex`` so we do not depend on the just-killed
+    process having fully released the socket yet (TIME_WAIT/CLOSE_WAIT).
+    """
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.25)
+            if s.connect_ex(('127.0.0.1', port)) != 0:
+                return  # port is free
+        time.sleep(0.25)
+    raise RuntimeError(f'Port {port} did not free within {timeout_seconds:.0f}s')
+
+
+def _is_lmstudio_server_already_up(port: int = 1234) -> bool:
+    """True if LM Studio HTTP server is already serving :port."""
+    try:
+        with urllib.request.urlopen(f'http://127.0.0.1:{port}/v1/models', timeout=1) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+
+def _is_lmstudio_model_loaded(model: str) -> bool:
+    """True if ``model`` is currently loaded in LM Studio's runtime.
+
+    Uses ``lms ps --json`` which returns one entry per loaded model with a
+    ``modelKey`` field. This avoids the failure mode where ``lms load``
+    returns non-zero because the model is already in memory and a second
+    instance would not fit.
+    """
+    if not LMS_CLI_BIN.exists():
+        return False
+    try:
+        proc = subprocess.run(
+            [str(LMS_CLI_BIN), 'ps', '--json'],
+            capture_output=True, text=True, timeout=15,
+        )
+    except Exception:
+        return False
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return False
+    try:
+        items = json.loads(proc.stdout)
+    except Exception:
+        idx = proc.stdout.find('[')
+        if idx < 0:
+            return False
+        try:
+            items = json.loads(proc.stdout[idx:])
+        except Exception:
+            return False
+    target = str(model or '').strip()
+    if not target:
+        return False
+    for entry in items:
+        if not isinstance(entry, dict):
+            continue
+        key = entry.get('modelKey') or entry.get('identifier') or ''
+        if key == target:
+            return True
+    return False
+
+
+def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> None:
+    """Bring up LM Studio's OpenAI-compatible server on :1234 with ``model_id`` loaded.
+
+    LM Studio's GUI auto-starts its HTTP server as soon as the process is up.
+    We do NOT call ``lms server start`` ourselves - that races against the
+    GUI's auto-restart and produces transient ``EADDRINUSE`` errors. The
+    minimal correct sequence is:
+
+      1. Free :1234 of any competing llama-server first.
+      2. Spawn the GUI if it is not already running. Its embedded HTTP server
+         starts automatically as part of GUI startup.
+      3. Poll ``http://127.0.0.1:1234/v1/models`` until 200 - this is the
+         source of truth that the server is ready.
+      4. ``lms load <id> --yes`` so the OpenAI-compatible ``/v1/models``
+         endpoint advertises the user's choice. Tolerate "already loaded".
     """
     config = dict(config or load_config())
     model = str(model_id or config.get('lm_model') or '').strip()
@@ -104,19 +179,19 @@ def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> None:
         )
     stop_llama_server()
     _kill_stray_llama_servers()
-    start_lmstudio()
-    _lms_run('server', 'stop', check=False)
-    start_proc = _lms_run('server', 'start', '--port', '1234', '--bind', '0.0.0.0', '--cors')
-    if start_proc.returncode != 0:
-        raise RuntimeError(
-            'lms server start failed: ' + (start_proc.stderr or start_proc.stdout or 'unknown error').strip()
-        )
-    if model:
-        load_proc = _lms_run('load', model, '--yes', check=False)
-        if load_proc.returncode != 0:
-            stderr = (load_proc.stderr or load_proc.stdout or '').strip()
-            raise RuntimeError(f'lms load {model!r} failed: {stderr}')
+    if not _is_lmstudio_server_already_up():
+        start_lmstudio()
     wait_for_lmstudio_server_ready()
+    if model:
+        # Skip the load entirely if the model is already in memory. `lms
+        # load <model>` fails when a second instance can't fit in VRAM,
+        # even though the model is healthy and serving requests.
+        if not _is_lmstudio_model_loaded(model):
+            load_proc = _lms_run('load', model, '--yes', check=False)
+            if load_proc.returncode != 0:
+                stderr = (load_proc.stderr or load_proc.stdout or '').strip()
+                if 'already loaded' not in stderr.lower() and 'no change' not in stderr.lower():
+                    raise RuntimeError(f'lms load {model!r} failed: {stderr}')
 
 
 def stop_lmstudio_server() -> None:

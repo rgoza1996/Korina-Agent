@@ -75,7 +75,12 @@ def fake_lms(tmp_path, monkeypatch):
     yield {'lms': fake, 'log': log_path, 'port': port, 'pm': pm_mod, 'paths': paths_mod, 'catalog': fake_catalog}
 
 
-def test_lms_branch_runs_lms_server_start_with_correct_args(fake_lms, isolated_korina_app_dir, client, monkeypatch):
+def test_lms_branch_skips_lms_server_start_and_only_loads(fake_lms, isolated_korina_app_dir, client, monkeypatch):
+    """The activate flow MUST NOT call `lms server start`. That call races
+    against LM Studio's GUI auto-restart and produces transient EADDRINUSE
+    errors. The correct sequence is: kill stray -> check if already up ->
+    spawn GUI if not -> poll /v1/models until ready -> lms load <model>.
+    """
     cfg = config_mod.load_config()
     cfg['llm_provider'] = 'lmstudio'
     cfg['lm_model'] = 'qwen/qwen3.5-2b'
@@ -89,8 +94,7 @@ def test_lms_branch_runs_lms_server_start_with_correct_args(fake_lms, isolated_k
     monkeypatch.setattr(fake_lms['pm'], 'start_lmstudio', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'start_llama_server', lambda *a, **k: None)
     monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: None)
-
-    # The readiness wait polls 127.0.0.1:1234; override to use the fake port.
+    monkeypatch.setattr(fake_lms['pm'], '_is_lmstudio_server_already_up', lambda port=1234: True)
     monkeypatch.setattr(fake_lms['pm'], 'wait_for_lmstudio_server_ready', lambda *a, **k: None)
 
     r = client.post('/api/llm/provider/activate', json={'provider': 'lmstudio', 'model': 'qwen/qwen3.5-2b'})
@@ -101,10 +105,71 @@ def test_lms_branch_runs_lms_server_start_with_correct_args(fake_lms, isolated_k
     assert 'stray-llama-server' in body['activation']['stopped']
 
     log_lines = fake_lms['log'].read_text().splitlines()
-    # Order matters: server stop, server start --bind 0.0.0.0 --cors, load <model> --yes
-    assert any('server stop' in line for line in log_lines)
-    assert any('server start --port 1234 --bind 0.0.0.0 --cors' in line for line in log_lines)
-    assert any('load qwen/qwen3.5-2b --yes' in line for line in log_lines)
+    # The activate flow MUST NOT invoke `lms server start` (it would race
+    # against the GUI). It must still call `lms load <model>`.
+    assert not any('server start' in line for line in log_lines), (
+        f'activate flow must not call lms server start; got: {log_lines}'
+    )
+    assert not any('server stop' in line for line in log_lines), (
+        f'activate flow must not call lms server stop; got: {log_lines}'
+    )
+    assert any('load qwen/qwen3.5-2b --yes' in line for line in log_lines), (
+        f'activate flow must call lms load <model>; got: {log_lines}'
+    )
+
+
+def test_lms_branch_spawns_gui_if_server_not_already_up(fake_lms, isolated_korina_app_dir, client, monkeypatch):
+    """If _is_lmstudio_server_already_up returns False, the activate flow
+    MUST spawn the LM Studio GUI (start_lmstudio)."""
+    cfg = config_mod.load_config()
+    cfg['llm_provider'] = 'lmstudio'
+    cfg['lm_model'] = 'qwen/qwen3.5-2b'
+    cfg['llm_base_url'] = 'http://127.0.0.1:1234/v1'
+    config_mod.save_config(cfg)
+
+    spawn_calls = {'count': 0}
+
+    def fake_spawn():
+        spawn_calls['count'] += 1
+
+    monkeypatch.setattr(fake_lms['pm'], 'stop_llama_server', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], 'stop_ollama', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], 'start_lmstudio', fake_spawn)
+    monkeypatch.setattr(fake_lms['pm'], 'start_llama_server', lambda *a, **k: None)
+    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], '_is_lmstudio_server_already_up', lambda port=1234: False)
+    monkeypatch.setattr(fake_lms['pm'], 'wait_for_lmstudio_server_ready', lambda *a, **k: None)
+
+    r = client.post('/api/llm/provider/activate', json={'provider': 'lmstudio', 'model': 'qwen/qwen3.5-2b'})
+    assert r.status_code == 200, r.text
+    assert spawn_calls['count'] == 1, f'expected start_lmstudio called once, got {spawn_calls["count"]}'
+
+
+def test_lms_branch_skips_spawn_if_server_already_up(fake_lms, isolated_korina_app_dir, client, monkeypatch):
+    """If _is_lmstudio_server_already_up returns True, the activate flow
+    MUST NOT spawn a second GUI process."""
+    cfg = config_mod.load_config()
+    cfg['llm_provider'] = 'lmstudio'
+    cfg['lm_model'] = 'qwen/qwen3.5-2b'
+    cfg['llm_base_url'] = 'http://127.0.0.1:1234/v1'
+    config_mod.save_config(cfg)
+
+    spawn_calls = {'count': 0}
+
+    def fake_spawn():
+        spawn_calls['count'] += 1
+
+    monkeypatch.setattr(fake_lms['pm'], 'stop_llama_server', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], 'stop_ollama', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], 'start_lmstudio', fake_spawn)
+    monkeypatch.setattr(fake_lms['pm'], 'start_llama_server', lambda *a, **k: None)
+    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], '_is_lmstudio_server_already_up', lambda port=1234: True)
+    monkeypatch.setattr(fake_lms['pm'], 'wait_for_lmstudio_server_ready', lambda *a, **k: None)
+
+    r = client.post('/api/llm/provider/activate', json={'provider': 'lmstudio', 'model': 'qwen/qwen3.5-2b'})
+    assert r.status_code == 200, r.text
+    assert spawn_calls['count'] == 0, f'expected start_lmstudio NOT called, got {spawn_calls["count"]}' 
 
 
 def test_lms_branch_surfaces_lms_load_error(fake_lms, isolated_korina_app_dir, tmp_path, client, monkeypatch):

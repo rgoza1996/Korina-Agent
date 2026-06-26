@@ -37,7 +37,9 @@ def test_discover_local_gguf_models_uses_temp_roots(reload_korina_modules, model
     assert not any(path.endswith("-assistant.gguf") for path in found)
 
 
-def test_discover_lmstudio_catalog_models_uses_temp_hub(reload_korina_modules, lmstudio_root):
+def test_discover_lmstudio_hub_manifests_uses_temp_hub(reload_korina_modules, lmstudio_root):
+    """The hub-only function is deterministic and reads manifest.json files
+    under LMSTUDIO_HUB_ROOT only -- no lms ls, no subprocess."""
     manifest = lmstudio_root / "owner" / "repo" / "manifest.json"
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text('{"owner":"owner","name":"repo"}')
@@ -46,7 +48,57 @@ def test_discover_lmstudio_catalog_models_uses_temp_hub(reload_korina_modules, l
     invalid.write_text('{"owner":"owner"}')
     model_catalog = reload_korina_modules("korina.services.model_catalog")[0]
 
-    assert model_catalog.discover_lmstudio_catalog_models() == ["owner/repo"]
+    assert model_catalog.discover_lmstudio_hub_manifests() == ["owner/repo"]
+
+
+def test_discover_lmstudio_catalog_models_unions_hub_and_lms(reload_korina_modules, lmstudio_root, tmp_path, monkeypatch):
+    """discover_lmstudio_catalog_models returns the union of hub manifests
+    AND `lms ls --json` modelKeys, so user-imported community quants are
+    visible to the activate pre-flight and /api/models."""
+    manifest = lmstudio_root / "owner" / "repo" / "manifest.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text('{"owner":"owner","name":"repo"}')
+
+    fake_lms = tmp_path / "lms"
+    fake_lms.write_text(
+        '#!/usr/bin/env bash\n'
+        'echo \'[{"type":"llm","modelKey":"qwen3.5-2b-uncensored-hauhaucs-aggressive"}]\'\n'
+    )
+    fake_lms.chmod(0o755)
+
+    model_catalog = reload_korina_modules("korina.services.model_catalog")[0]
+    monkeypatch.setattr(model_catalog, "LMS_CLI_BIN", fake_lms)
+
+    catalog = model_catalog.discover_lmstudio_catalog_models()
+    assert "owner/repo" in catalog
+    assert "qwen3.5-2b-uncensored-hauhaucs-aggressive" in catalog
+
+
+def test_discover_lmstudio_local_models_handles_lms_preamble(reload_korina_modules, tmp_path, monkeypatch):
+    """`lms ls --json` may print 'Waking up LM Studio service...' before
+    the JSON array on first call. The parser must tolerate that preamble."""
+    fake_lms = tmp_path / "lms"
+    fake_lms.write_text(
+        "#!/usr/bin/env bash\n"
+        "echo 'Waking up LM Studio service...'\n"
+        "echo '[{\"type\":\"llm\",\"modelKey\":\"x/y\"},{\"type\":\"embedding\",\"modelKey\":\"emb\"}]'\n"
+    )
+    fake_lms.chmod(0o755)
+
+    model_catalog = reload_korina_modules("korina.services.model_catalog")[0]
+    monkeypatch.setattr(model_catalog, "LMS_CLI_BIN", fake_lms)
+
+    out = model_catalog.discover_lmstudio_local_models()
+    assert out == ["x/y"]  # embedding filtered out
+
+
+def test_discover_lmstudio_local_models_returns_empty_when_lms_missing(reload_korina_modules, tmp_path, monkeypatch):
+    """If the lms CLI is not installed, the local-model discovery must
+    gracefully return [] rather than raising."""
+    fake_lms = tmp_path / "lms"  # does not exist
+    model_catalog = reload_korina_modules("korina.services.model_catalog")[0]
+    monkeypatch.setattr(model_catalog, "LMS_CLI_BIN", fake_lms)
+    assert model_catalog.discover_lmstudio_local_models() == []
 
 
 def test_llm_models_for_combines_endpoint_and_local_gguf(monkeypatch, reload_korina_modules, model_root):
