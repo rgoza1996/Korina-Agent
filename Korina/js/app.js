@@ -320,7 +320,8 @@ function wireSettingsInputs() {
   ].forEach(id => {
     const el = $(id);
     if (el) el.onchange = () => {
-      $('hostInfo').textContent = `${location.host} → LLM (${llmProviderLabel(llmProvider())}) ${llmBaseUrl()} → TTS (${ttsProviderLabel(ttsProvider())}) ${ttsBaseUrl()}`;
+      // hostInfo is now owned by api.js:health() and updated every 5s
+      // from server-resolved URLs (Bug C / #19).
       syncConverseSettingsUI();
       health();
       saveConfigSoon();

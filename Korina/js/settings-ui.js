@@ -203,7 +203,10 @@ export function applyConfig(c = {}) {
   if (c.silence_ms) { state.endSilenceMs = parseInt(c.silence_ms, 10); $('silenceMs').value = state.endSilenceMs; $('silenceDisplay').textContent = state.endSilenceMs + 'ms'; }
   syncConverseSettingsUI();
   if (c.mode) { state.mode = c.mode; document.querySelectorAll('.tab[data-mode]').forEach(x => x.classList.toggle('active', x.dataset.mode === state.mode)); }
-  $('hostInfo').textContent = `${location.host} → LLM (${llmProviderLabel(llmProvider())}) ${llmBaseUrl()} → TTS (${ttsProviderLabel(ttsProvider())}) ${ttsBaseUrl()}`;
+  // hostInfo is now owned by api.js:health() and updated every 5s from
+  // server-resolved URLs (Bug C / #19). The previous form-derived setter
+  // could disagree with the server when config.tts_base_url was empty or
+  // when the settings UI had a stale value.
 }
 
 // --- Idle activity tracking (verbatim from index.html:587-591) ---

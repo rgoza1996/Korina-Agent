@@ -61,27 +61,75 @@ export function saveConfigSoon() {
   state.saveConfigTimer = setTimeout(saveConfigNow, 250);
 }
 
-// health — moved verbatim from index.html:624
+// health — refactored for Commit 2 of the debug-strip audit.
+//
+// Single source of truth: /api/health (server-resolved URLs).
+// - ttsHealth reads j.tts.base_url and j.tts.{loaded,error,provider}.
+// - pageHealth flips red only after 2-3 consecutive poll failures
+//   (state.healthFailures), so a single 5s blip does not alarm.
+// - hostInfo is owned here (every 5s), not in form change handlers.
+// - settingsLiveStatus is updated from j.llm_error and j.stt_llm_error
+//   so the user can see which downstream service is failing.
+const HEALTH_FAIL_GRACE = 3; // consecutive misses before flipping pageDot red
+
 export async function health() {
+  let j = null;
+  let pageFailed = false;
   try {
-    let j = await (await fetch('/api/health')).json();
+    j = await (await fetch('/api/health')).json();
+    state.healthFailures = 0;
+  } catch (e) {
+    pageFailed = true;
+    state.healthFailures = (state.healthFailures || 0) + 1;
+  }
+
+  if (!pageFailed) {
     setDot('pageDot', j.whisper_loaded ? 'good' : 'warn');
     const sttSummary = sttBackend() === 'llm'
       ? `multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()} (${sttLlmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`
       : `built-in Whisper ${sttDevice()}/${sttModel()}`;
     const responseSummary = `${j.response_llm_provider || llmProvider()} ${j.response_llm_model || lmModel()} (${llmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`;
     $('pageHealth').textContent = `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
-  } catch (e) {
-    setDot('pageDot', 'bad');
-    $('pageHealth').textContent = 'page server offline';
+
+    // hostInfo (Bug C / #19): server-resolved URLs only.
+    const llmBase = j.response_llm_base_url || '';
+    const ttsBase = (j.tts && j.tts.base_url) || j.tts_base_url || '';
+    $('hostInfo').textContent = `${location.host} → LLM (${llmProviderLabel(j.response_llm_provider || '')}) ${llmBase} → TTS (${ttsProviderLabel((j.tts && j.tts.provider) || j.tts_provider || '')}) ${ttsBase}`;
+
+    // settingsLiveStatus (Bug D / #21): live LLM/STT health from j.{llm_error,stt_llm_error}.
+    const llmOk = !j.llm_error;
+    const sttOk = !j.stt_llm_error;
+    const parts = [];
+    parts.push(`LLM ${llmOk ? 'up' : 'down'}${llmOk ? '' : ' (' + j.llm_error + ')'}`);
+    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + j.stt_llm_error + ')'}`);
+    const liveEl = $('settingsLiveStatus');
+    if (liveEl) liveEl.textContent = parts.join(' · ');
+  } else {
+    // /api/health fetch failed this tick.
+    const fails = state.healthFailures || 1;
+    if (fails >= HEALTH_FAIL_GRACE) {
+      setDot('pageDot', 'bad');
+      $('pageHealth').textContent = `page server unreachable for ${fails * 5}s`;
+    }
+    // Else: keep the last-known-good dot color (no flicker).
   }
-  try {
-    let j = await (await fetch(`${ttsBaseUrl()}/health`)).json();
-    setDot('ttsDot', j.loaded ? 'good' : 'warn');
-    $('ttsHealth').textContent = `Kokoro ${j.loaded ? 'ready' : 'lazy'} · selected TTS ${ttsProvider()} ${ttsDevice()} @ ${ttsBaseUrl()} · last ${j.device || 'none'} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
-  } catch (e) {
-    setDot('ttsDot', 'bad');
-    $('ttsHealth').textContent = `${ttsProviderLabel(ttsProvider())} offline`;
+
+  // TTS pill — uses server block j.tts, not form-derived URL (Bug A / #17).
+  if (j && j.tts) {
+    const tts = j.tts;
+    const ttsProviderName = tts.provider || j.tts_provider || '';
+    if (tts.ok && tts.loaded) {
+      setDot('ttsDot', 'good');
+      $('ttsHealth').textContent = `${ttsProviderLabel(ttsProviderName)} ready · ${tts.base_url} · last ${tts.device || 'none'} · CUDA ${tts.cuda_available ? 'yes' : 'no'}`;
+    } else if (tts.ok && !tts.loaded) {
+      setDot('ttsDot', 'warn');
+      $('ttsHealth').textContent = `${ttsProviderLabel(ttsProviderName)} lazy · ${tts.base_url} · model not yet loaded`;
+    } else {
+      setDot('ttsDot', 'bad');
+      $('ttsHealth').textContent = `${ttsProviderLabel(ttsProviderName)} offline · ${tts.base_url} · ${tts.error || 'unknown error'}`;
+    }
+  } else {
+    // Server didn't return a tts block (older backend). Keep last-known state.
   }
 }
 
