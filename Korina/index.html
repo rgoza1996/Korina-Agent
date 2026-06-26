@@ -62,6 +62,25 @@
             <div class="secretNote"><label>Advanced</label><div class="toggleLine"><input id="llmReasoningEnabled" type="checkbox"><span>Allow response model reasoning / thinking</span></div></div>
           </div>
         </details>
+        <details class="settingsGroup" id="localModelsSection" open>
+          <summary>Local GGUF models</summary>
+          <div class="settingsGroupBody">
+            <p class="sectionLead">llama.cpp (and LM Studio's catalog) need to know where your model files live. Add or remove directories below; Korina walks each one recursively and surfaces every <code>.gguf</code> it finds in the model picker.</p>
+            <div class="actions" style="margin-bottom:8px">
+              <button type="button" id="refreshLocalModelsBtn" class="secondary">Refresh local models</button>
+              <span class="small mono" id="localModelsStatus" style="margin-left:8px"></span>
+            </div>
+            <ul id="localModelRootsList" class="settingsList"></ul>
+            <div class="row" style="margin-top:8px;align-items:flex-end">
+              <div style="flex:1">
+                <label for="newLocalModelRoot">Add a directory</label>
+                <input id="newLocalModelRoot" type="text" placeholder="/path/to/models" autocomplete="off">
+              </div>
+              <button type="button" id="addLocalModelRootBtn">Add</button>
+            </div>
+            <p class="small mono" id="localModelsHelp">Each entry must be an absolute directory path that exists on disk. Changes persist in <code>config.json</code> and are picked up immediately by the model picker.</p>
+          </div>
+        </details>
         <details class="settingsGroup" id="ttsSection" open>
           <summary>Text to Speech</summary>
           <div class="settingsGroupBody">

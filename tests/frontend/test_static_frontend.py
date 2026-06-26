@@ -86,3 +86,19 @@ def test_model_dropdown_does_not_refresh_on_focus_or_pointerdown():
     assert "addEventListener('focus" not in combined
     assert 'addEventListener("focus' not in combined
     assert "onfocus" not in combined
+
+
+
+def test_local_gguf_roots_section_exists_in_settings_modal():
+    html = read(KORINA_DIR / 'index.html')
+    assert 'id="localModelsSection"' in html
+    assert 'id="localModelRootsList"' in html
+    assert 'id="newLocalModelRoot"' in html
+    assert 'id="addLocalModelRootBtn"' in html
+    assert 'id="refreshLocalModelsBtn"' in html
+
+
+def test_app_js_bootstraps_local_models_ui():
+    app = read(JS_DIR / 'app.js')
+    assert 'wireLocalModelsUi' in app
+    assert 'local-models.js' in app

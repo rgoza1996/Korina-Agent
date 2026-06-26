@@ -60,6 +60,7 @@ import {
 import {
   stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry,
 } from "./history.js";
+import { wireLocalModelsUi, loadLocalModelRoots } from "./local-models.js";
 import {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
   interruptConverse, askAndSpeak, askLM, agentDebug,
@@ -91,6 +92,7 @@ Object.assign(window, {
   wireUiHandlers, openSettings, closeSettings, saveSettings,
   startRecording, stopRecording, toggleLive, stopPlayback,
   clearSession,
+  wireLocalModelsUi, loadLocalModelRoots,
 });
 
 
@@ -405,4 +407,5 @@ if (clearBtn) {
 // --- Boot ---
 await loadCapabilities().then(() => setBaseUrlEditability());
 wireUiHandlers();
+wireLocalModelsUi();
 initApp();
