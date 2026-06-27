@@ -115,6 +115,12 @@ export const state = {
 
   // --- Phase 2 capabilities cache ---
   _capabilitiesCache: null,
+
+  // --- multimodal STT capability filter ---
+  // Default OFF (filter ON): only show models with supports_audio_input=true
+  // in the #sttLlmModel dropdown. Users can opt back into the full list
+  // via the 'All models' override checkbox in Settings.
+  capabilityFilterOverride: false,
 };
 
 export const EventBus={

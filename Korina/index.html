@@ -38,8 +38,11 @@
             <div id="sttMultimodalProviderWrap" class="settingsHidden"><label for="sttLlmProvider">LLM provider</label><select id="sttLlmProvider"><option value="">Inherit from LLM Response</option><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
             <div id="sttMultimodalModelWrap" class="settingsHidden"><label for="sttLlmModel">Model</label><select id="sttLlmModel"><option value="">Inherit from LLM Response</option></select></div>
             <div class="settingsGroupNote">
-              <input type="checkbox" id="sttCapabilityFilterOverride" checked hidden>
-              <div class="small mono">Models likely to fail are shown in red instead of hidden.</div>
+              <label class="toggleLine" style="margin:8px 0;cursor:pointer">
+                <input type="checkbox" id="sttCapabilityFilterOverride">
+                <span>Show all models (override audio-capability filter)</span>
+              </label>
+              <div class="small mono">When unchecked, only models with audio input support appear in the multimodal STT dropdown. Non-audio-capable models are hidden, not shown in red.</div>
             </div>
             <div id="sttMultimodalBaseUrlWrap"><label for="sttLlmBaseUrl">Base URL</label><input id="sttLlmBaseUrl" type="text" placeholder="blank = inherit from LLM Response"></div>
             <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit from LLM Response"></div>
