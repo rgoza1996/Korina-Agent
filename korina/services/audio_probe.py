@@ -8,12 +8,24 @@ read/write helpers that wrap korina.config.
 Design rationale: see Phase 4 plan §4.6. The probe is the first real
 audio STT request; on audio-not-supported failure we cache and fall
 back to whisper forever (per triple) until the user explicitly clears.
+
+Phase 5 silent-empty handling (2026-06-27):
+  A model that returns HTTP 200 with empty content and a non-'stop'
+  finish_reason (typically 'length' after the model spent its budget
+  on reasoning without producing audio-derived text) is structurally
+  unable to process audio. We classify this as a cacheable failure
+  ('silent_200_empty_content') so subsequent requests skip the
+  multimodal round-trip entirely and go straight to Whisper.
+
+  finish_reason='' (default) preserves pre-fix behaviour, so existing
+  callers and tests that don't track finish_reason still treat silent
+  empty as transient.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 # Patterns that indicate "this model/inference engine cannot accept
@@ -30,7 +42,11 @@ _AUDIO_UNSUPPORTED_PATTERNS = [
 ]
 
 
-def classify_failure(status_code: int, body: str) -> Tuple[bool, str]:
+def classify_failure(
+    status_code: int,
+    body: str,
+    finish_reason: str = "",
+) -> Tuple[bool, str]:
     """Return (is_audio_unsupported, reason).
 
     is_audio_unsupported is True iff the failure indicates the model or
@@ -39,6 +55,13 @@ def classify_failure(status_code: int, body: str) -> Tuple[bool, str]:
 
     status_code: HTTP status from the multimodal STT endpoint.
     body: response body as a string.
+    finish_reason: OpenAI chat-completion finish_reason ('' when unknown).
+        When the server returns HTTP 200 with empty content and a
+        finish_reason that is neither '' nor 'stop' (typically 'length'
+        after spending the budget on reasoning without producing audio
+        text), the request is structurally broken for audio and we cache
+        it as 'silent_200_empty_content'. An empty finish_reason (legacy
+        callers, active probe pre-fix) preserves old behaviour.
     """
     if not isinstance(body, str):
         body = str(body or "")
@@ -53,11 +76,37 @@ def classify_failure(status_code: int, body: str) -> Tuple[bool, str]:
             if pat.search(body):
                 return (True, f"body_match:{pat.pattern}")
 
-    # 200 with empty/garbage audio content (server accepted the request
-    # but didn't actually process audio) -- this is the silent-failure
-    # case. We can't easily detect this without examining the response
-    # payload, so we don't classify it here; the caller decides whether
-    # to log a warning.
+    # 200 + empty content + non-stop finish_reason → silent structural
+    # failure. See module docstring for rationale. Only triggered when
+    # the caller actually has finish_reason data; an empty string means
+    # "I don't know" (legacy / active probe) and we fall through to the
+    # old transient classification.
+    #
+    # We parse the body as the OpenAI chat-completion shape (the caller
+    # in stt.py synthesises one) and check `choices[0].message.content`
+    # is empty. Falling back to a raw-body emptiness check keeps the
+    # pure-classify API usable without JSON.
+    if status_code == 200 and finish_reason and finish_reason != "stop":
+        content_empty = False
+        if not body.strip():
+            content_empty = True
+        else:
+            try:
+                import json as _json
+                parsed = _json.loads(body)
+                if isinstance(parsed, dict):
+                    choices = parsed.get('choices') or []
+                    if choices and isinstance(choices[0], dict):
+                        msg = choices[0].get('message') or {}
+                        content = msg.get('content')
+                        if content is None or (isinstance(content, str) and not content.strip()):
+                            content_empty = True
+            except (ValueError, TypeError):
+                # Body wasn't JSON; if it's a literal empty sentinel, count it
+                if body.strip() in ('""', "''", "null", "empty_text"):
+                    content_empty = True
+        if content_empty:
+            return (True, "silent_200_empty_content")
 
     return (False, "transient_or_content_failure")
 
@@ -72,6 +121,7 @@ def maybe_fallback_to_whisper(
     provider: str, base_url: str, model: str,
     stt_status_code: int, stt_response_body: str,
     whisper_fallback_fn,
+    finish_reason: str = "",
 ) -> tuple[bool, dict]:
     """Decide whether to fall back to whisper for this STT request.
 
@@ -85,6 +135,9 @@ def maybe_fallback_to_whisper(
       2. Otherwise, the caller already made the failing call. Check
          classify_failure: if True, persist to cache + fall back.
       3. If False, return (False, {'error': ...}) for the caller to handle.
+
+    finish_reason: see classify_failure. Forwarded so the same silent-empty
+    detection works at this layer.
     """
     from korina.config import (
         config_audio_unsupported,
@@ -103,7 +156,9 @@ def maybe_fallback_to_whisper(
             "triple": triple,
         })
 
-    unsupported, reason = classify_failure(stt_status_code, stt_response_body)
+    unsupported, reason = classify_failure(
+        stt_status_code, stt_response_body, finish_reason=finish_reason,
+    )
     if unsupported:
         set_audio_unsupported(provider, base_url, model, reason, stt_response_body)
         return (True, {

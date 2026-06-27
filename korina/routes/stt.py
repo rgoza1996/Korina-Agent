@@ -5,6 +5,7 @@ Phase 1.9: inlined from the monolith's _route_transcribe* helpers.
 
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 import time
@@ -269,14 +270,29 @@ async def transcribe_stream(
                     # call often means audio-not-supported for a
                     # known-multimodal-but-broken triple.
                     text = result.get('text', '') if isinstance(result, dict) else ''
+                    finish_reason = (
+                        result.get('finish_reason', '') if isinstance(result, dict) else ''
+                    )
                     if not text:
                         err_body = (
                             result.get('error', '') if isinstance(result, dict) else ''
                         ) or 'empty_text'
+                        # Synthesize a JSON body that mirrors the OpenAI
+                        # chat-completion shape so audio_probe.classify_failure
+                        # can pattern-match the empty-content sentinel and
+                        # detect silent-empty structural failures (HTTP 200
+                        # + empty content + finish_reason != 'stop').
+                        synthetic_body = json.dumps({
+                            'choices': [{
+                                'finish_reason': finish_reason,
+                                'message': {'content': text},
+                            }],
+                        })
                         used_fallback, payload = maybe_fallback_to_whisper(
                             provider=stt_provider, base_url=probe_base, model=llm_model or '',
-                            stt_status_code=200, stt_response_body=err_body,
+                            stt_status_code=200, stt_response_body=synthetic_body,
                             whisper_fallback_fn=whisper_fallback,
+                            finish_reason=finish_reason,
                         )
                         if used_fallback:
                             for ev in _emit_fallback_sse(
@@ -308,6 +324,7 @@ async def transcribe_stream(
                         'model': llm_model or LMSTUDIO_MODEL,
                         'backend': 'multimodal-stt',
                         'segments': 1 if text else 0,
+                        'finish_reason': finish_reason,
                     })
                     return
                 parts, info = transcribe_wav_segments(wav, vad_filter=True, device=device, model_id=model)

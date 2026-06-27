@@ -1,3 +1,5 @@
+"""Multimodal STT (audio chat completions) helpers."""
+
 from __future__ import annotations
 
 import base64
@@ -6,9 +8,10 @@ import re
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+from typing import Optional
 
 from korina.config import (
-    config_llm_base_url,
     config_stt_llm_api_env,
     config_stt_llm_base_url,
     config_stt_llm_chat_url,
@@ -16,21 +19,15 @@ from korina.config import (
     config_stt_llm_reasoning,
     load_config,
 )
-
 from korina.runtime.http import auth_headers_from_env
-
 from korina.services.model_catalog import llm_models_for
 
-from pathlib import Path
 
-from typing import Optional
-
-
-_TRANSIENT_WHISPER_FALLBACK_PATTERNS = (
+_TRANSIENT_WHISPER_FALLBACK_PATTERNS = [
     (re.compile(r"failed to load model", re.IGNORECASE), "model_load_failed"),
     (re.compile(r"model has crashed", re.IGNORECASE), "model_crashed"),
     (re.compile(r"empty_text", re.IGNORECASE), "empty_text"),
-)
+]
 
 
 def transient_whisper_fallback_reason(detail: str) -> str | None:
@@ -53,12 +50,18 @@ def lmstudio_models() -> list[str]:
     config = load_config()
     return llm_models_for(config_llm_base_url(config), str(config.get('llm_api_key_env') or ''))
 
+
 def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url: Optional[str] = None, api_env: Optional[str] = None) -> dict:
     """Attempt audio transcription through a multimodal STT model endpoint.
 
     OpenAI-compatible multimodal endpoints definitely support text/images. Audio input
     depends on the loaded model + server support, so this endpoint returns a clear
     error if the selected model rejects input_audio.
+
+    Phase 5 (2026-06-27): the returned dict now carries ``finish_reason`` from
+    the OpenAI chat-completion response. Callers in the audio-probe / stt route
+    use this to classify silent-empty failures (HTTP 200 + empty content +
+    finish_reason != 'stop') as structurally audio-incompatible.
     """
     config = load_config()
     resolved_base_url = str(base_url or config_stt_llm_chat_url(config)).strip()
@@ -107,9 +110,13 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
         raise RuntimeError(
             f'Multimodal STT model {selected_model!r} rejected audio transcription request: HTTP {e.code}: {detail}'
         )
-    text = (body.get('choices', [{}])[0].get('message', {}).get('content') or '').strip()
+    choice = (body.get('choices') or [{}])[0] or {}
+    message = choice.get('message') or {}
+    text = (message.get('content') or '').strip()
+    finish_reason = str(choice.get('finish_reason') or '')
     return {
         'text': text,
+        'finish_reason': finish_reason,
         'seconds': time.time() - started,
         'model': selected_model,
         'backend': 'multimodal-stt',
