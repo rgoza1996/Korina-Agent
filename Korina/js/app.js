@@ -65,6 +65,7 @@ import {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
   interruptConverse, askAndSpeak, askLM, agentDebug,
 } from "./agent-ui.js";
+import { openEndpoints, closeEndpoints, populateEndpoints } from "./endpoints.js";
 
 // Re-export the most common symbols on window so HTML inline event
 // handlers and DevTools debugging keep working.
@@ -89,6 +90,7 @@ Object.assign(window, {
   stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry,
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
   interruptConverse, askAndSpeak, askLM, agentDebug,
+  openEndpoints, closeEndpoints, populateEndpoints,
   wireUiHandlers, openSettings, closeSettings, saveSettings,
   startRecording, stopRecording, toggleLive, stopPlayback,
   clearSession,
@@ -434,6 +436,9 @@ function wireUiHandlers() {
   bindClick('settingsBtn', openSettings);
   bindClick('closeSettingsBtn', closeSettings);
   bindClick('saveSettingsBtn', saveSettings);
+  bindClick('endpointsBtn', openEndpoints);
+  bindClick('closeEndpointsBtn', closeEndpoints);
+  bindClick('refreshEndpointsBtn', () => populateEndpoints().catch(e => console.warn('populateEndpoints failed:', e)));
   bindClick('refreshAgentModelsBtn', () => loadAgentModelOptions());
   bindClick('clearSessionBtn', () => clearSession());
   bindClick('recBtn', () => startRecording());
@@ -445,7 +450,15 @@ function wireUiHandlers() {
 
   const modal = $('settingsModal');
   if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeSettings(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); });
+  const epModal = $('endpointsModal');
+  if (epModal) epModal.addEventListener('click', e => { if (e.target === epModal) closeEndpoints(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      // Close whichever modal is open.
+      if ($('endpointsModal')?.classList.contains('open')) closeEndpoints();
+      else closeSettings();
+    }
+  });
   document.querySelectorAll('.settingsTab').forEach(btn => btn.addEventListener('click', () => {
     document.querySelectorAll('.settingsTab').forEach(x => x.classList.toggle('active', x === btn));
     $('settingsConverse')?.classList.toggle('active', btn.dataset.settingsTab === 'converse');

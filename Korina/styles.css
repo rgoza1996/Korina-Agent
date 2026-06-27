@@ -4,3 +4,33 @@
   .modalBackdrop{position:fixed;inset:0;background:#0009;display:none;align-items:center;justify-content:center;padding:18px;z-index:50}.modalBackdrop.open{display:flex}.modal{width:min(760px,100%);max-height:88vh;overflow:auto;background:linear-gradient(180deg,var(--card),var(--card2));border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 30px 90px #000}.modal h2{margin:0 0 12px}.modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}.settingsBtn{background:#2b3142}.settingsTabs{margin:10px 0 14px}.settingsPanel{display:none}.settingsPanel.active{display:grid}.settingsPanel.active.sectioned{grid-template-columns:1fr}.settingsGroup{grid-column:1/-1;border:1px solid var(--line);border-radius:14px;background:#0b0e15;overflow:hidden}.settingsGroup summary{list-style:none;cursor:pointer;padding:14px 16px;font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:10px}.settingsGroup summary::-webkit-details-marker{display:none}.settingsGroup summary::after{content:'▾';color:var(--muted);transition:transform .15s ease}.settingsGroup[open] summary::after{transform:rotate(180deg)}.settingsGroupBody{padding:0 16px 16px;display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:700px){.settingsGroupBody{grid-template-columns:1fr}}.settingsGroupNote,.sectionLead,.fieldHint{grid-column:1/-1}.settingsGroupNote{padding:0 16px 16px;color:var(--muted)}.sectionLead{margin:-2px 0 2px;color:var(--muted);font-size:13px}.fieldHint{margin:-4px 0 2px;color:var(--muted);font-size:12px}.settingsHidden{display:none !important}.settingsDisabled{opacity:.5;pointer-events:none}.toggleLine{display:flex;align-items:center;gap:10px;background:#080a0f;border:1px solid var(--line);border-radius:10px;padding:10px}.toggleLine input{width:auto}.secretNote{grid-column:1/-1}.debugLog{max-height:280px;overflow:auto;background:#080a0f;border:1px solid var(--line);border-radius:12px;padding:10px;white-space:pre-wrap;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#cbd5e1}
 
 .modelOptionBad { color: #ff7b72; }
+
+/* Endpoints modal */
+.endpointsBtn{background:#2b3142}
+.endpointsModal .endpointsList{display:grid;gap:14px}
+.endpointsGroup{border:1px solid var(--line);border-radius:14px;background:#0b0e15;overflow:hidden}
+.endpointsGroupHead{padding:12px 16px;font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0d1118;border-bottom:1px solid var(--line)}
+.endpointsGroupHead .count{color:var(--muted);font-weight:600;font-size:12px}
+.endpointsGroupBody{padding:8px 16px 12px;display:grid;gap:6px}
+.endpointsRow{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #131722}
+.endpointsRow:last-child{border-bottom:none}
+.endpointsRow .key{color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.endpointsRow .link{color:var(--cyan);text-decoration:none;word-break:break-all;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+.endpointsRow .link:hover{text-decoration:underline}
+.endpointsRow .link.disabled{color:#6b7280;cursor:not-allowed;text-decoration:line-through}
+.endpointsRow .link.disabled:hover{text-decoration:line-through}
+
+/* Endpoints modal */
+.endpointsBtn{background:#2b3142}
+.endpointsModal .endpointsList{display:grid;gap:14px}
+.endpointsGroup{border:1px solid var(--line);border-radius:14px;background:#0b0e15;overflow:hidden}
+.endpointsGroupHead{padding:12px 16px;font-weight:800;display:flex;align-items:center;justify-content:space-between;gap:10px;background:#0d1118;border-bottom:1px solid var(--line)}
+.endpointsGroupHead .count{color:var(--muted);font-weight:600;font-size:12px}
+.endpointsGroupBody{padding:8px 16px 12px;display:grid;gap:6px}
+.endpointsRow{display:grid;grid-template-columns:140px 1fr;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid #131722}
+.endpointsRow:last-child{border-bottom:none}
+.endpointsRow .key{color:var(--muted);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.endpointsRow .link{color:var(--cyan);text-decoration:none;word-break:break-all;font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace}
+.endpointsRow .link:hover{text-decoration:underline}
+.endpointsRow .link.disabled{color:#6b7280;cursor:not-allowed;text-decoration:line-through}
+.endpointsRow .link.disabled:hover{text-decoration:line-through}

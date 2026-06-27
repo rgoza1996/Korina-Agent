@@ -16,6 +16,7 @@
     <span class="pill"><span id="sttBackendDot" class="dot"></span><span id="sttBackendHealth">last STT…</span></span>
     <span class="pill mono" id="hostInfo"></span>
     <button id="clearSessionBtn" class="secondary">Clear Session</button>
+    <button id="endpointsBtn" class="secondary endpointsBtn">🔌 Endpoints</button>
     <button id="settingsBtn" class="secondary settingsBtn">⚙ Settings</button>
   </div>
 
@@ -141,6 +142,22 @@
       <p class="small mono" id="settingsInfo">Model pickers query the currently configured /v1/models endpoints when you open them. Endpoint and timing settings save to config.json. <span id="settingsLiveStatus"></span></p>
       <button id="clearProbeBtn" style="display:none;">Clear audio probe and retry</button>
       <div class="actions"><button id="saveSettingsBtn">Done</button></div>
+    </div>
+  </div>
+
+  <div id="endpointsModal" class="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="endpointsTitle">
+    <div class="modal endpointsModal">
+      <div class="row between">
+        <h2 id="endpointsTitle">Endpoints</h2>
+        <button id="closeEndpointsBtn" class="secondary">Close</button>
+      </div>
+      <p class="small mono" style="color:var(--muted);margin:0 0 12px">
+        Every URL Korina currently has wired. Click any link to open it in a new tab.
+        External endpoints (LLM, TTS, agent) are read from <code>/api/health</code>;
+        page-server endpoints are local.
+      </p>
+      <div id="endpointsList" class="endpointsList">Loading…</div>
+      <div class="actions"><button id="refreshEndpointsBtn">Refresh</button></div>
     </div>
   </div>
 
