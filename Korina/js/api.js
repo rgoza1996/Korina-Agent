@@ -19,7 +19,16 @@
 import { state } from './state.js';
 import { ttsProviderLabel, llmProviderLabel } from './labels.js';
 import { $ } from './dom.js';
-import { applyConfig, ttsProvider } from './settings-ui.js';
+import {
+  applyConfig, ttsProvider,
+  sttBackend,
+  sttDevice, sttModel,
+  effectiveSttLlmModel, effectiveSttLlmBaseUrl,
+  sttLlmReasoningEnabled,
+  llmReasoningEnabled,
+  llmProvider, llmBaseUrl, lmModel,
+  partialWindowMsSetting,
+} from './settings-ui.js';
 import { loadAgentModelOptions } from './providers-ui.js';   // lands in 3.2.6
 
 export async function activateSelectedProvider(provider, model = '') {
@@ -31,6 +40,9 @@ export async function activateSelectedProvider(provider, model = '') {
   const j = await r.json();
   if (!r.ok) throw new Error(j.detail || JSON.stringify(j));
   if (j.saved) applyConfig(j.saved);
+  // Signal a pending provider switch so the readiness pill flips to
+  // "loading" until /api/health confirms the new model is loaded.
+  state.providerPending = true;
   return j;
 }
 
@@ -130,6 +142,28 @@ export async function health() {
     }
   } else {
     // Server didn't return a tts block (older backend). Keep last-known state.
+  }
+
+  // Provider / model readiness pill (drives off server truth).
+  const ready = $('providerReady');
+  const readyDot = $('providerReadyDot');
+  if (ready && readyDot) {
+    const rll = j && j.response_llm_load;
+    const pending = !!state.providerPending;
+    if (pending && !(rll && rll.ok && rll.loaded)) {
+      setDot('providerReadyDot', 'warn');
+      ready.textContent = `${(rll && rll.provider) || j.response_llm_provider || 'provider'} · loading ${(rll && rll.expected_model) || j.response_llm_model || ''}…`;
+    } else if (rll && rll.ok && rll.loaded) {
+      setDot('providerReadyDot', 'good');
+      ready.textContent = `${rll.provider || j.response_llm_provider || 'provider'} · ready · ${rll.loaded_model || rll.expected_model || j.response_llm_model || ''}`;
+      state.providerPending = false;
+    } else if (rll && rll.ok && !rll.loaded) {
+      setDot('providerReadyDot', 'warn');
+      ready.textContent = `${rll.provider || j.response_llm_provider || 'provider'} · model not loaded · ${rll.expected_model || j.response_llm_model || ''}`;
+    } else {
+      setDot('providerReadyDot', 'bad');
+      ready.textContent = `${(rll && rll.provider) || j.response_llm_provider || 'provider'} offline · ${(rll && rll.error) || 'no /v1/models response'}`;
+    }
   }
 }
 

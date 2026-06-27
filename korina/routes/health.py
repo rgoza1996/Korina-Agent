@@ -76,6 +76,117 @@ def _probe_tts_backend(base_url, timeout=2.0):
         return (False, {}, f'OSError: {e}')
 
 
+def _probe_llm_models(base_url, expected, timeout=1.5):
+    """Probe a provider's /v1/models endpoint and check whether ``expected``
+    appears in the response. Tolerant of:
+
+    - llama.cpp returning absolute GGUF paths (e.g. /home/r/.../model.gguf)
+    - LM Studio returning bare catalog ids (e.g. publisher/model-id)
+    - Ollama returning name:tag strings (e.g. llama3.2:3b)
+
+    Match strategy: case-insensitive substring match. llama.cpp absolute
+    paths will match both the bare model filename (suffix) and any parent
+    directory component; LM Studio bare ids match themselves; Ollama
+    name:tag strings are compared both with and without the tag suffix.
+
+    Returns a dict with keys:
+        provider, base_url, expected_model, ok, loaded, loaded_model,
+        loaded_models, error
+    """
+    import json as _json
+    import socket
+    import urllib.error
+    import urllib.request
+
+    base_clean = (base_url or "").strip().rstrip("/")
+    if base_clean.endswith("/v1"):
+        base_clean = base_clean[:-3].rstrip("/")
+    expected_clean = (expected or "").strip()
+    block = {
+        "provider": "",
+        "base_url": base_url or "",
+        "expected_model": expected_clean,
+        "ok": False,
+        "loaded": False,
+        "loaded_model": None,
+        "loaded_models": [],
+        "error": None,
+    }
+    if not base_clean:
+        block["error"] = "no base_url configured"
+        return block
+    try:
+        req = urllib.request.Request(base_clean + "/v1/models", method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+    except (socket.timeout, ConnectionRefusedError, ConnectionResetError) as e:
+        block["error"] = f"{type(e).__name__}: {e}"
+        return block
+    except urllib.error.HTTPError as e:
+        block["error"] = f"HTTP {e.code} from {base_clean}/v1/models"
+        return block
+    except urllib.error.URLError as e:
+        block["error"] = f"URLError: {e.reason}"
+        return block
+    except OSError as e:
+        block["error"] = f"OSError: {e}"
+        return block
+    try:
+        body = _json.loads(raw) if raw else {}
+    except _json.JSONDecodeError:
+        block["error"] = f"non-JSON response from {base_clean}/v1/models"
+        return block
+    items = body.get("data") if isinstance(body, dict) else None
+    if items is None and isinstance(body, list):
+        items = body
+    if not isinstance(items, list):
+        block["ok"] = True
+        block["error"] = "unexpected /v1/models response shape (no data list)"
+        return block
+
+    def _candidate_ids(item):
+        if not isinstance(item, dict):
+            return []
+        ids = []
+        for k in ("id", "name", "model"):
+            v = item.get(k)
+            if isinstance(v, str) and v.strip():
+                ids.append(v.strip())
+        return ids
+
+    raw_ids = []
+    seen = set()
+    for it in items:
+        for mid in _candidate_ids(it):
+            if mid not in seen:
+                seen.add(mid)
+                raw_ids.append(mid)
+    block["loaded_models"] = raw_ids
+
+    expected_lc = expected_clean.lower()
+    if expected_lc:
+        for mid in raw_ids:
+            ml = mid.lower()
+            if (ml == expected_lc
+                or ml.endswith("/" + expected_lc)
+                or ml.endswith(expected_lc)
+                or expected_lc.endswith("/" + ml)
+                or expected_lc.endswith(ml)
+                or expected_lc in ml):
+                block["loaded_model"] = mid
+                break
+    block["loaded"] = block["loaded_model"] is not None
+    block["ok"] = True
+    return block
+
+
+def _aggregate_provider_load(provider, base_url, expected):
+    """Build a load block for a single LLM-facing role."""
+    block = _probe_llm_models(base_url, expected)
+    block["provider"] = str(provider or "")
+    return block
+
+
 def _aggregate_tts(config):
     """Build the tts block: {ok, loaded, device, cuda_available, provider, base_url, error}."""
     provider = config_tts_provider(config)
@@ -142,6 +253,21 @@ def health():
         'tts_provider': config_tts_provider(config),
         'tts_base_url': config_tts_base_url(config),
         'tts': _aggregate_tts(config),
+        'response_llm_load': _aggregate_provider_load(
+            str(config.get('llm_provider') or 'llama.cpp'),
+            config_llm_base_url(config),
+            str(config.get('lm_model') or LMSTUDIO_MODEL),
+        ),
+        'multimodal_stt_load': _aggregate_provider_load(
+            config_stt_llm_provider(config),
+            config_stt_llm_base_url(config),
+            config_stt_llm_model(config),
+        ),
+        'agent_load': _aggregate_provider_load(
+            agent_provider(config),
+            agent_base_url(config),
+            str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
+        ),
         'ack_count': len(ack_files_for(state.ack.current_voice)),
         'ack_status': ack_status(state.ack.current_voice),
     }

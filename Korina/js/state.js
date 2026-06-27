@@ -86,6 +86,9 @@ export const state = {
   // to detect whether provider-affecting fields have changed since the
   // modal opened (or since the last save). Populated by applyConfig().
   appConfigSnapshot: null,
+  // True after the user activates a provider until /api/health confirms
+  // the new model is loaded. Drives the providerReady pill in the debug strip.
+  providerPending: false,
   agentStateReport: '',
   agentLastTranscriptHash: '',
   pendingAgentStateReport: '',
