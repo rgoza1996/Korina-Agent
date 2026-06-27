@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# Korina Voice Lab — config-driven shutdown
-# Reads Korina/config.json to determine which backend services to stop.
+# Korina Voice Lab — complete local shutdown.
 #
-# Usage: ./stop.sh [--dry-run]
+# Stops Korina and every local server Korina can run:
+# - korina-voice-lab.service
+# - kokoro-streaming-server.service
+# - llama-server.service / llama-server processes
+# - LM Studio server/GUI helper processes
+# - Ollama service / `ollama serve`
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG="${KORINA_APP_DIR:-$SCRIPT_DIR}/config.json"
+KORINA_APP_DIR="${KORINA_APP_DIR:-$SCRIPT_DIR}"
+PYTHON_BIN="${KORINA_PYTHON:-$HOME/kokoro-env4/bin/python}"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  PYTHON_BIN="$(command -v python3)"
+fi
 
 DRY_RUN=0
 for arg in "$@"; do
@@ -21,108 +29,64 @@ for arg in "$@"; do
   esac
 done
 
-# Use defaults if config is missing — just stop the core app and Kokoro
-# (mirrors the historical behavior of the original stop.sh).
-TTS_PROVIDER="kokoro"
-TTS_PORT="8880"
-LLM_PROVIDER=""
-STT_BACKEND=""
-AGENT_ENABLED="off"
-
-if [[ -f "$CONFIG" ]]; then
-  cfg_get() {
-    python3 -c "
-import json, sys
-with open('$CONFIG') as f: c = json.load(f)
-v = c.get('$1', '')
-print(v if v is not None else '')
-" 2>/dev/null || true
-  }
-  TTS_PROVIDER="$(cfg_get tts_provider)"
-  TTS_PORT="$(cfg_get tts_port)"
-  LLM_PROVIDER="$(cfg_get llm_provider)"
-  STT_BACKEND="$(cfg_get stt_backend)"
-  AGENT_ENABLED="$(cfg_get agent_enabled)"
-  LLM_BASE_URL="$(cfg_get llm_base_url)"
-  AGENT_BASE_URL="$(cfg_get agent_base_url)"
-  STT_LLM_BASE_URL="$(cfg_get stt_llm_base_url)"
-
-  : "${TTS_PORT:=8880}"
-  : "${TTS_PROVIDER:=kokoro}"
-  : "${LLM_PROVIDER:=llama.cpp}"
-  : "${STT_BACKEND:=faster-whisper}"
-  : "${AGENT_ENABLED:=off}"
-fi
-
-port_from_url() {
-  python3 - "$1" <<'PY'
-import sys, urllib.parse
-u = urllib.parse.urlparse(sys.argv[1])
-if u.port: print(u.port)
-elif u.scheme == "https": print(443)
-else: print(80)
-PY
+run() {
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf '  [dry-run]'; printf ' %q' "$@"; echo
+  else
+    "$@" || true
+  fi
 }
 
 stop_unit() {
   local unit="$1"
-  if ! systemctl --user cat "$unit" >/dev/null 2>&1; then
-    echo "  $unit is not installed; skipping."
-    return 0
+  if systemctl --user cat "$unit" >/dev/null 2>&1; then
+    echo "Stopping $unit..."
+    run systemctl --user stop "$unit"
+  else
+    echo "Skipping $unit (not installed)."
   fi
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    echo "  [dry-run] systemctl --user stop $unit"
-    return 0
-  fi
-  systemctl --user stop "$unit" || true
 }
 
-# Build stop order: app first, then backends (so in-flight requests can finish)
-units_to_stop=()
+echo "Stopping Korina app and local backends..."
+stop_unit korina-voice-lab.service
 
-# Always: app
-units_to_stop+=("korina-voice-lab.service")
-
-# Kokoro (only if config uses it)
-if [[ "$TTS_PROVIDER" == "kokoro" ]]; then
-  units_to_stop+=("kokoro-streaming-server.service")
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "  [dry-run] would run provider_manager stop functions"
+else
+  export KORINA_APP_DIR
+  (cd "$KORINA_APP_DIR" && "$PYTHON_BIN" - <<'PY') || true
+from korina.services.provider_manager import (
+    stop_llama_server, stop_lmstudio_server, stop_lmstudio, stop_ollama,
+)
+for fn in (stop_llama_server, stop_lmstudio_server, stop_lmstudio, stop_ollama):
+    try:
+        fn()
+    except Exception as e:
+        print(f"WARN: {fn.__name__} failed: {e}")
+PY
 fi
 
-# llama.cpp (only if config points to local llama.cpp and unit is installed)
-if [[ "$LLM_PROVIDER" == "llama.cpp" || "$LLM_PROVIDER" == "openai-compatible" ]]; then
-  if [[ "$LLM_BASE_URL" == *"127.0.0.1"* || "$LLM_BASE_URL" == *"localhost"* ]]; then
-    if systemctl --user cat "llama-server.service" >/dev/null 2>&1; then
-      units_to_stop+=("llama-server.service")
-    fi
-  fi
-fi
+stop_unit kokoro-streaming-server.service
+stop_unit korina-streaming-server.service
+stop_unit llama-server.service
+stop_unit ollama.service
+stop_unit agent-llm.service
 
-# Separate agent LLM
-if [[ "$AGENT_ENABLED" == "on" ]] && [[ -n "${AGENT_BASE_URL:-}" ]]; then
-  if [[ "$AGENT_BASE_URL" == *"127.0.0.1"* || "$AGENT_BASE_URL" == *"localhost"* ]]; then
-    if [[ "$AGENT_BASE_URL" != "${LLM_BASE_URL:-}" ]] && [[ "$AGENT_BASE_URL" != "${STT_LLM_BASE_URL:-}" ]]; then
-      if systemctl --user cat "agent-llm.service" >/dev/null 2>&1; then
-        units_to_stop+=("agent-llm.service")
-      fi
-    fi
-  fi
-fi
-
-echo "Stopping ${#units_to_stop[@]} unit(s):"
-for u in "${units_to_stop[@]}"; do
-  echo "  - $u"
-done
-echo
-
-# Stop in order, deduplicated
-declare -A seen
-for u in "${units_to_stop[@]}"; do
-  if [[ -z "${seen[$u]:-}" ]]; then
-    seen[$u]=1
-    stop_unit "$u"
-  fi
-done
+echo "Killing remaining Korina-managed server process shapes..."
+run pkill -f '/home/.*/Korina/korina_voice_lab.py'
+run pkill -f 'korina_voice_lab.py'
+run pkill -f 'kokoro-streaming-server.py'
+run pkill -f 'llama-server.*--port (8080|1234)'
+run pkill -f 'ollama serve'
+run pkill -f '/opt/LM-Studio/lm-studio'
+run pkill -f '/\.lmstudio/llmster/'
+run pkill -f 'lmlink-connector'
 
 echo
-echo "Remaining relevant listeners:"
-ss -ltnp 2>/dev/null | grep -E ':8001|:8880|:1234|:8080' || echo "  (none)"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "Dry run complete."
+else
+  sleep 1
+  echo "Remaining relevant listeners:"
+  ss -ltnp 2>/dev/null | grep -E ':(8001|8880|8080|1234|11434)' || echo "  (none)"
+fi

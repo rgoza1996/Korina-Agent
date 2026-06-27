@@ -107,18 +107,25 @@ function bindClick(id, handler) {
   el.addEventListener('click', handler);
 }
 
-async function closeSettings() {
-  // GUARANTEE: the modal MUST hide, no matter what save/activate throws.
-  // A previous version called functions that weren't imported, which
-  // threw on every close attempt and trapped the user inside the modal.
-  // Wrap the entire body so a future regression in either path can't
-  // reproduce that.
-  try {
-    await _closeSettingsImpl();
-  } catch (e) {
-    console.error('closeSettings uncaught error (modal will still hide):', e);
-  }
-  $('settingsModal')?.classList.remove('open');
+function closeSettings() {
+  // GUARANTEE: the modal MUST hide immediately, before any save/activate
+  // network call. Provider activation can start/reload local model servers
+  // (llama.cpp, LM Studio, Ollama) and may take seconds or fail. Waiting for
+  // it before removing `.open` trapped users in the settings modal.
+  const modal = $('settingsModal');
+  const wasOpen = !!modal?.classList.contains('open');
+  modal?.classList.remove('open');
+  if (!wasOpen) return;
+
+  // Persist + activate in the background. Surface errors in settings/status,
+  // but never let them control whether the modal can close.
+  void _closeSettingsImpl().catch(e => {
+    console.error('closeSettings background apply failed:', e);
+    try {
+      $('settingsInfo').textContent = 'Settings apply failed: ' + (e.message || e);
+      status($('sttStatus'), 'Settings apply failed: ' + (e.message || e), 'bad');
+    } catch (_) {}
+  });
 }
 
 async function _closeSettingsImpl() {

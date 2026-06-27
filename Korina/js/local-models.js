@@ -5,6 +5,7 @@
 import { loadModelOptions } from './providers-ui.js';
 import { saveConfigSoon } from './api.js';
 import {
+  llmProvider,
   effectiveSttLlmProvider,
   effectiveSttLlmBaseUrl,
 } from './settings-ui.js';
@@ -126,7 +127,10 @@ async function probeActiveModels() {
   const provider = String(effectiveSttLlmProvider() || '').trim();
   const baseUrl = String(effectiveSttLlmBaseUrl() || '').trim();
   if (!provider || !baseUrl) return;
-  if (provider !== 'lmstudio' && provider !== 'llama.cpp') return;
+  // The active audio probe belongs to the llama.cpp local-GGUF refresh path.
+  // LM Studio, Ollama, and openai-compatible providers expose their own
+  // /v1/models endpoints and should not be probed by the local-model refresh.
+  if (provider !== 'llama.cpp') return;
 
   // Pull the currently displayed model pool. loadModelOptions(true) above
   // populates state.lastModelsPayload; re-fetch it explicitly so we probe
@@ -191,6 +195,13 @@ async function probeActiveModels() {
 }
 
 async function refreshLocalModels() {
+  const responseProvider = String(llmProvider() || '').trim();
+  const sttProvider = String(effectiveSttLlmProvider() || '').trim();
+  if (responseProvider !== 'llama.cpp' && sttProvider !== 'llama.cpp') {
+    setStatus('Refresh local models only applies to llama.cpp. LM Studio, Ollama, and OpenAI-compatible endpoints are queried through their /v1/models endpoint by the model dropdown refresh.', 'warn');
+    await loadModelOptions(true);
+    return;
+  }
   setStatus('Re-walking GGUF roots…');
   try {
     const r = await fetch('/api/llm/llama/refresh', { method: 'POST' });
