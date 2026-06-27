@@ -1,5 +1,12 @@
-<!d
-      <tr><td><span class='issue-tag priority-low'><a href='https://github.com/rgoza1996/Korina-Agent/issues/10'>#10</a></span></td><td>Build a zoomable code-explorer mindmap</td><td><span class='issue-tag priority-low'>low</span></td><td>Tooling</td></tr>octype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Issues — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><style>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Korina Agent — Local-first voice AI">
+<title>Issues — Korina</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--bg4:#21262d;--border:#30363d;--border2:#484f58;--cyan:#58a6ff;--teal:#3fb950;--purple:#bc8cff;--orange:#ffa657;--red:#f85149;--text:#e6edf3;--sub:#8b949e;--sub2:#6e7681;--code-bg:#161b22;--font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono,"JetBrains Mono",Menlo,monospace}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth;font-size:16px}
@@ -143,7 +150,9 @@ footer code{color:var(--sub2)}
   color: var(--text);
 }
 
-</style></head><body>
+</style>
+</head>
+<body>
 <nav class="site-nav"><div class="wrap">
 <a href="index.html" class="site-logo">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
@@ -166,27 +175,82 @@ footer code{color:var(--sub2)}
 <div class="wrap">
   <h1>Architecture Backlog</h1>
   <p style="color:var(--sub);margin-bottom:1.5rem">
-    8 open items from the 2026-06-25 architecture review.
+    7 open items from the 2026-06-25 architecture review.
     Each maps to a GitHub Issue on <a href="https://github.com/rgoza1996/Korina-Agent/issues">rgoza1996/Korina-Agent</a>.
   </p>
   <table>
     <thead><tr><th>#</th><th>Title</th><th>Priority</th><th>Section</th></tr></thead>
     <tbody>
-      <tr><td><span class="issue-tag priority-high"><a href="https://github.com/rgoza1996/Korina-Agent/issues/3">#3</a></span></td><td>Formalize Korina Converse agent protocol</td><td><span class="issue-tag priority-high">high</span></td><td>ARCH-1</td></tr>
-      <tr><td><span class="issue-tag priority-high"><a href="https://github.com/rgoza1996/Korina-Agent/issues/4">#4</a></span></td><td>Finish Korina Agent local-first execution runtime</td><td><span class="issue-tag priority-high">high</span></td><td>ARCH-2</td></tr>
-      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/5">#5</a></span></td><td>Add composite readiness for local voice stack</td><td><span class="issue-tag priority-med">medium</span></td><td>ARCH-3</td></tr>
-      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/6">#6</a></span></td><td>Make deployment paths, model roots, and local binaries portable</td><td><span class="issue-tag priority-med">medium</span></td><td>ARCH-4</td></tr>
-      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/7">#7</a></span></td><td>Replace static model capability assumptions with probe-backed metadata</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-5</td></tr>
-      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/8">#8</a></span></td><td>Add optional live/self-hosted regression tier</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-6</td></tr>
-      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/9">#9</a></span></td><td>Audit public docs for environment-specific/private details</td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-7</td></tr>
+      <tr><td><span class="issue-tag priority-high"><a href="https://github.com/rgoza1996/Korina-Agent/issues/3">#3</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/3">Formalize Korina Converse agent protocol</a></td><td><span class="issue-tag priority-high">high</span></td><td>ARCH-1</td></tr>
+      <tr><td><span class="issue-tag priority-high"><a href="https://github.com/rgoza1996/Korina-Agent/issues/4">#4</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/4">Finish Korina Agent local-first execution runtime</a></td><td><span class="issue-tag priority-high">high</span></td><td>ARCH-2</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/5">#5</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/5">Add composite readiness for local voice stack</a></td><td><span class="issue-tag priority-med">med</span></td><td>ARCH-3</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/6">#6</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/6">Make deployment paths, model roots, and local binaries portable</a></td><td><span class="issue-tag priority-med">med</span></td><td>ARCH-4</td></tr>
+      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/7">#7</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/7">Replace static model capability assumptions with probe-backed metadata</a></td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-5</td></tr>
+      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/8">#8</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/8">Add optional live/self-hosted regression tier</a></td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-6</td></tr>
+      <tr><td><span class="issue-tag priority-low"><a href="https://github.com/rgoza1996/Korina-Agent/issues/9">#9</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/9">Audit public docs for environment-specific/private details</a></td><td><span class="issue-tag priority-low">low</span></td><td>ARCH-7</td></tr>
     </tbody>
   </table>
+
+  <h1 style="margin-top:3rem">Open Bug Backlog</h1>
+  <p style="color:var(--sub);margin-bottom:1.5rem">
+    7 open correctness/robustness bugs filed from the 2026-06-25 dogfood pass.
+    Untouched on the current branch.
+  </p>
+  <table>
+    <thead><tr><th>#</th><th>Title</th><th>Priority</th><th>Section</th></tr></thead>
+    <tbody>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/10">#10</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/10">CORS misconfiguration is invalid + overly permissive</a></td><td><span class="issue-tag priority-med">med</span></td><td>Bug</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/11">#11</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/11">Synchronous urllib I/O blocks the event loop across services</a></td><td><span class="issue-tag priority-med">med</span></td><td>Bug</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/12">#12</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/12">Pydantic schemas accept unbounded input (DoS surface)</a></td><td><span class="issue-tag priority-med">med</span></td><td>Bug</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/13">#13</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/13">Unbounded daemon threads + brittle priority classifier in agent subsystem</a></td><td><span class="issue-tag priority-med">med</span></td><td>Bug</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/14">#14</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/14">/api/transcribe/stream is a 343-line single-function monolith</a></td><td><span class="issue-tag priority-med">med</span></td><td>Bug</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/15">#15</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/15">CI missing lint, type-check, frontend test, and the real runtime deps</a></td><td><span class="issue-tag priority-med">med</span></td><td>Bug</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/16">#16</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/16">Hardcoded roggoz-specific paths + fragile pkill regex in provider_manager</a></td><td><span class="issue-tag priority-med">med</span></td><td>Bug</td></tr>
+    </tbody>
+  </table>
+
+  <h1 style="margin-top:3rem">Debug-strip Dogfood &mdash; 2026-06-26</h1>
+  <p style="color:var(--sub);margin-bottom:1.5rem">
+    Six debug-strip issues were filed and addressed in a single dogfood pass.
+    Four closed, one partial, one queued.
+  </p>
+
+  <h2 style="margin-top:2rem;border-bottom:none;font-size:1.15rem">
+    Resolved <span class="issue-tag" style="background:#0d1a0d;border-color:#00b848;color:#3fb950">4</span>
+  </h2>
+  <table>
+    <thead><tr><th>#</th><th>Title</th><th>Priority</th><th>Fixed by</th></tr></thead>
+    <tbody>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/17">#17</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/17">bug(debug-strip): ttsHealth pill says 'Kokoro offline' when Kokoro works</a></td><td><span class="issue-tag priority-med">med</span></td><td>Closed 2026-06-26 &middot; <code>213cf5e + cde45fe</code></td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/19">#19</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/19">bug(debug-strip): hostInfo pill shows form values, not server-resolved URLs</a></td><td><span class="issue-tag priority-med">med</span></td><td>Closed 2026-06-26 &middot; <code>cde45fe</code></td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/20">#20</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/20">bug(debug-strip): ttsHealth error label hardcodes 'Kokoro' for any TTS failure</a></td><td><span class="issue-tag priority-med">med</span></td><td>Closed 2026-06-26 &middot; <code>213cf5e + cde45fe</code></td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/22">#22</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/22">bug(debug-strip): /api/health does not aggregate TTS runtime state</a></td><td><span class="issue-tag priority-med">med</span></td><td>Closed 2026-06-26 &middot; <code>213cf5e</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2 style="margin-top:2rem;border-bottom:none;font-size:1.15rem">
+    Open <span class="issue-tag" style="background:#1a1a0d;border-color:#3f3f00;color:#ffa657">2</span>
+  </h2>
+  <table>
+    <thead><tr><th>#</th><th>Title</th><th>Priority</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/18">#18</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/18">bug(debug-strip): pageHealth pill flips red on transient poll failures</a></td><td><span class="issue-tag priority-med">med</span></td><td>Partial</td></tr>
+      <tr><td><span class="issue-tag priority-med"><a href="https://github.com/rgoza1996/Korina-Agent/issues/21">#21</a></span></td><td><a href="https://github.com/rgoza1996/Korina-Agent/issues/21">bug(debug-strip): settingsInfo mixes load-time banner with live LLM/STT status</a></td><td><span class="issue-tag priority-med">med</span></td><td>Queued</td></tr>
+    </tbody>
+  </table>
+
+  <p style="color:var(--sub);margin-top:2rem;font-size:0.9em">
+    Source of truth: <a href="https://github.com/rgoza1996/Korina-Agent/blob/fix/modal-close-applies-state/docs/wiki/Home.md">docs/wiki/Home.md</a>
+    on the <code>fix/modal-close-applies-state</code> branch.
+    Backed by SHAs <code>213cf5e</code> (server aggregation),
+    <code>cde45fe</code> (frontend pill + import fix),
+    <code>a5b2059</code> (mic + add-root error messages).
+  </p>
 </div>
 
 <footer><div class="wrap">
 <p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
-<p><code>docs/wiki/</code> on <code>beta</code> branch &middot; Generated 2026-06-25</p>
+<p><code>docs/wiki/</code> on <code>fix/modal-close-applies-state</code> branch &middot; Generated 2026-06-26</p>
 </div></footer>
-  <h3>#10 — Build a zoomable code-explorer mindmap <span class='issue-tag priority-low'>low</span> <span class='issue-tag'>Tooling</span></h3>
-<p>Add an interactive zoomable mindmap mapping every variable in every function in every file across the Korina codebase (Python backend + JS frontend). Use D3.js or similar for pan/zoom, with drill-down from module-level to function-level to variable-scope view. Useful for navigating unfamiliar code and understanding scope/dependency relationships at a glance.</p>
-</body></html>
+</body>
+</html>
