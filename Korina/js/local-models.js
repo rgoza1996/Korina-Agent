@@ -105,8 +105,17 @@ async function addRoot() {
       body: JSON.stringify({ roots: [path] }),
     });
     if (!r.ok) {
-      const txt = await r.text();
-      throw new Error(txt || ('HTTP ' + r.status));
+      // Dogfood pass 2026-06-26: parse the FastAPI JSON envelope so the
+      // user sees "path not found: /tmp/…" instead of the raw body
+      // {"detail":"path not found: /tmp/…"}.
+      let detail = '';
+      try {
+        const j = await r.json();
+        detail = j?.detail || '';
+      } catch (_) {
+        detail = await r.text().catch(() => '');
+      }
+      throw new Error(detail || ('HTTP ' + r.status));
     }
     if (inputEl()) inputEl().value = '';
     await loadLocalModelRoots();

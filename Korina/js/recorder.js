@@ -23,6 +23,18 @@ import { sttDevice, sttModel, sttBackend, effectiveSttLlmModel } from "./setting
 
 // --- Microphone + meter setup (verbatim from index.html:1004) ---
 export async function setupMic() {
+  // Dogfood pass 2026-06-26: detect missing mediaDevices up-front so the
+  // user gets a readable explanation instead of the raw TypeError
+  // "Cannot read properties of undefined (reading 'getUserMedia')".
+  // mediaDevices is undefined in headless / non-secure-context / older
+  // browsers; we want to point the user at the actual cause.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const secure = window.isSecureContext ? 'secure context (HTTPS or localhost)' : 'non-secure context';
+    throw new Error(
+      `Microphone unavailable: this browser does not expose navigator.mediaDevices (${secure}). ` +
+      `Open Korina in a recent Chrome/Edge/Firefox over HTTPS or http://localhost.`
+    );
+  }
   state.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   state.meterAudioCtx = new AudioContext();
   const src = state.meterAudioCtx.createMediaStreamSource(state.stream);
