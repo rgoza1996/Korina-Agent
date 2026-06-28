@@ -164,7 +164,7 @@ footer code{color:var(--ink-faint)}
 
 <h2>Duplex Workflows (Wan-Streamer Lessons)</h2>
 <p style="margin-top:0.5rem"><strong>Status:</strong> <span class="issue-tag priority-low">parked</span></p>
-<p><strong>Unblock condition:</strong> First public release of Korina Converse ships and <code>master</code> is updated. Per Rogie, 2026-06-27.</p>
+<p><strong>Unblock condition:</strong> First public release of Korina Converse ships and <code>master</code> is updated.</p>
 <p><strong>Source paper:</strong> <a href="https://arxiv.org/abs/2606.25041" target="_blank">Wan-Streamer v0.1: End-to-end Real-time Interactive Foundation Models</a> (arXiv:2606.25041v2). Wan-Streamer is a model; Korina is a harness. The lesson is to enforce a system-level <em>streaming contract</em> at the harness layer.</p>
 
 <h3>What Wan-Streamer teaches</h3>
@@ -194,8 +194,8 @@ footer code{color:var(--ink-faint)}
 
 <h2>DAG Memory System (Post-v2)</h2>
 <p style="margin-top:.5rem"><strong>Status:</strong> <span class="issue-tag priority-low">parked</span></p>
-<p><strong>Target release:</strong> Korina Converse release 2 or 3 (per Rogie, 2026-06-27).</p>
-<p><strong>Source spec:</strong> <code>Korina Memory.txt</code> at <code>/srv/storage/Korina Memory.txt</code> on Alima. 782-line engineering spec, v1.0. Will move into the repo as <code>docs/specs/korina-memory-v1.md</code> when implementation starts.</p>
+<p><strong>Target release:</strong> Korina Converse release 2 or 3.</p>
+<p><strong>Source spec:</strong> <code>Korina Memory.txt</code> (engineering spec, v1.0, 782 lines). 782-line engineering spec, v1.0. Will move into the repo as <code>docs/specs/korina-memory-v1.md</code> when implementation starts.</p>
 
 <h3>What it is</h3>
 <p>A causal DAG of event nodes (assertions, observations, tool calls, inferences, hypotheses, invalidations) connected by hard and soft edges, with built-in truth retraction, hypothesis generation for conflicts, and a confidence decay model. It is the substrate Korina Agent uses to remember what it has seen, decided, and been told &mdash; without losing information to context-window compression.</p>
