@@ -185,12 +185,13 @@ footer code{color:var(--ink-faint)}
 <tr><td>2 — Barge-In</td><td>Track active audio nodes, keep VAD on while TTS speaks, stop TTS within ~250 ms on detected speech, recover with context</td><td>Biggest visible duplex win. Token-efficient on the existing UI.</td></tr>
 <tr><td>3 — Streaming LLM → Sentence TTS</td><td>OpenAI-compatible <code>stream: true</code>, sentence chunker, speak first clause before LLM finishes</td><td>Eliminates dead air between LLM and TTS.</td></tr>
 <tr><td>4 — Stable Partial STT Prefill</td><td>Behind a feature flag; do not speak from partial-only input yet</td><td>Risk: hallucination. Slower adoption is correct.</td></tr>
-<tr><td>5 — Duplex Scheduler</td><td>Priority model: barge-in &gt; user audio &gt; STT final &gt; LLM token &gt; TTS synth &gt; playback &gt; background agent</td><td>Encodes Wan-Streamer's "multimodal token scheduling" at harness level.</td></tr>
+<tr><td>5 — Duplex Scheduler</td><td>Priority model: barge-in &gt; user audio &gt; STT final &gt; LLM token &gt; TTS synth &gt; playback &gt; background agent; write a small scheduler design doc before implementation.</td><td>Encodes Wan-Streamer's "multimodal token scheduling" at harness level and guards against talk-over/starvation failures.</td></tr>
 <tr><td>6 — Latency Budget UI</td><td>Surface full signal-to-signal path in debug strip; dogfood protocol</td><td>Makes the work visible during beta and regressable in CI.</td></tr>
 <tr><td>7 — Presence Hooks</td><td>Disability-friendly state events for future avatar or status-light consumers</td><td>Wan-Streamer highlights visible listening behavior. Audio-only Korina can still expose the state.</td></tr>
-<tr><td>8 &mdash; Session Duplex State</td><td>Server mirror of spoken prefixes so reconnects do not erase context</td><td>Required for reliable interrupt recovery on flaky networks.</td></tr>
+<tr><td>8 &mdash; Session Duplex State</td><td>Server mirror of spoken prefixes so reconnects do not erase context; store the actually spoken prefix, not the full intended reply.</td><td>Required for reliable interrupt recovery on flaky networks. Depends on Duplex telemetry/streaming timeline plus DAG Memory Phase 1 so the spoken prefix can live as an observation node.</td></tr>
 </tbody>
 </table>
+<p style="color:var(--ink-soft);font-size:.9em;margin-top:.4rem"><strong>Interrupt-recovery note:</strong> once Duplex telemetry/streaming timeline and DAG Memory Phase 1 are live, interrupted speech should be committed as an observation node containing the actually spoken prefix. Session Duplex State should read from that memory substrate instead of inventing a parallel prefix store.</p>
 
 <h2>DAG Memory System (Post-v2)</h2>
 <p style="margin-top:.5rem"><strong>Status:</strong> <span class="issue-tag priority-low">parked</span></p>
