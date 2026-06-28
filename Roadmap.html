@@ -188,9 +188,50 @@ footer code{color:var(--ink-faint)}
 <tr><td>5 — Duplex Scheduler</td><td>Priority model: barge-in &gt; user audio &gt; STT final &gt; LLM token &gt; TTS synth &gt; playback &gt; background agent</td><td>Encodes Wan-Streamer's "multimodal token scheduling" at harness level.</td></tr>
 <tr><td>6 — Latency Budget UI</td><td>Surface full signal-to-signal path in debug strip; dogfood protocol</td><td>Makes the work visible during beta and regressable in CI.</td></tr>
 <tr><td>7 — Presence Hooks</td><td>Disability-friendly state events for future avatar or status-light consumers</td><td>Wan-Streamer highlights visible listening behavior. Audio-only Korina can still expose the state.</td></tr>
-<tr><td>8 — Session Duplex State</td><td>Server mirror of spoken prefixes so reconnects do not erase context</td><td>Required for reliable interrupt recovery on flaky networks.</td></tr>
+<tr><td>8 &mdash; Session Duplex State</td><td>Server mirror of spoken prefixes so reconnects do not erase context</td><td>Required for reliable interrupt recovery on flaky networks.</td></tr>
 </tbody>
 </table>
+
+<h2>DAG Memory System (Post-v2)</h2>
+<p style="margin-top:.5rem"><strong>Status:</strong> <span class="issue-tag priority-low">parked</span></p>
+<p><strong>Target release:</strong> Korina Converse release 2 or 3 (per Rogie, 2026-06-27).</p>
+<p><strong>Source spec:</strong> <code>Korina Memory.txt</code> at <code>/srv/storage/Korina Memory.txt</code> on Alima. 782-line engineering spec, v1.0. Will move into the repo as <code>docs/specs/korina-memory-v1.md</code> when implementation starts.</p>
+
+<h3>What it is</h3>
+<p>A causal DAG of event nodes (assertions, observations, tool calls, inferences, hypotheses, invalidations) connected by hard and soft edges, with built-in truth retraction, hypothesis generation for conflicts, and a confidence decay model. It is the substrate Korina Agent uses to remember what it has seen, decided, and been told &mdash; without losing information to context-window compression.</p>
+
+<h3>Core concepts</h3>
+<table>
+<thead><tr><th>Concept</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td><strong>EventNode</strong></td><td>Atomic record: type, content, key, value, base_confidence, depth, timestamp, session_id. Never mutated after creation.</td></tr>
+<tr><td><strong>Hard edge</strong></td><td>System-generated, immutable. Only three kinds: tool_call&rarr;observation (depends_on), observation&rarr;assertion (invalidates, on key mismatch), tool_call&rarr;tool_call (sequential depends_on).</td></tr>
+<tr><td><strong>Soft edge</strong></td><td>LLM-proposed with lifecycle (proposed &rarr; evaluated &rarr; committed / rejected / expired). Has TTL anchored to runtime context: job boundary in Hermes, turn count in Converse, task boundary in Agent.</td></tr>
+<tr><td><strong>Invalidation</strong></td><td>A new observation whose value differs from an existing assertion under the same key auto-invalidates the old assertion and propagates through dependent nodes. Observations are never invalidated themselves.</td></tr>
+<tr><td><strong>Hypothesis</strong></td><td>When two valid observations disagree on the same key, the system generates 2&ndash;4 competing hypothesis nodes (real EventNodes, not inline notes) with base_confidence 0.2 and waits for supporting observation.</td></tr>
+<tr><td><strong>Confidence</strong></td><td><code>C(node) = geometric_mean(C(parents)) &times; exp(&minus;&lambda; &times; depth)</code> with <code>&lambda; = 0.08</code>. Observations are always 1.0. Retrieval prunes below threshold 0.3.</td></tr>
+</tbody>
+</table>
+
+<h3>Build order (do not reorder)</h3>
+<table>
+<thead><tr><th>Phase</th><th>Component</th><th>Depends on</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>DAG store + hard edge traversal</td><td>none</td></tr>
+<tr><td>2</td><td>Invalidation engine</td><td>phase 1</td></tr>
+<tr><td>3</td><td>Retrieval (hard edges only, no confidence)</td><td>phase 2</td></tr>
+<tr><td>4</td><td>Structural conflict detection</td><td>phase 3</td></tr>
+<tr><td>5</td><td>Hypothesis generation</td><td>phase 4</td></tr>
+<tr><td>6</td><td>Soft edge state machine + TTL</td><td>phase 3</td></tr>
+<tr><td>7</td><td>Confidence model + threshold pruning</td><td>phases 3, 6</td></tr>
+<tr><td>8</td><td>M3 integration hooks</td><td>phases 3&ndash;7</td></tr>
+</tbody>
+</table>
+<p style="color:var(--ink-soft);font-size:.9em;margin-top:.4rem">Phases 1&ndash;3 are the core correctness system. Phases 4&ndash;7 are incremental improvements that degrade gracefully if absent. Phase 8 is offline-only and never blocks runtime.</p>
+
+<h3>Why this lives on the Roadmap, not in active work</h3>
+<p>The first public release of Korina Converse has to ship clean. The DAG memory system is significant new infrastructure &mdash; it adds a SQL store, an invalidation engine, hypothesis-generation LLM calls, and a confidence cache that must all be correct before any benefit is real. Wrong implementations are worse than no memory: silent confidence drift, stale assertions surfacing as facts, hypotheses leaking into context as conclusions. That is exactly the failure mode the spec is designed to prevent, and it is exactly the failure mode shipping too early invites.</p>
+<p>Releases 2 and 3 are the right place. By then Korina Converse will have live sessions producing real events, so phases 1&ndash;3 can be designed against actual data shapes instead of guesses, and the confidence model has real signals to calibrate against (lambda is a tunable that should not be locked in at 0.08 before live data exists).</p>
 
 <h3>Why this is parked</h3>
 <p>The first public release is the gating event. Until then, Korina's job is to ship a clean v1 — not to grow new behavioral surfaces. The full plan lives in the repo at <code>docs/plans/korina-converse-duplex-post-v1.md</code> and is rendered on this page so it stays discoverable.</p>
