@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Converse — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><style>
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'><title>Roadmap — Korina</title><link rel='icon' type='image/svg+xml' href='favicon.svg'><style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--bg4:#21262d;--border:#30363d;--border2:#484f58;--cyan:#58a6ff;--teal:#3fb950;--purple:#bc8cff;--orange:#ffa657;--red:#f85149;--text:#e6edf3;--sub:#8b949e;--sub2:#6e7681;--code-bg:#161b22;--font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;--mono:ui-monospace,SFMono,"JetBrains Mono",Menlo,monospace}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth;font-size:16px}
@@ -159,8 +159,7 @@ footer code{color:var(--sub2)}
   color: var(--text);
 }
 
-</style></head><body>
-<nav class="site-nav"><div class="wrap">
+</style></head><body><nav class="site-nav"><div class="wrap">
 <a href="index.html" class="site-logo">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
 <rect width="32" height="32" rx="7" fill="#0d1117"/>
@@ -174,95 +173,64 @@ footer code{color:var(--sub2)}
 <a href="Converse.html">Converse</a><a href="Agent.html">Agent</a>
 <a href="Agent-Side-Channel.html">Side Channel</a>
 <a href="Providers.html">Providers</a><a href="Testing.html">Testing</a>
-<a href="Roadmap.html">Roadmap</a>
+<a href="Roadmap.html" class="active">Roadmap</a>
 <a href="Issues.html">Issues</a>
 <a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
 </div>
 <div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">⚠ Issues</a></div>
-</div></nav><div class="wrap"><a href="index.html" class="back-link">&#8592; Back to Home</a>
-<h1>Korina Converse</h1>
-<p style="color:var(--sub);font-size:1.05em;margin-bottom:1.5rem">
-The <strong>local-first, voice-first design chat channel</strong>. It owns the human-facing loop:
-microphone capture, VAD/endpointing, STT, response-LLM calls, TTS playback, barge-in,
-interrupts, and permission prompts. Converse is designed to be a channel that hosts any compatible agent.
-</p>
+</div></nav>
+<div class="wrap">
+<a href="index.html" class="back-link">← Back to Home</a>
+<h1>Roadmap</h1>
+<p style="color:var(--sub);font-size:1.05em;margin-top:1rem">Planned work for Korina Converse and Korina Agent. Items on this page are scoped but not yet active. They become actionable once their unblock condition is met.</p>
 
-<div class="req-note">
-<strong>Design principle:</strong> Korina is local-first — it is designed to keep your voice data and inference on your own hardware. However, it can fall back to cloud providers when your local hardware cannot fit the selected model. For example, running Qwen3-27B at Q8 (requires ~32GB VRAM) or GPT-OSS-120B at MXFP4 (requires ~64GB VRAM) is not realistic on typical consumer hardware.
-</div>
-
-<h2>Minimum System Requirements (Korina Converse)</h2>
-<p style="color:var(--sub);margin-bottom:1rem">Estimates based on <code>faster-whisper base</code> + <code>Qwen3.5-0.5B</code> as the lightweight STT + LLM baseline.</p>
-
-<table class="req-table">
-<thead>
-<tr><th>Tier</th><th>VRAM</th><th>System RAM</th><th>Storage</th><th>Notes</th></tr>
-</thead>
+<h2>Status Legend</h2>
+<table style="margin-top:0.75rem">
+<thead><tr><th>Status</th><th>Meaning</th></tr></thead>
 <tbody>
-<tr>
-<td>
-<span class="tier-label minimal">Minimal</span>basic functionality
-</td>
-<td>—</td>
-<td>4 GB</td>
-<td>2 GB</td>
-<td>CPU inference. whisper base (~74M) + Qwen3.5-0.5B Q8 (~1GB). Slow but functional. STT may hit CPU bottlenecks on older CPUs.</td>
-</tr>
-<tr>
-<td>
-<span class="tier-label basic" style="background:#003b10">Basic</span>acceptable experience
-</td>
-<td>2–4 GB</td>
-<td>8 GB</td>
-<td>5 GB</td>
-<td>GPU-assisted STT (faster-whisper with CUDA). whisper base + Qwen3.5-0.5B Q8 loaded simultaneously. Single-turn latency in the 3–8s range on a mid-range GPU (e.g. RX 580, GTX 1080).</td>
-</tr>
-<tr>
-<td>
-<span class="tier-label good">Good</span>good experience
-</td>
-<td>6–8 GB</td>
-<td>16 GB</td>
-<td>10 GB</td>
-<td>GPU-heavy. whisper base + Qwen3.5-4B Q8 (~4.5GB) or medium whisper model. Smooth multi-turn conversation with sub-3s perceived latency on modern GPUs (e.g. RTX 3060, RX 6600 XT).</td>
-</tr>
+<tr><td><span class="issue-tag priority-low">parked</span></td><td>Scoped, waiting on an external gate (e.g. release v1).</td></tr>
+<tr><td><span class="issue-tag priority-med">ready</span></td><td>Scoped and unblocked; can be picked up.</td></tr>
+<tr><td><span class="issue-tag priority-high">active</span></td><td>Currently in development.</td></tr>
+<tr><td><span class="issue-tag" style="border-color:var(--border2);color:var(--sub)">shipped</span></td><td>Released in a public version.</td></tr>
 </tbody>
 </table>
 
-<p style="color:var(--sub);font-size:0.85em;margin-top:0.75rem">
-<strong>STT models:</strong> faster-whisper base.en (~74M params, ~150MB INT8) is the minimum. Larger models (medium.en ~418M, large-v3 ~1.5B) improve accuracy at the cost of VRAM/speed.
-</p>
-<p style="color:var(--sub);font-size:0.85em">
-<strong>LLM models:</strong> Qwen3.5-0.5B Q8 (~1GB) is the minimum viable for basic conversational quality. Qwen3.5-4B Q8 (~4.5GB) is the practical floor for decent response quality. Larger models (7B, 13B+) dramatically improve output quality but require corresponding VRAM headroom.
-</p>
-<p style="color:var(--sub);font-size:0.85em">
-<strong>Kokoro TTS:</strong> TTS runs on CPU (omnivoice is lightweight, ~100MB RAM). No discrete GPU needed for TTS.
-</p>
+<h2>Duplex Workflows (Wan-Streamer Lessons)</h2>
+<p style="margin-top:0.5rem"><strong>Status:</strong> <span class="issue-tag priority-low">parked</span></p>
+<p><strong>Unblock condition:</strong> First public release of Korina Converse ships and <code>master</code> is updated. Per Rogie, 2026-06-27.</p>
+<p><strong>Source paper:</strong> <a href="https://arxiv.org/abs/2606.25041" target="_blank">Wan-Streamer v0.1: End-to-end Real-time Interactive Foundation Models</a> (arXiv:2606.25041v2). Wan-Streamer is a model; Korina is a harness. The lesson is to enforce a system-level <em>streaming contract</em> at the harness layer.</p>
 
-<h2>Core Features</h2>
-<div class="card-grid">
-<div class="card"><h3>🎤 Live VAD</h3><p>Browser-side adaptive energy voice activity detection with configurable endpointing thresholds: 3200ms silence for reading/dictation, 950ms for conversation mode.</p></div>
-<div class="card"><h3>📝 Partial Transcription</h3><p>Rolling partial transcription windows (~1.8s each) are queued rather than dropped, so slower STT inference catches up gracefully without losing audio.</p></div>
-<div class="card"><h3>💬 Response LLM</h3><p>Browser sends transcript to the configured OpenAI-compatible response LLM endpoint. Provider-agnostic: llama.cpp, LM Studio, Ollama, or any custom endpoint.</p></div>
-<div class="card"><h3>🔊 Kokoro TTS</h3><p>Kokoro/OpenAI-compatible TTS with Web Audio SSE streaming. Voices selectable in the UI. Acknowledgement phrases generated and cached per voice on startup.</p></div>
-<div class="card"><h3>⏸️ Barge-in &amp; Interrupts</h3><p>Speak during playback to interrupt. Agent interrupts use a configurable cooldown (default 3000ms padding) to prevent recursive interruption.</p></div>
-<div class="card"><h3>🔑 Permission UX</h3><p>Permission requests from the agent are spoken by Converse and answered through the agent permission endpoint. Converse is always the human-facing permission surface.</p></div>
-</div>
+<h3>What Wan-Streamer teaches</h3>
+<ul>
+  <li><strong>Streamability is a constraint, not a serving optimization.</strong> A system designed around offline encoders or round-based dialogue cannot recover true low-latency full-duplex behavior by engineering alone.</li>
+  <li><strong>Full-duplex is not alternating turns.</strong> While the agent responds, it must still perceive user feedback for interruption and adaptation.</li>
+  <li><strong>Commit generated units back into history.</strong> If a reply is interrupted, what was actually spoken is what context should anchor on — not what the model intended to say.</li>
+  <li><strong>Overlap independent work</strong> (thinker/performer): current STT processes while prior TTS plays; LLM streams while Kokoro synthesizes the first sentence.</li>
+  <li><strong>Measure the right latency boundary.</strong> Model-internal, first-packet, first-token, endpointing, and API TTFB are useful but not equivalent to user-perceived latency. Korina needs signal-to-signal timing in its debug strip.</li>
+</ul>
 
-<h2>Technology Stack</h2>
+<h3>What Korina would adapt</h3>
 <table>
-<thead><tr><th>Component</th><th>Implementation</th></tr></thead>
+<thead><tr><th>Phase</th><th>Scope</th><th>Why now</th></tr></thead>
 <tbody>
-<tr><td>Frontend</td><td>Native ES modules under <code>Korina/js/</code> (17 modules)</td></tr>
-<tr><td>Backend</td><td>FastAPI on port 8001, Python package under <code>korina/</code></td></tr>
-<tr><td>STT</td><td>faster-whisper (CPU/CUDA) or multimodal LLM via OpenAI-compatible <code>input_audio</code></td></tr>
-<tr><td>Response LLM</td><td>OpenAI-compatible <code>/v1/chat/completions</code>, configurable provider</td></tr>
-<tr><td>TTS</td><td>Kokoro streaming server on port 8880 (separate systemd unit)</td></tr>
-<tr><td>ACK phrases</td><td>Manifest-driven, WAV cached per voice, generated on startup or on-demand</td></tr>
+<tr><td>0 — Telemetry</td><td>Latency event schema, <code>/api/duplex/events</code>, browser recorder helper</td><td>Required for every later phase. Cannot optimize what is not measured.</td></tr>
+<tr><td>1 — Streaming Timeline</td><td>Single harness-level event log shared by STT, LLM, TTS, playback, and interrupts</td><td>The "interleaved causal stream" in harness clothing.</td></tr>
+<tr><td>2 — Barge-In</td><td>Track active audio nodes, keep VAD on while TTS speaks, stop TTS within ~250 ms on detected speech, recover with context</td><td>Biggest visible duplex win. Token-efficient on the existing UI.</td></tr>
+<tr><td>3 — Streaming LLM → Sentence TTS</td><td>OpenAI-compatible <code>stream: true</code>, sentence chunker, speak first clause before LLM finishes</td><td>Eliminates dead air between LLM and TTS.</td></tr>
+<tr><td>4 — Stable Partial STT Prefill</td><td>Behind a feature flag; do not speak from partial-only input yet</td><td>Risk: hallucination. Slower adoption is correct.</td></tr>
+<tr><td>5 — Duplex Scheduler</td><td>Priority model: barge-in &gt; user audio &gt; STT final &gt; LLM token &gt; TTS synth &gt; playback &gt; background agent</td><td>Encodes Wan-Streamer's "multimodal token scheduling" at harness level.</td></tr>
+<tr><td>6 — Latency Budget UI</td><td>Surface full signal-to-signal path in debug strip; dogfood protocol</td><td>Makes the work visible during beta and regressable in CI.</td></tr>
+<tr><td>7 — Presence Hooks</td><td>Disability-friendly state events for future avatar or status-light consumers</td><td>Wan-Streamer highlights visible listening behavior. Audio-only Korina can still expose the state.</td></tr>
+<tr><td>8 — Session Duplex State</td><td>Server mirror of spoken prefixes so reconnects do not erase context</td><td>Required for reliable interrupt recovery on flaky networks.</td></tr>
 </tbody>
 </table>
+
+<h3>Why this is parked</h3>
+<p>The first public release is the gating event. Until then, Korina's job is to ship a clean v1 — not to grow new behavioral surfaces. The full plan lives in the repo at <code>docs/plans/korina-converse-duplex-post-v1.md</code> and is rendered on this page so it stays discoverable.</p>
+
+<div class="req-note" style="margin-top:2rem">
+<strong>Note:</strong> Roadmap items are proposals, not commitments. Scope, ordering, and even the inclusion of an item can change as the v1 release and post-v1 feedback arrive. The Wan-Streamer plan in particular is a starting point for discussion — the duplex rollout will likely be split across multiple post-v1 milestones, not one big push.
 </div>
-<footer><div class="wrap">
-<p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
-<p><code>docs/wiki/</code> on <code>beta</code> branch &middot; Generated 2026-06-25</p>
-</div></footer></body></html>
+
+</div>
+</body></html>
