@@ -192,6 +192,7 @@ footer code{color:var(--ink-faint)}
  <span class="hero-badge">Local-First</span>
  <span class="hero-badge">Voice-Native</span>
  <span class="hero-badge">Agent-Ready</span>
+ <span class="hero-badge">First Release</span>
  <span class="hero-badge">&#65039; Cloud Optional</span>
  </div>
  <p style="margin-top:0.75rem;font-size:0.85em;color:var(--sub2)">Browser UI &middot; faster-whisper STT &middot; Response LLM &middot; Kokoro TTS &middot; Agent Side Channel</p>
@@ -212,7 +213,7 @@ footer code{color:var(--ink-faint)}
  <div class="card"><h3> Korina Agent</h3><p>Background agent that receives transcript deltas, maintains compact state, emits reports/events, and asks Converse to inject context or speak interrupts.</p><div class="card-footer"><a href="Agent.html">Read more →</a></div></div>
  <div class="card"><h3> Agent Side Channel</h3><p>Korina Converse can host any OpenAI-compatible agent — Hermes Agent, OpenClaw, or a custom local runner.</p><div class="card-footer"><a href="Agent-Side-Channel.html">Read more →</a></div></div>
  <div class="card"><h3> Provider Architecture</h3><p>Backend-owned registry at GET /api/capabilities. Supports llama.cpp, LM Studio, Ollama, OpenAI-compatible, and Anthropic-compatible.</p><div class="card-footer"><a href="Providers.html">Read more →</a></div></div>
- <div class="card"><h3> CI & Testing</h3><p>81 pytest tests across unit/API/static layers + GitHub Actions. Live regression smoke. No live model servers needed for CI.</p><div class="card-footer"><a href="Testing.html">Read more →</a></div></div>
+ <div class="card"><h3> CI & Testing</h3><p>101 pytest tests across unit/API/static layers + GitHub Actions. Release gate includes 49 live smoke checks. No live model servers needed for CI.</p><div class="card-footer"><a href="Testing.html">Read more →</a></div></div>
  <div class="card"><h3> Open Issues</h3><p>7 architecture backlog items tracked as GitHub Issues.</p><div class="card-footer"><a href="Issues.html">Read more →</a></div></div>
  </div>
 
@@ -223,8 +224,12 @@ footer code{color:var(--ink-faint)}
  <p style="color:var(--sub);margin-bottom:0.75rem">Across 10 route modules: STT, Response LLM, Agent, Config, Providers, Models, Capabilities, Health, ACKs, and Index.</p>
  <img class="chart-img" width="900" height="540" loading="lazy" src="routes_chart.png" alt="API routes reference">
 
- <h2>Test Coverage &amp; Repository Composition</h2>
- <img class="chart-img" width="900" height="420" loading="lazy" src="coverage_chart.png" alt="Test pyramid and repo composition charts">
+ <h2>Release Gate</h2>
+ <div class="card-grid">
+ <div class="card"><h3>First Release Line</h3><p><code>master</code> is the release branch promoted from <code>beta</code> after the documented gates pass.</p><div class="card-footer"><a href="Testing.html">See test gate →</a></div></div>
+ <div class="card"><h3>Automated Tests</h3><p><strong>101 pytest tests passing</strong> across unit, API, static frontend, and CI-safe checks.</p></div>
+ <div class="card"><h3>Live Smoke</h3><p><strong>49 live smoke checks passing</strong> against a running local service without requiring chat or transcription model availability.</p></div>
+ </div>
 
  <h2>Quick Links</h2>
  <div class="quick-links">
@@ -253,5 +258,5 @@ footer code{color:var(--ink-faint)}
 
 <footer><div class="wrap">
 <p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
-<p><code>docs/wiki/</code> on <code>beta</code> branch &middot; Generated 2026-06-25</p>
+<p><code>docs/wiki/</code> source mirrored in the release branch</p>
 </div></footer></body></html>

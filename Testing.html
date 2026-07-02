@@ -145,12 +145,14 @@ footer code{color:var(--ink-faint)}
 <a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
 </div>
 <div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">Issues</a></div>
-</div></nav><div style='max-width:900px;margin:3rem auto;padding:0 1.5rem'><a href='index.html' style='display:inline-block;margin-bottom:1.5rem;color:var(--sub)'>&#8592; Back to Home</a><h1 style='border-bottom:1px solid var(--border);padding-bottom:.5rem;margin-top:0'>Testing & CI</h1><p style='color:var(--sub);font-size:1.05em;margin-top:1rem;white-space:pre-wrap'>Korina has 81 pytest tests across four layers:
+</div></nav><div style='max-width:900px;margin:3rem auto;padding:0 1.5rem'><a href='index.html' style='display:inline-block;margin-bottom:1.5rem;color:var(--sub)'>&#8592; Back to Home</a><h1 style='border-bottom:1px solid var(--border);padding-bottom:.5rem;margin-top:0'>Testing & CI</h1><p style='color:var(--sub);font-size:1.05em;margin-top:1rem;white-space:pre-wrap'>Korina has 101 pytest tests across four layers:
  - Unit tests: backend module isolation
  - API/TestClient: FastAPI route contracts and response schemas
  - Static/frontend smoke: module shape, no-refresh-on-focus regression
- - Live regression: full service smoke against running backend
+ - Live regression: 49 release-gate smoke checks against a running backend
 
 CI runs on GitHub Actions across Python 3.10/3.11/3.12. The pytest suite avoids live model servers so CI is fast and deterministic.
 
-Live regression (regression_smoke.py) is a separate script that exercises provider activation, chat, and transcription endpoints against a running service.</p></div></body></html>
+Current release gate: 101 pytest tests passing and 49 live smoke checks passing.
+
+Live regression (regression_smoke.py) is a separate script that exercises the running service. The default release gate uses --no-chat --no-transcribe so it validates frontend/API contracts without requiring local model availability; full chat/transcription smoke can be run when those services are up.</p></div></body></html>
