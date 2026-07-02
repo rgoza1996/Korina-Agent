@@ -7,7 +7,7 @@ Wants=network-online.target kokoro-streaming-server.service
 Type=simple
 WorkingDirectory=%h/Korina
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/kokoro-env4/bin/python %h/Korina/korina_voice_lab.py
+ExecStart=%h/comfy_venv/bin/python %h/Korina/korina_voice_lab.py
 Restart=always
 RestartSec=5
 

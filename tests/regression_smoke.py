@@ -1018,7 +1018,7 @@ def test_phase4_frontend_filter_status_survives_assignment() -> bool:
     settingsInfo assignment, not written and immediately overwritten."""
     repo_root = Path(__file__).resolve().parent.parent
     src = (repo_root / "Korina/js/providers-ui.js").read_text()
-    marker = "hidden by audio capability filter"
+    marker = "shown in red as likely unusable"
     final_assignment = "$(\"settingsInfo\").textContent=`Loaded"
     marker_pos = src.find(marker)
     final_pos = src.find(final_assignment)

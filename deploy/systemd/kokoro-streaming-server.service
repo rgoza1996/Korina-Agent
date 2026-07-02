@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=%h
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/kokoro-env4/bin/python %h/kokoro-streaming-server.py
+ExecStart=%h/comfy_venv/bin/python %h/kokoro-streaming-server.py
 Restart=always
 RestartSec=5
 
