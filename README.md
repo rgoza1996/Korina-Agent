@@ -49,6 +49,17 @@ Browser (Korina Converse UI) Korina backend (FastAPI :8001)
 - `tests/` — pytest unit/API/static tests for CI plus `tests/regression_smoke.py` for live server smoke tests. CI tests avoid live model servers; live regression can optionally exercise provider activation, chat, and transcription when local services are up.
 - `docs/wiki/` — repo-backed wiki fallback pages that mirror the architecture overview and issue backlog until the GitHub Wiki repo is initialized.
 
+
+
+## Release status
+
+The `master` branch is the first release line. The release promotion from `beta` was verified with:
+
+- `pytest` — 101 tests passing
+- `tests/regression_smoke.py --no-chat --no-transcribe` — 49 live smoke checks passing against a running local service
+
+`beta` remains the integration branch for follow-up work; release-ready changes are promoted to `master` after the pytest and live-smoke gates pass.
+
 ## Process supervision
 
 Korina-owned long-running services are managed with `systemd --user`:

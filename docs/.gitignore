@@ -1,0 +1,15 @@
+# Local documentation build outputs
+/site/
+/build/
+/dist/
+/_build/
+/.cache/
+
+# Local documentation tooling artifacts
+*.tmp
+*.temp
+*.log
+*.bak
+*.bak-*
+.DS_Store
+Thumbs.db
