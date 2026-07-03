@@ -162,6 +162,24 @@ footer code{color:var(--ink-faint)}
 </tbody>
 </table>
 
+<h2>Korina Agent Visibility Sprint</h2>
+<p style="margin-top:.5rem"><strong>Status:</strong> <span class="issue-tag priority-med">ready</span></p>
+<p><strong>Recommendation:</strong> pause new Korina Converse feature work temporarily and give Korina Agent one focused visibility and reliability sprint. Converse remains in bugfix/dogfood mode for audio, provider, and blocker regressions.</p>
+<p><strong>Why now:</strong> Agent is the next differentiating surface: hidden state, transcript awareness, background observations, interruption recovery, and later DAG memory all depend on an event loop that is observable before it is clever. If Agent is quiet or ambiguous, later behavior work becomes hard to debug and easy to misread.</p>
+
+<h3>Plan</h3>
+<table>
+<thead><tr><th>Step</th><th>Scope</th><th>Exit condition</th></tr></thead>
+<tbody>
+<tr><td>1 — Runtime gate</td><td>Verify Agent enable/disable behavior through the supported config/API path.</td><td>The UI and server agree on whether Agent is enabled, and the disabled state fails quiet by design.</td></tr>
+<tr><td>2 — Debug panel dogfood</td><td>Exercise transcript delivery, event polling, busy/idle state, cooldown/deferred-interrupt reporting, and browser-console health during a real conversation.</td><td>The Agent Debug panel explains what just happened without requiring log spelunking.</td></tr>
+<tr><td>3 — Regression coverage</td><td>Add backend route tests for transcript/events, frontend static tests for the debug element and imports, and a smoke check for stable event response shape.</td><td>A broken Agent panel or event loop fails CI before reaching the live page.</td></tr>
+<tr><td>4 — Debug state expansion</td><td>Surface last transcript delivery, last event id, busy/idle, last error, and cooldown/deferred-interrupt state.</td><td>Agent behavior is inspectable enough to support the next behavior feature without guessing.</td></tr>
+<tr><td>5 — First behavior slice</td><td>Only after visibility is green, add a small observation/event-memory slice that records what Agent saw rather than changing conversation behavior.</td><td>The first Agent feature produces durable observations while remaining reversible and low-risk.</td></tr>
+</tbody>
+</table>
+<p style="color:var(--ink-soft);font-size:.9em;margin-top:.4rem"><strong>Ordering rule:</strong> do not start new Agent behavior until steps 1&ndash;4 are green. New Converse features stay paused during this sprint; critical Converse bugfixes remain allowed.</p>
+
 <h2>Duplex Workflows (Wan-Streamer Lessons)</h2>
 <p style="margin-top:0.5rem"><strong>Status:</strong> <span class="issue-tag priority-low">parked</span></p>
 <p><strong>Unblock condition:</strong> First public release of Korina Converse ships and <code>master</code> is updated.</p>
