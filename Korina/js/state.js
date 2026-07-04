@@ -81,6 +81,14 @@ export const state = {
 
   // --- app config + agent state ---
   appConfig: { idle_ack_initial_ms: 5000, idle_ack_step_ms: 5000 },
+  // Snapshot of the config that was last loaded from /api/config or that
+  // last completed a /api/llm/provider/activate. Used by closeSettings()
+  // to detect whether provider-affecting fields have changed since the
+  // modal opened (or since the last save). Populated by applyConfig().
+  appConfigSnapshot: null,
+  // True after the user activates a provider until /api/health confirms
+  // the new model is loaded. Drives the providerReady pill in the debug strip.
+  providerPending: false,
   agentStateReport: '',
   agentLastTranscriptHash: '',
   pendingAgentStateReport: '',
@@ -107,6 +115,12 @@ export const state = {
 
   // --- Phase 2 capabilities cache ---
   _capabilitiesCache: null,
+
+  // --- multimodal STT capability filter ---
+  // Default OFF (filter ON): only show models with supports_audio_input=true
+  // in the #sttLlmModel dropdown. Users can opt back into the full list
+  // via the 'All models' override checkbox in Settings.
+  capabilityFilterOverride: false,
 };
 
 export const EventBus={

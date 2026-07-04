@@ -18,8 +18,17 @@
 
 import { state } from './state.js';
 import { ttsProviderLabel, llmProviderLabel } from './labels.js';
-import { $ } from './dom.js';
-import { applyConfig, ttsProvider } from './settings-ui.js';
+import { $, setDot } from './dom.js';
+import {
+  applyConfig, ttsProvider,
+  sttBackend,
+  sttDevice, sttModel,
+  effectiveSttLlmModel, effectiveSttLlmBaseUrl,
+  sttLlmReasoningEnabled,
+  llmReasoningEnabled,
+  llmProvider, llmBaseUrl, lmModel,
+  partialWindowMsSetting,
+} from './settings-ui.js';
 import { loadAgentModelOptions } from './providers-ui.js';   // lands in 3.2.6
 
 export async function activateSelectedProvider(provider, model = '') {
@@ -31,6 +40,9 @@ export async function activateSelectedProvider(provider, model = '') {
   const j = await r.json();
   if (!r.ok) throw new Error(j.detail || JSON.stringify(j));
   if (j.saved) applyConfig(j.saved);
+  // Signal a pending provider switch so the readiness pill flips to
+  // "loading" until /api/health confirms the new model is loaded.
+  state.providerPending = true;
   return j;
 }
 
@@ -131,6 +143,91 @@ export async function health() {
   } else {
     // Server didn't return a tts block (older backend). Keep last-known state.
   }
+
+  // Provider / model readiness pill (drives off server truth).
+  const ready = $('providerReady');
+  const readyDot = $('providerReadyDot');
+  if (ready && readyDot) {
+    const rll = j && j.response_llm_load;
+    const pending = !!state.providerPending;
+    if (pending && !(rll && rll.ok && rll.loaded)) {
+      setDot('providerReadyDot', 'warn');
+      ready.textContent = `${(rll && rll.provider) || j.response_llm_provider || 'provider'} · loading ${(rll && rll.expected_model) || j.response_llm_model || ''}…`;
+    } else if (rll && rll.ok && rll.loaded) {
+      setDot('providerReadyDot', 'good');
+      ready.textContent = `${rll.provider || j.response_llm_provider || 'provider'} · ready · ${rll.loaded_model || rll.expected_model || j.response_llm_model || ''}`;
+      state.providerPending = false;
+    } else if (rll && rll.ok && !rll.loaded) {
+      setDot('providerReadyDot', 'warn');
+      ready.textContent = `${rll.provider || j.response_llm_provider || 'provider'} · model not loaded · ${rll.expected_model || j.response_llm_model || ''}`;
+    } else {
+      setDot('providerReadyDot', 'bad');
+      ready.textContent = `${(rll && rll.provider) || j.response_llm_provider || 'provider'} offline · ${(rll && rll.error) || 'no /v1/models response'}`;
+    }
+  }
+}
+
+// recordSttBackend -- update the #sttBackendHealth / #sttBackendDot pill
+// with the result of the most recent STT request. Called from
+// recorder.js when /api/transcribe/stream emits its 'done' or 'error'
+// SSE event, and when /api/transcribe/partial returns its JSON.
+//
+// Args:
+//   payload: object | null -- the SSE 'done' JSON, partial JSON, or null.
+//            Expected fields (any may be absent):
+//              backend        'multimodal-stt' | 'faster-whisper' |
+//                             'whisper-fallback' | 'whisper-llm'
+//              seconds        number   seconds STT took
+//              samples        number   raw audio samples
+//              sample_rate    number   Hz
+//              model          string   model id used
+//              fallback_reason string  (whisper-fallback only)
+//              warning        string   (whisper-fallback only)
+//   errorMsg: string | undefined -- set when the call threw/failed
+//
+// The pill text is intentionally compact (one line) so it fits the
+// debug strip without overflowing. It shows the backend label, the
+// audio duration in seconds, the STT latency in seconds, and the
+// resolved model id (last segment only -- long ids truncated).
+const STT_BACKEND_LABELS = {
+  'multimodal-stt': 'multimodal',
+  'faster-whisper': 'whisper',
+  'whisper-fallback': 'whisper (fallback)',
+  'whisper-llm': 'whisper',
+};
+const STT_BACKEND_DOTS = {
+  'multimodal-stt': 'good',
+  'faster-whisper': 'good',
+  'whisper-fallback': 'warn',
+  'whisper-llm': 'warn',
+};
+
+export function recordSttBackend(payload, errorMsg) {
+  const pill = $('sttBackendHealth');
+  const dot = $('sttBackendDot');
+  if (!pill || !dot) return;
+  if (errorMsg) {
+    setDot('sttBackendDot', 'bad');
+    pill.textContent = `STT error · ${String(errorMsg).slice(0, 80)}`;
+    return;
+  }
+  const backend = payload && payload.backend;
+  const seconds = payload && payload.seconds;
+  const samples = payload && payload.samples;
+  const sampleRate = payload && payload.sample_rate;
+  const model = payload && payload.model;
+  const fallbackReason = payload && payload.fallback_reason;
+  const audioSec = (samples && sampleRate) ? (samples / sampleRate) : null;
+  const backendLabel = STT_BACKEND_LABELS[backend] || backend || 'unknown';
+  const tail = fallbackReason ? ` · ⚠ ${fallbackReason}` : '';
+  const durStr = audioSec != null ? `${audioSec.toFixed(1)}s audio` : null;
+  const latStr = seconds != null ? `${seconds.toFixed(2)}s STT` : null;
+  const timing = [durStr, latStr].filter(Boolean).join(' / ');
+  const modelShort = model ? String(model).split(/[\\/]/).pop() : '';
+  pill.textContent = timing
+    ? `${backendLabel} · ${timing}${modelShort ? ` · ${modelShort}` : ''}${tail}`
+    : `${backendLabel}${modelShort ? ` · ${modelShort}` : ''}${tail}`;
+  setDot('sttBackendDot', STT_BACKEND_DOTS[backend] || 'bad');
 }
 
 // initApp — moved from index.html:743-755 with dynamic imports for the

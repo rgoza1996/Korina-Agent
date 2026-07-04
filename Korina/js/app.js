@@ -29,10 +29,10 @@ import {
 import {
   collectConfig, applyConfig, markActivity,
   syncConverseSettingsUI,
-  ttsDevice, ttsProvider, ttsBaseUrl,
+  ttsDevice, ttsProvider, ttsBaseUrl, ttsPort, ttsModel,
   sttDevice, sttModel, sttBackend,
   llmProvider, llmBaseUrl, lmModel,
-  sttLlmModel, effectiveSttLlmModel, effectiveSttLlmBaseUrl,
+  sttLlmModel, effectiveSttLlmModel, effectiveSttLlmBaseUrl, effectiveSttLlmProvider,
   finalSttMode, endpointMode, minSpeechMs, partialWindowMsSetting,
 } from "./settings-ui.js";
 import {
@@ -65,6 +65,7 @@ import {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
   interruptConverse, askAndSpeak, askLM, agentDebug,
 } from "./agent-ui.js";
+import { openEndpoints, closeEndpoints, populateEndpoints } from "./endpoints.js";
 
 // Re-export the most common symbols on window so HTML inline event
 // handlers and DevTools debugging keep working.
@@ -89,6 +90,7 @@ Object.assign(window, {
   stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry,
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
   interruptConverse, askAndSpeak, askLM, agentDebug,
+  openEndpoints, closeEndpoints, populateEndpoints,
   wireUiHandlers, openSettings, closeSettings, saveSettings,
   startRecording, stopRecording, toggleLive, stopPlayback,
   clearSession,
@@ -108,7 +110,83 @@ function bindClick(id, handler) {
 }
 
 function closeSettings() {
-  $('settingsModal')?.classList.remove('open');
+  // GUARANTEE: the modal MUST hide immediately, before any save/activate
+  // network call. Provider activation can start/reload local model servers
+  // (llama.cpp, LM Studio, Ollama) and may take seconds or fail. Waiting for
+  // it before removing `.open` trapped users in the settings modal.
+  const modal = $('settingsModal');
+  const wasOpen = !!modal?.classList.contains('open');
+  modal?.classList.remove('open');
+  if (!wasOpen) return;
+
+  // Persist + activate in the background. Surface errors in settings/status,
+  // but never let them control whether the modal can close.
+  void _closeSettingsImpl().catch(e => {
+    console.error('closeSettings background apply failed:', e);
+    try {
+      $('settingsInfo').textContent = 'Settings apply failed: ' + (e.message || e);
+      status($('sttStatus'), 'Settings apply failed: ' + (e.message || e), 'bad');
+    } catch (_) {}
+  });
+}
+
+async function _closeSettingsImpl() {
+  // Persist any unsaved field changes first. saveConfigNow() is a no-op
+  // if the form values already match what's on disk; the activation
+  // diff below is what we actually care about.
+  try {
+    await saveConfigNow();
+  } catch (e) {
+    console.warn('saveConfigNow failed during modal close:', e);
+  }
+
+  // Compare provider-affecting form fields against the last-loaded
+  // config snapshot. If anything that changes which server / model is
+  // serving requests has changed, run /api/llm/provider/activate so the
+  // running backend reflects the new choice.
+  const snap = state.appConfigSnapshot || {};
+  const llmChanged =
+    llmProvider() !== (snap.llm_provider || '') ||
+    lmModel() !== (snap.lm_model || '') ||
+    llmBaseUrl() !== (snap.llm_base_url || '');
+  const sttChanged =
+    effectiveSttLlmProvider() !== (snap.stt_llm_provider || '') ||
+    effectiveSttLlmBaseUrl() !== (snap.stt_llm_base_url || '') ||
+    sttLlmModel() !== (snap.stt_llm_model || '');
+
+  if (llmChanged || sttChanged) {
+    try {
+      const provider = sttChanged && !llmChanged ? effectiveSttLlmProvider() : llmProvider();
+      const model = sttChanged && !llmChanged ? effectiveSttLlmModel() : lmModel();
+      status($('sttStatus'), `Applying settings: activating ${provider}…`, 'warn');
+      const j = await activateSelectedProvider(provider, model);
+      $('settingsInfo').textContent = `Activated ${j.activation.provider}. Started ${j.activation.started.join(', ') || 'nothing'}; stopped ${j.activation.stopped.join(', ') || 'nothing'}.`;
+      // Refresh the snapshot so subsequent closes don't re-activate
+      // the same change.
+      state.appConfigSnapshot = {
+        llm_provider: llmProvider(),
+        lm_model: lmModel(),
+        llm_base_url: llmBaseUrl(),
+        stt_llm_provider: effectiveSttLlmProvider(),
+        stt_llm_base_url: effectiveSttLlmBaseUrl(),
+        stt_llm_model: sttLlmModel(),
+        tts_provider: ttsProvider(),
+        tts_base_url: String($('ttsBaseUrl')?.value || '').trim(),
+        tts_port: ttsPort(),
+        tts_model: ttsModel(),
+      };
+    } catch (e) {
+      $('settingsInfo').textContent = 'Provider activation failed: ' + e.message;
+      status($('sttStatus'), 'Provider activation failed: ' + e.message, 'bad');
+      console.warn('activateSelectedProvider failed during modal close:', e);
+    }
+  }
+
+  // Refresh the debug strip so the pills reflect the new state.
+  // Wrapped in its own try so a health() failure cannot escape the
+  // inner function and prevent the outer closeSettings from hiding
+  // the modal.
+  try { await health(); } catch (e) { console.warn('health refresh failed:', e); }
 }
 
 async function openSettings() {
@@ -119,7 +197,8 @@ async function openSettings() {
 }
 
 function saveSettings() {
-  saveConfigNow();
+  // The Done button goes through the same close path as Close/click-outside/Escape
+  // so persist+activate semantics are guaranteed to be identical.
   closeSettings();
 }
 
@@ -357,6 +436,9 @@ function wireUiHandlers() {
   bindClick('settingsBtn', openSettings);
   bindClick('closeSettingsBtn', closeSettings);
   bindClick('saveSettingsBtn', saveSettings);
+  bindClick('endpointsBtn', openEndpoints);
+  bindClick('closeEndpointsBtn', closeEndpoints);
+  bindClick('refreshEndpointsBtn', () => populateEndpoints().catch(e => console.warn('populateEndpoints failed:', e)));
   bindClick('refreshAgentModelsBtn', () => loadAgentModelOptions());
   bindClick('clearSessionBtn', () => clearSession());
   bindClick('recBtn', () => startRecording());
@@ -368,7 +450,15 @@ function wireUiHandlers() {
 
   const modal = $('settingsModal');
   if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeSettings(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettings(); });
+  const epModal = $('endpointsModal');
+  if (epModal) epModal.addEventListener('click', e => { if (e.target === epModal) closeEndpoints(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      // Close whichever modal is open.
+      if ($('endpointsModal')?.classList.contains('open')) closeEndpoints();
+      else closeSettings();
+    }
+  });
   document.querySelectorAll('.settingsTab').forEach(btn => btn.addEventListener('click', () => {
     document.querySelectorAll('.settingsTab').forEach(x => x.classList.toggle('active', x === btn));
     $('settingsConverse')?.classList.toggle('active', btn.dataset.settingsTab === 'converse');

@@ -68,23 +68,35 @@ function modelStatus(statusDict, modelId){
   return statusDict ? (statusDict[String(modelId || "")] || null) : null;
 }
 
-function applyModelOptionStatus(option, baseLabel, status){
+function applyModelOptionStatus(option, baseLabel, status, capability){
   const summary = String(status?.summary || "").trim();
   const reasons = Array.isArray(status?.reasons) ? status.reasons.map(x => String(x || "").trim()).filter(Boolean) : [];
-  option.classList.remove('modelOptionBad');
+  const audioSupported = capability ? (capability.supports_audio_input === true) : null;
+  option.classList.remove('modelOptionBad','modelOptionNoAudio');
   option.style.color = '';
   option.style.fontWeight = '';
   option.dataset.unusable = 'false';
+  option.dataset.audioCapable = audioSupported === null ? '' : (audioSupported ? 'true' : 'false');
   option.textContent = baseLabel;
   option.title = '';
+  // Non-audio-capable models get a '(no audio)' suffix on the label so
+  // users see the capability at a glance — even when the 'Show all
+  // models' override is on. The label stays selectable (override is on)
+  // but the user knows what they're picking.
+  let label = baseLabel;
+  if (audioSupported === false) {
+    label = `${baseLabel} (no audio)`;
+    option.classList.add('modelOptionNoAudio');
+  }
   if (status && status.usable === false) {
     option.classList.add('modelOptionBad');
     option.style.color = '#ff7b72';
     option.style.fontWeight = '600';
     option.dataset.unusable = 'true';
-    option.textContent = `${baseLabel} [red: ${summary || 'likely unusable'}]`;
+    label = `${baseLabel} (no audio) [red: ${summary || 'likely unusable'}]`;
     option.title = reasons.join(' • ');
   }
+  option.textContent = label;
 }
 
 export async function setBaseUrlEditability(){
@@ -143,7 +155,7 @@ export async function loadModelOptions(force=false){
       for(const m of j.llm_models){
         const o=document.createElement("option");
         o.value=m;
-        applyModelOptionStatus(o, (j.labels&&j.labels[m])||prettyModelLabel(m), modelStatus(llmStatuses, m));
+        applyModelOptionStatus(o, (j.labels&&j.labels[m])||prettyModelLabel(m), modelStatus(llmStatuses, m), (j.llm_models_capabilities||{})[m]);
         $("lmModel").appendChild(o);
       }
       $("lmModel").value=j.llm_models.includes(current)?current:(j.llm_default||j.llm_models[0]);
@@ -161,7 +173,7 @@ export async function loadModelOptions(force=false){
           o.value=entry.id;
           const baseLabel=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
           const label = entry.group !== lastGroup ? `[${entry.group}] ${baseLabel}` : baseLabel;
-          applyModelOptionStatus(o, label, modelStatus(llmStatuses, entry.id));
+          applyModelOptionStatus(o, label, modelStatus(llmStatuses, entry.id), (j.llm_models_capabilities||{})[entry.id]);
           if(entry.group !== lastGroup){ lastGroup = entry.group; }
           $("lmModel").appendChild(o);
         }
@@ -176,10 +188,25 @@ export async function loadModelOptions(force=false){
       const current=sttLlmModel();
       $("sttLlmModel").innerHTML="";
       const blank=document.createElement("option"); blank.value=""; blank.textContent="Inherit from LLM Response"; $("sttLlmModel").appendChild(blank);
-      for(const m of (j.stt_llm_models || [])){
+      // Apply the capability filter to the multimodal STT picker. Default
+      // (override=false) drops text-only models like google/gemma-4-e4b
+      // so the user can't accidentally pick one for STT and pay a 4s
+      // multimodal round-trip per utterance. The override checkbox in
+      // Settings flips this to 'any'.
+      const filteredStt = filterModelsByCapability(
+        j.stt_llm_models || [],
+        j.stt_llm_models_capabilities || {},
+        sttLlmModelRequirement(),
+      );
+      for(const m of filteredStt){
         const o=document.createElement("option");
         o.value=m;
-        applyModelOptionStatus(o, (j.labels&&j.labels[m])||prettyModelLabel(m), modelStatus(sttStatuses, m));
+        applyModelOptionStatus(
+          o,
+          (j.labels&&j.labels[m])||prettyModelLabel(m),
+          modelStatus(sttStatuses, m),
+          (j.stt_llm_models_capabilities||{})[m],
+        );
         $("sttLlmModel").appendChild(o);
       }
       const allSttIds = Array.from($("sttLlmModel").options).map(o => o.value).filter(Boolean);
@@ -189,19 +216,25 @@ export async function loadModelOptions(force=false){
           ...((j.lmstudio_catalog_models || []).map(id => ({ id, group: 'lmstudio (catalog)' }))),
         ];
         if(localPool.length){
+          // Apply the same capability filter to the local-pool fallback.
+          const filteredPool = filterModelsByCapability(
+            localPool.map(e => e.id),
+            j.stt_llm_models_capabilities || {},
+            sttLlmModelRequirement(),
+          ).map(id => localPool.find(e => e.id === id)).filter(Boolean);
           let lastGroup = null;
-          for(const entry of localPool){
+          for(const entry of filteredPool){
             const o=document.createElement("option");
             o.value=entry.id;
             const baseLabel=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
             const label = entry.group !== lastGroup ? `[${entry.group}] ${baseLabel}` : baseLabel;
-            applyModelOptionStatus(o, label, modelStatus(sttStatuses, entry.id));
+            applyModelOptionStatus(o, label, modelStatus(sttStatuses, entry.id), (j.stt_llm_models_capabilities||{})[entry.id]);
             if(entry.group !== lastGroup){ lastGroup = entry.group; }
             $("sttLlmModel").appendChild(o);
           }
           const saved = current || j.stt_llm_default;
-          const match = saved && localPool.some(e => e.id === saved);
-          $("sttLlmModel").value = match ? saved : localPool[0].id;
+          const match = saved && filteredPool.some(e => e.id === saved);
+          $("sttLlmModel").value = match ? saved : (filteredPool[0]?.id || "");
         }
       } else {
         $("sttLlmModel").value=[...$("sttLlmModel").options].some(o=>o.value===current)?current:"";

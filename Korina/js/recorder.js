@@ -20,9 +20,22 @@ import { state } from "./state.js";
 import { $, status } from "./dom.js";
 import { resetAdaptiveVad, drawWave } from "./vad.js";
 import { sttDevice, sttModel, sttBackend, effectiveSttLlmModel } from "./settings-ui.js";
+import { recordSttBackend } from "./api.js";
 
 // --- Microphone + meter setup (verbatim from index.html:1004) ---
 export async function setupMic() {
+  // Dogfood pass 2026-06-26: detect missing mediaDevices up-front so the
+  // user gets a readable explanation instead of the raw TypeError
+  // "Cannot read properties of undefined (reading 'getUserMedia')".
+  // mediaDevices is undefined in headless / non-secure-context / older
+  // browsers; we want to point the user at the actual cause.
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    const secure = window.isSecureContext ? 'secure context (HTTPS or localhost)' : 'non-secure context';
+    throw new Error(
+      `Microphone unavailable: this browser does not expose navigator.mediaDevices (${secure}). ` +
+      `Open Korina in a recent Chrome/Edge/Firefox over HTTPS or http://localhost.`
+    );
+  }
   state.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   state.meterAudioCtx = new AudioContext();
   const src = state.meterAudioCtx.createMediaStreamSource(state.stream);
@@ -47,9 +60,16 @@ export function makeRecorder(onstop, timeslice = 0) {
 export async function transcribeBlob(blob) {
   const fd = new FormData();
   fd.append('audio', blob, 'recording.webm');
-  const r = await fetch(`/api/transcribe/stream?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(effectiveSttLlmModel())}`, { method: 'POST', body: fd });
+  try {
+    var r = await fetch(`/api/transcribe/stream?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(effectiveSttLlmModel())}`, { method: 'POST', body: fd });
+  } catch (e) {
+    recordSttBackend(null, `fetch failed: ${e && e.message ? e.message : e}`);
+    throw e;
+  }
   if (!r.ok) {
-    const j = await r.json().catch(async () => ({ detail: await r.text() }));
+    let j;
+    try { j = await r.json(); } catch { try { j = { detail: await r.text() }; } catch { j = { detail: 'unknown' }; } }
+    recordSttBackend(null, j.detail || JSON.stringify(j));
     throw new Error(j.detail || JSON.stringify(j));
   }
   const reader = r.body.getReader(), dec = new TextDecoder();
@@ -75,7 +95,9 @@ export async function transcribeBlob(blob) {
         status($('sttStatus'), `Streaming STT segment ${payload.index}: ${payload.text}`, 'warn'); $('transcriptInfo').textContent = 'Receiving final STT segments…';
       } else if (ev === 'done') {
         final = payload;
+        recordSttBackend(payload, undefined);
       } else if (ev === 'error') {
+        recordSttBackend(null, payload.detail || 'streaming transcription failed');
         throw new Error(payload.detail || 'streaming transcription failed');
       }
     }
@@ -90,9 +112,26 @@ export async function transcribePartialBlob(blob, seq, meta = {}) {
   fd.append('audio', blob, 'partial.webm');
   const ctl = new AbortController();
   state.partialController = ctl;
-  const r = await fetch(`/api/transcribe/partial?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(effectiveSttLlmModel())}`, { method: 'POST', body: fd, signal: ctl.signal });
+  let r;
+  try {
+    r = await fetch(`/api/transcribe/partial?device=${encodeURIComponent(sttDevice())}&model=${encodeURIComponent(sttModel())}&backend=${encodeURIComponent(sttBackend())}&llm_model=${encodeURIComponent(effectiveSttLlmModel())}`, { method: 'POST', body: fd, signal: ctl.signal });
+  } catch (e) {
+    recordSttBackend(null, `partial fetch failed: ${e && e.message ? e.message : e}`);
+    throw e;
+  }
   const j = await r.json();
-  if (!r.ok) throw new Error(j.detail || JSON.stringify(j));
+  if (!r.ok) {
+    recordSttBackend(null, j.detail || JSON.stringify(j));
+    throw new Error(j.detail || JSON.stringify(j));
+  }
+  recordSttBackend({
+    backend: j.backend,
+    seconds: j.seconds,
+    samples: j.samples,
+    sample_rate: j.sample_rate,
+    model: j.model,
+    fallback_reason: j.fallback_reason,
+  }, undefined);
   if (seq !== state.partialSeq) return j;
   const text = (j.text || '').trim();
   if (text) {
