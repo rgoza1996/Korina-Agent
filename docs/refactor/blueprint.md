@@ -2,8 +2,8 @@
 
 > Companion to `architecture-report.md`. Reads that first for the "why". This document is the "what" and the "in what order".
 
-**Status:** proposal — not yet executed.
-**Target branch:** `alpha` (all work happens here, per README branch policy).
+**Status:** in progress — Phases 0–6 are complete on `beta`; pytest/CI is live and the next refactor phase is TBD. See `docs/refactor/PROGRESS.md` for the commit-by-commit audit trail.
+**Target branch:** `beta` (refactor work lands on `beta`; `alpha` is the stable branch from before the refactor series started. Per user direction, the refactor series lives on `beta` until release — see `docs/refactor/PROGRESS.md` for what has actually landed and on which branch.)
 **Default principle:** **every refactor step is behavior-preserving** unless the step title says otherwise. If a step changes behavior, it ships in its own commit with tests.
 
 ---
@@ -50,7 +50,7 @@ These apply to every phase. Don't make a refactor decision that violates one of 
 | 5 | Process supervision unification| high   | yes (ops)         | ~200                |
 | 6 | Testing + CI                   | low    | none              | ~800                |
 
-Each phase ends with a working tree, a green smoke run, and a commit on `alpha`.
+Each phase ends with a working tree, a green smoke run, and a commit on `beta`.
 
 ---
 
@@ -753,7 +753,7 @@ Copy this into `docs/refactor/PROGRESS.md` and tick as you go.
 - [ ] Phase 5.1 supervisor decision
 - [ ] Phase 5.2 unit files
 - [ ] Phase 5.3 verify
-- [ ] Phase 6.1 scaffold
-- [ ] Phase 6.2 backend tests
-- [ ] Phase 6.3 frontend smoke
-- [ ] Phase 6.4 CI
+- [✓] Phase 6.1 scaffold
+- [✓] Phase 6.2 backend tests
+- [✓] Phase 6.3 frontend smoke
+- [✓] Phase 6.4 CI

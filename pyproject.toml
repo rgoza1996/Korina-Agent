@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "korina-agent"
+version = "0.0.0"
+description = "Korina Voice Lab backend and browser UI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi",
+  "uvicorn",
+  "pydantic",
+  "python-multipart",
+  "numpy",
+  "soundfile",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "httpx",
+]
+
+[tool.setuptools.packages.find]
+include = ["korina*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,0 +1,15 @@
+[Unit]
+Description=Kokoro Streaming TTS Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/kokoro-env4/bin/python %h/kokoro-streaming-server.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
