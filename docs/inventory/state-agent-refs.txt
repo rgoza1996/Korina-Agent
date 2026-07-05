@@ -1,0 +1,51 @@
+korina/runtime/state.py:7:``state.ack.queue`` / ``state.agent.events``.
+korina/runtime/state.py:13:acquisitions (e.g. an agent worker that already holds ``state.agent.lock``
+korina/routes/agent.py:32:    with state.agent.lock:
+korina/routes/agent.py:33:        events = [e for e in state.agent.events if int(e.get('id', 0)) > after]
+korina/routes/agent.py:34:        last_id = state.agent.event_seq
+korina/routes/agent.py:56:    with state.agent.lock:
+korina/routes/agent.py:57:        state.agent.events.clear()
+korina/routes/agent.py:58:        state.agent.event_seq = 0
+korina/routes/agent.py:59:        state.agent.pending_injections.clear()
+korina/routes/agent.py:60:        state.agent.busy = False
+korina/routes/agent.py:61:        state.agent.status = 'idle'
+korina/routes/agent.py:62:        state.agent.last_report = ''
+korina/routes/agent.py:63:        state.agent.last_error = None
+korina/routes/agent.py:64:        state.agent.last_emitted_report_hash = ''
+korina/routes/agent.py:65:        state.agent.last_emitted_report_at = 0.0
+korina/services/agent_service.py:140:    with state.agent.lock:
+korina/services/agent_service.py:141:        state.agent.event_seq += 1
+korina/services/agent_service.py:143:        event['id'] = state.agent.event_seq
+korina/services/agent_service.py:145:        state.agent.events.append(event)
+korina/services/agent_service.py:146:        del state.agent.events[:-100]
+korina/services/agent_service.py:150:    with state.agent.lock:
+korina/services/agent_service.py:152:            'busy': state.agent.busy,
+korina/services/agent_service.py:153:            'status': state.agent.status,
+korina/services/agent_service.py:154:            'last_report': state.agent.last_report,
+korina/services/agent_service.py:155:            'pending_injections': len(state.agent.pending_injections),
+korina/services/agent_service.py:156:            'last_error': state.agent.last_error,
+korina/services/agent_service.py:157:            'last_event_id': state.agent.event_seq,
+korina/services/agent_service.py:162:    with state.agent.lock:
+korina/services/agent_service.py:163:        if state.agent.busy:
+korina/services/agent_service.py:164:            state.agent.pending_injections.append({
+korina/services/agent_service.py:174:            state.agent.busy = True
+korina/services/agent_service.py:175:            state.agent.status = 'working'
+korina/services/agent_service.py:181:        previous = state.agent.last_report
+korina/services/agent_service.py:182:        with state.agent.lock:
+korina/services/agent_service.py:183:            if state.agent.pending_injections:
+korina/services/agent_service.py:184:                injection_text = '\n\nQueued injection while busy:\n' + json.dumps(state.agent.pending_injections[-5:], ensure_ascii=False)
+korina/services/agent_service.py:185:                state.agent.pending_injections.clear()
+korina/services/agent_service.py:210:        duplicate_recent = report_hash == state.agent.last_emitted_report_hash and (now - state.agent.last_emitted_report_at) < 60 and priority != 'critical'
+korina/services/agent_service.py:211:        state.agent.last_emitted_report_hash = report_hash
+korina/services/agent_service.py:212:        state.agent.last_emitted_report_at = now
+korina/services/agent_service.py:213:        with state.agent.lock:
+korina/services/agent_service.py:214:            state.agent.last_report = report
+korina/services/agent_service.py:215:            state.agent.status = 'idle'
+korina/services/agent_service.py:216:            state.agent.last_error = None
+korina/services/agent_service.py:233:        with state.agent.lock:
+korina/services/agent_service.py:234:            state.agent.status = 'idle'
+korina/services/agent_service.py:235:            state.agent.last_error = str(e)
+korina/services/agent_service.py:238:        with state.agent.lock:
+korina/services/agent_service.py:239:            state.agent.busy = False
+korina/services/agent_service.py:246:        with state.agent.lock:
+korina/services/agent_service.py:247:            state.agent.pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
