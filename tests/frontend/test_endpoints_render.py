@@ -1,3 +1,5 @@
+import shutil
+NODE_BIN = shutil.which("node") or "node"  # CI runners have node on PATH
 """Regression: populateEndpoints() must render the list within a
 reasonable time when /api/health returns a realistic response.
 
@@ -14,6 +16,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import shutil
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -102,7 +105,7 @@ const mod = require({json.dumps(str(tmp_module))});
 """
     )
     return subprocess.run(
-        ['/home/roggoz/.nvm/versions/node/v22.22.1/bin/node', str(driver)],
+        [NODE_BIN, str(driver)],
         capture_output=True,
         text=True,
         timeout=15,

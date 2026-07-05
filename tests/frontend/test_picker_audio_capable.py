@@ -1,3 +1,5 @@
+import shutil
+NODE_BIN = shutil.which("node") or "node"  # CI runners have node on PATH
 """Regression: the multimodal STT picker must surface audio-capability
 before the user picks a model that can't accept audio input.
 
@@ -29,6 +31,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import shutil
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -220,7 +223,7 @@ const mod = require({json.dumps(str(tmp_module))});
 """
     )
     return subprocess.run(
-        ['/home/roggoz/.nvm/versions/node/v22.22.1/bin/node', str(driver)],
+        [NODE_BIN, str(driver)],
         capture_output=True, text=True, timeout=15,
     )
 
@@ -274,7 +277,7 @@ def test_capability_filter_drops_gemma_4_e4b_when_override_off():
     driver_path = Path('/tmp/_capability_filter_driver.js')
     driver_path.write_text(driver)
     result = subprocess.run(
-        ['/home/roggoz/.nvm/versions/node/v22.22.1/bin/node', str(driver_path)],
+        [NODE_BIN, str(driver_path)],
         capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
@@ -317,7 +320,7 @@ def test_capability_filter_keeps_everything_when_override_on():
     driver_path = Path('/tmp/_capability_filter_driver_any.js')
     driver_path.write_text(driver)
     result = subprocess.run(
-        ['/home/roggoz/.nvm/versions/node/v22.22.1/bin/node', str(driver_path)],
+        [NODE_BIN, str(driver_path)],
         capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
