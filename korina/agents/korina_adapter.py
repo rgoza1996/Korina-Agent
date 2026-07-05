@@ -22,7 +22,6 @@ importing the gateway.
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import Any
 
@@ -34,7 +33,6 @@ from korina.schemas import (
     UserTurn,
 )
 
-logger = logging.getLogger(__name__)
 
 
 class KorinaAgentAdapter:
@@ -73,14 +71,14 @@ class KorinaAgentAdapter:
 
     # ---- outbound: adapter -> Converse ---------------------------------------
 
-    def poll_events(self, cursor: int) -> tuple[int, list[AgentEvent]]:
-        """Return events with id > cursor.
+    def poll_events(self, cursor: int) -> tuple[int, list[dict[str, Any]]]:
+        """Return events with id > cursor as raw dicts.
 
-        The underlying service still pushes flat dicts into
-        ``state.agent.events``; we coerce each dict into ``AgentEvent`` here.
-        ``AgentEvent.id`` defaults to 0 so old dicts that already carry their
-        own ``id`` field pass validation, and ``extra="allow"`` lets unknown
-        fields through (matches Phase 1 contract).
+        Phase 3 keeps the wire shape identical to the legacy service:
+        callers see the same flat-dict events the frontend already renders.
+        Wrapping in ``AgentEvent`` would drop or rename unknown fields that
+        the frontend relies on (``created_at``, ``message``, ``status``, etc.).
+        Phase 4 will tighten the schema once we own the producer side.
         """
         from korina.runtime import state as runtime_state
 
@@ -90,17 +88,7 @@ class KorinaAgentAdapter:
                 e for e in agent.events if int(e.get("id", 0)) > cursor
             ]
             new_cursor = agent.event_seq
-        out: list[AgentEvent] = []
-        for ev in events:
-            try:
-                out.append(AgentEvent(**ev))
-            except Exception as exc:
-                # Defensive: log and skip. The legacy frontend reads raw dicts,
-                # so dropping one malformed event is preferable to crashing
-                # the poll loop. Phase 4 will fix this at the source.
-                logger.warning("korina_adapter: skipping malformed event: %s", exc)
-                continue
-        return new_cursor, out
+        return new_cursor, events
 
     def answer_permission(self, answer: PermissionAnswerEvent) -> None:
         """Forward a permission-answer to the underlying service.
@@ -171,3 +159,45 @@ class KorinaAgentAdapter:
         """
         from korina.services import agent_service
         return agent_service.agent_snapshot()
+
+
+    # ---- legacy compatibility passthroughs (Phase 3) -------------------------
+
+    def submit_transcript_legacy(self, req) -> dict:
+        """Legacy compat: preserve /api/agent/transcript behaviour exactly.
+
+        The legacy endpoint accepts ``AgentTranscriptRequest`` with arbitrary
+        ``delivery_mode`` (e.g. ``"injection"``), ``reason``, ``turn_count``.
+        Wrapping through ``UserTurn`` would drop those fields. This method
+        passes the request straight to ``agent_service.submit_agent_transcript``
+        so existing frontend and automation callers keep working unchanged.
+        """
+        from korina.services import agent_service
+        return agent_service.submit_agent_transcript(req)
+
+    def answer_permission_legacy(self, req) -> dict:
+        """Legacy compat: preserve /api/agent/permission-answer behaviour.
+
+        Mirrors the original route handler:
+            1. push_agent_event with full legacy dict shape
+            2. submit_agent_transcript to feed the decision back to the agent
+        Returns the service response dict (which contains the legacy shape
+        ``{"ok": True, "accepted": ..., "queued_as": ..., "status": ...}``).
+        """
+        from korina.services import agent_service
+        from korina.schemas import AgentTranscriptRequest
+
+        transcript_text = " ".join(str(t) for t in (req.transcript or [])).strip()
+        agent_service.push_agent_event({
+            "type": "permission_answer",
+            "priority": "normal",
+            "request_id": req.request_id or "",
+            "answer": req.answer or "no",
+            "transcript": transcript_text,
+        })
+        return agent_service.submit_agent_transcript(AgentTranscriptRequest(
+            transcript=req.transcript,
+            delivery_mode="prompt",
+            reason=f"permission_answer:{req.answer or 'no'}",
+            turn_count=0,
+        ))

@@ -9,11 +9,10 @@ Phase 2: define the contract. Phase 3: route layer talks to it.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from korina.schemas import (
     AgentCapabilities,
-    AgentEvent,
     PermissionAnswerEvent,
     UserTurn,
 )
@@ -41,7 +40,7 @@ class AgentAdapter(Protocol):
         """
         ...
 
-    def poll_events(self, cursor: int) -> tuple[int, list[AgentEvent]]:
+    def poll_events(self, cursor: int) -> tuple[int, list[dict]]:
         """Return ``(new_cursor, events)`` since ``cursor``.
 
         ``new_cursor`` is the high-water mark the caller should pass on the

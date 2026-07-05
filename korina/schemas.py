@@ -43,7 +43,7 @@ class AgentTranscriptRequest(BaseModel):
 
 class AgentPermissionAnswer(BaseModel):
     request_id: str = ""
-    answer: str = ""
+    answer: str
     transcript: list = []
 
 # Phase 1 (Converse/Agent adapter separation) -- wire protocol between
@@ -73,7 +73,7 @@ class AgentEvent(BaseModel):
 class PermissionAnswerEvent(BaseModel):
     """Converse -> adapter: user answered a permission request."""
     request_id: str
-    answer: Literal["yes", "no"]
+    answer: str
     transcript: str
 
 
