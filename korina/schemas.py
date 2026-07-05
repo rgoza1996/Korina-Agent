@@ -43,7 +43,7 @@ class AgentTranscriptRequest(BaseModel):
 
 class AgentPermissionAnswer(BaseModel):
     request_id: str = ""
-    answer: str
+    answer: str = ""
     transcript: list = []
 
 # Phase 1 (Converse/Agent adapter separation) -- wire protocol between

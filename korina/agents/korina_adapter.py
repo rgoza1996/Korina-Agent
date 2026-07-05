@@ -193,7 +193,7 @@ class KorinaAgentAdapter:
             "priority": "normal",
             "request_id": req.request_id or "",
             "answer": req.answer or "no",
-            "transcript": transcript_text,
+            "transcript": req.transcript,
         })
         return agent_service.submit_agent_transcript(AgentTranscriptRequest(
             transcript=req.transcript,
