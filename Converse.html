@@ -216,12 +216,44 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <div class="card"><h3> Permission UX</h3><p>Permission requests from the agent are spoken by Converse and answered through the agent permission endpoint. Converse is always the human-facing permission surface.</p></div>
 </div>
 
+<h2>Converse Channel Protocol (Phase 5 Commit 1 — Shipped)</h2>
+<p>Converse talks to any agent implementation through a stable async protocol (<code>ConverseChannel</code>) rather than reaching into the agent service directly. The protocol layer lives in <code>korina.converse</code> and was added on top of the existing HTTP routes — chat/STT/TTS pipelines are unchanged.</p>
+
+<div class="card-grid">
+<div class="card"><h3>ConverseChannel Protocol</h3><p>Abstract base class with <code>send()</code>, <code>stream()</code>, <code>cancel()</code>, and <code>health()</code>. Adapters must implement <code>name</code> (a short id used by the registry) and the four async methods. The protocol is <code>@runtime_checkable</code> so <code>isinstance(ch, ConverseChannel)</code> works without explicit inheritance.</p></div>
+<div class="card"><h3>Thread-safe Registry</h3><p><code>register_converse_channel()</code>, <code>unregister_converse_channel()</code>, <code>get_converse_channel()</code>, <code>set_active_converse_channel()</code>, <code>list_channels()</code>, <code>get_active_channel_name()</code>. The active channel is process-global; <code>reset_for_testing()</code> clears it.</p></div>
+<div class="card"><h3>KorinaConverseChannel (default)</h3><p>Bridges the protocol to the in-process <code>agent_gateway()</code> singleton. Flattens the request transcript into a <code>UserTurn</code> (the adapter protocol's <code>text: str</code> contract), submits via <code>adapter.submit_turn()</code>, and polls <code>agent_state.last_report</code> for completion. Registered at startup via <code>ensure_default_registered()</code>.</p></div>
+<div class="card"><h3>Adapter Author Path</h3><p>Hermes Agent, OpenClaw, or any other local/OpenAI-compatible agent can ship its own adapter by subclassing <code>ConverseChannel</code> and calling <code>register_converse_channel()</code> at startup. The active channel is swapped via <code>set_active_converse_channel(name)</code> (consumer API today; UI selector is Phase 5 Commit 4).</p></div>
+</div>
+
+<h2>Public Surface — <code>korina.converse</code></h2>
+<table>
+<thead><tr><th>Export</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>ConverseChannel</code></td><td>Abstract protocol adapter authors implement</td></tr>
+<tr><td><code>ConverseRequest</code></td><td>Inbound dataclass: transcript, delivery_mode, reason, metadata</td></tr>
+<tr><td><code>ConverseResponse</code></td><td>Outbound dataclass: text, finished, error, metadata</td></tr>
+<tr><td><code>register_converse_channel(ch)</code></td><td>Register or replace a channel under <code>ch.name</code></td></tr>
+<tr><td><code>unregister_converse_channel(name)</code></td><td>Remove a channel; active falls back to the next registered</td></tr>
+<tr><td><code>get_converse_channel(name=None)</code></td><td>Resolve the active channel (or a named one)</td></tr>
+<tr><td><code>set_active_converse_channel(name)</code></td><td>Swap the active channel; raises <code>KeyError</code> on miss</td></tr>
+<tr><td><code>get_active_channel_name()</code></td><td>Returns the active channel name or <code>None</code></td></tr>
+<tr><td><code>list_channels()</code></td><td>All registered names in registration order</td></tr>
+<tr><td><code>reset_for_testing()</code></td><td>Drop all registrations and active selection</td></tr>
+<tr><td><code>KorinaConverseChannel</code></td><td>Default in-process adapter (bridges to <code>agent_gateway()</code>)</td></tr>
+<tr><td><code>ensure_default_registered()</code></td><td>Idempotent startup hook; called from <code>app_factory._startup()</code></td></tr>
+<tr><td><code>reset_default_registered()</code></td><td>Test-isolation helper; clears the module-level <code>_DEFAULT_REGISTERED</code> guard</td></tr>
+</tbody>
+</table>
+
 <h2>Technology Stack</h2>
 <table>
 <thead><tr><th>Component</th><th>Implementation</th></tr></thead>
 <tbody>
 <tr><td>Frontend</td><td>Native ES modules under <code>Korina/js/</code> (17 modules)</td></tr>
 <tr><td>Backend</td><td>FastAPI on port 8001, Python package under <code>korina/</code></td></tr>
+<tr><td>Converse channel layer</td><td><code>korina/converse/</code> — <code>ConverseChannel</code> Protocol + registry + default adapter (Phase 5 Commit 1)</td></tr>
+<tr><td>Agent gateway</td><td><code>korina/agents/gateway.py</code> — <code>agent_gateway()</code> singleton with <code>KorinaAgentAdapter</code> default</td></tr>
 <tr><td>STT</td><td>faster-whisper (CPU/CUDA) or multimodal LLM via OpenAI-compatible <code>input_audio</code></td></tr>
 <tr><td>Response LLM</td><td>OpenAI-compatible <code>/v1/chat/completions</code>, configurable provider</td></tr>
 <tr><td>TTS</td><td>Kokoro streaming server on port 8880 (separate systemd unit)</td></tr>

@@ -167,12 +167,14 @@ footer code{color:var(--ink-faint)}
 <li><strong>Browser frontend</strong> split into native ES modules under <code>Korina/js/</code> (17 modules, 2333 lines).</li>
 <li><strong>Backend-owned provider registry</strong> exposed by <code>GET /api/capabilities</code>.</li>
 <li><strong>Model catalog/capability helpers</strong> for endpoint-loaded models, local GGUFs, LM Studio catalogs, and mmproj sidecars.</li>
-<li><strong>CI-safe pytest suite</strong> (81 tests across unit/API/static layers) plus separate live regression smoke script.</li>
+<li><strong>Converse channel layer</strong> under <code>korina/converse/</code> — <code>ConverseChannel</code> Protocol, thread-safe registry, default <code>KorinaConverseChannel</code> adapter bridging to the in-process agent gateway (Phase 5 Commit 1, shipped).</li>
+<li><strong>Agent gateway</strong> under <code>korina/agents/</code> — <code>AgentAdapter</code> Protocol, <code>agent_gateway()</code> singleton, <code>KorinaAgentAdapter</code> default implementation.</li>
+<li><strong>CI-safe pytest suite</strong> (200+ tests across unit/API/static/converse layers) plus separate live regression smoke script.</li>
 <li><strong>GitHub Actions</strong> workflow running pytest on Python 3.10 / 3.11 / 3.12.</li>
 </ul>
 <h2 id="main-follow-up-themes">Main Follow-up Themes</h2>
 <h3 id="1-formal-agent-protocol-for-third-party-agents">1. Formal Agent Protocol for Third-Party Agents</h3>
-<p>Define a versioned external-agent contract for transcript delivery, event stream format, injection vs. interrupt semantics, permission-request/answer flow, priorities, sanitization, and attached-agent capability discovery.</p>
+<p>Phase 5 Commit 1 ships the in-process adapter protocol (<code>ConverseChannel</code>). The next phase is the public/converse split: <code>pip install korina-converse</code> with optional <code>[hermes]</code> and <code>[openclaw]</code> extras, so third-party agents can ship as separate packages and wire into Converse through the public seam.</p>
 <h3 id="2-korina-agent-executionruntime-layer-beyond-state-reports">2. Korina Agent Execution/runtime Layer Beyond State Reports</h3>
 <p>Korina Agent currently emits state reports/events. Add: tool/action adapters, durable task state, side-effect permission gates, project trust enforcement, transport abstraction.</p>
 <h3 id="3-composite-readiness-across-backend-llm-stt-tts-ack">3. Composite Readiness Across Backend, LLM, STT, TTS, ACK</h3>

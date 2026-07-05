@@ -211,10 +211,17 @@ footer code{color:var(--ink-faint)}
  <div class="card-grid">
  <div class="card"><h3> Korina Converse</h3><p>Browser-based voice UI: live VAD, rolling partial transcription, response LLM, Kokoro TTS, barge-in, and voice interrupts.</p><div class="card-footer"><a href="Converse.html">Read more →</a></div></div>
  <div class="card"><h3> Korina Agent</h3><p>Background agent that receives transcript deltas, maintains compact state, emits reports/events, and asks Converse to inject context or speak interrupts.</p><div class="card-footer"><a href="Agent.html">Read more →</a></div></div>
- <div class="card"><h3> Agent Side Channel</h3><p>Korina Converse can host any OpenAI-compatible agent — Hermes Agent, OpenClaw, or a custom local runner.</p><div class="card-footer"><a href="Agent-Side-Channel.html">Read more →</a></div></div>
+ <div class="card"><h3> Agent Side Channel</h3><p>Korina Converse can host any OpenAI-compatible agent — Hermes Agent, OpenClaw, or a custom local runner. The <code>ConverseChannel</code> protocol (Phase 5 Commit 1, shipped) defines the adapter contract.</p><div class="card-footer"><a href="Converse.html">See Converse protocol →</a></div></div>
  <div class="card"><h3> Provider Architecture</h3><p>Backend-owned registry at GET /api/capabilities. Supports llama.cpp, LM Studio, Ollama, OpenAI-compatible, and Anthropic-compatible.</p><div class="card-footer"><a href="Providers.html">Read more →</a></div></div>
- <div class="card"><h3> CI & Testing</h3><p>101 pytest tests across unit/API/static layers + GitHub Actions. Release gate includes 49 live smoke checks. No live model servers needed for CI.</p><div class="card-footer"><a href="Testing.html">Read more →</a></div></div>
+ <div class="card"><h3> CI & Testing</h3><p>200+ pytest tests across unit/API/static/converse layers + GitHub Actions on Python 3.10 / 3.11 / 3.12. Live-smoke gate is separate.</p><div class="card-footer"><a href="Testing.html">Read more →</a></div></div>
  <div class="card"><h3> Open Issues</h3><p>7 architecture backlog items tracked as GitHub Issues.</p><div class="card-footer"><a href="Issues.html">Read more →</a></div></div>
+ </div>
+
+ <h2>Latest</h2>
+ <div class="card-grid">
+ <div class="card"><h3>Phase 5 Commit 1 — ConverseChannel Protocol</h3><p>Shipped on <code>alpha</code>. Adds <code>korina.converse</code> as a public async-protocol layer between Converse and any agent adapter. <code>KorinaConverseChannel</code> bridges to the in-process <code>agent_gateway()</code>; Hermes Agent, OpenClaw, and other adapters can plug in by implementing the same protocol and calling <code>register_converse_channel()</code>.</p><div class="card-footer"><a href="Converse.html">See protocol details →</a></div></div>
+ <div class="card"><h3>README refresh</h3><p>The repo <code>README.md</code> now documents the Converse channel architecture and an explicit Phase 1–6 status table.</p><div class="card-footer"><a href="https://github.com/rgoza1996/Korina-Agent/blob/alpha/README.md">View on GitHub →</a></div></div>
+ <div class="card"><h3>Green CI on alpha</h3><p>200+ tests passing on Python 3.10 / 3.11 / 3.12. Latest green: Phase 5 Commit 1 (ConverseChannel + 14 registry tests + <code>_DEFAULT_REGISTERED</code> test-isolation fix).</p></div>
  </div>
 
  <h2>System Architecture</h2>
@@ -227,7 +234,7 @@ footer code{color:var(--ink-faint)}
  <h2>Release Gate</h2>
  <div class="card-grid">
  <div class="card"><h3>First Release Line</h3><p><code>master</code> is the release branch promoted from <code>beta</code> after the documented gates pass.</p><div class="card-footer"><a href="Testing.html">See test gate →</a></div></div>
- <div class="card"><h3>Automated Tests</h3><p><strong>101 pytest tests passing</strong> across unit, API, static frontend, and CI-safe checks.</p></div>
+ <div class="card"><h3>Automated Tests</h3><p><strong>200+ pytest tests passing</strong> across unit, API, static frontend, and converse-layer checks.</p></div>
  <div class="card"><h3>Live Smoke</h3><p><strong>49 live smoke checks passing</strong> against a running local service without requiring chat or transcription model availability.</p></div>
  </div>
 
