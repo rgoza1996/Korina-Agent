@@ -16,7 +16,7 @@ from korina.config import (
     load_config,
 )
 
-from korina.runtime import state
+from korina.agents.state import agent_state
 
 from korina.schemas import (
     AgentStateRequest,
@@ -137,31 +137,31 @@ def classify_agent_priority(report: str) -> str:
     return 'normal'
 
 def push_agent_event(event: dict) -> dict:
-    with state.agent.lock:
-        state.agent.event_seq += 1
+    with agent_state.lock:
+        agent_state.event_seq += 1
         event = dict(event)
-        event['id'] = state.agent.event_seq
+        event['id'] = agent_state.event_seq
         event['created_at'] = time.time()
-        state.agent.events.append(event)
-        del state.agent.events[:-100]
+        agent_state.events.append(event)
+        del agent_state.events[:-100]
         return event
 
 def agent_snapshot() -> dict:
-    with state.agent.lock:
+    with agent_state.lock:
         return {
-            'busy': state.agent.busy,
-            'status': state.agent.status,
-            'last_report': state.agent.last_report,
-            'pending_injections': len(state.agent.pending_injections),
-            'last_error': state.agent.last_error,
-            'last_event_id': state.agent.event_seq,
+            'busy': agent_state.busy,
+            'status': agent_state.status,
+            'last_report': agent_state.last_report,
+            'pending_injections': len(agent_state.pending_injections),
+            'last_error': agent_state.last_error,
+            'last_event_id': agent_state.event_seq,
         }
 
 def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
     config = load_config()
-    with state.agent.lock:
-        if state.agent.busy:
-            state.agent.pending_injections.append({
+    with agent_state.lock:
+        if agent_state.busy:
+            agent_state.pending_injections.append({
                 'transcript': req.transcript,
                 'reason': req.reason,
                 'turn_count': req.turn_count,
@@ -171,18 +171,18 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
         else:
             queued_busy = False
         if not queued_busy:
-            state.agent.busy = True
-            state.agent.status = 'working'
+            agent_state.busy = True
+            agent_state.status = 'working'
     if queued_busy:
         push_agent_event({'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; transcript delta queued as injection.'})
         return
     push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'})
     try:
-        previous = state.agent.last_report
-        with state.agent.lock:
-            if state.agent.pending_injections:
-                injection_text = '\n\nQueued injection while busy:\n' + json.dumps(state.agent.pending_injections[-5:], ensure_ascii=False)
-                state.agent.pending_injections.clear()
+        previous = agent_state.last_report
+        with agent_state.lock:
+            if agent_state.pending_injections:
+                injection_text = '\n\nQueued injection while busy:\n' + json.dumps(agent_state.pending_injections[-5:], ensure_ascii=False)
+                agent_state.pending_injections.clear()
             else:
                 injection_text = ''
         state_req = AgentStateRequest(
@@ -207,13 +207,13 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
         priority = classify_agent_priority(raw_report + '\n' + report)
         report_hash = hashlib.sha256(report.encode('utf-8')).hexdigest()
         now = time.time()
-        duplicate_recent = report_hash == state.agent.last_emitted_report_hash and (now - state.agent.last_emitted_report_at) < 60 and priority != 'critical'
-        state.agent.last_emitted_report_hash = report_hash
-        state.agent.last_emitted_report_at = now
-        with state.agent.lock:
-            state.agent.last_report = report
-            state.agent.status = 'idle'
-            state.agent.last_error = None
+        duplicate_recent = report_hash == agent_state.last_emitted_report_hash and (now - agent_state.last_emitted_report_at) < 60 and priority != 'critical'
+        agent_state.last_emitted_report_hash = report_hash
+        agent_state.last_emitted_report_at = now
+        with agent_state.lock:
+            agent_state.last_report = report
+            agent_state.status = 'idle'
+            agent_state.last_error = None
         event_type = 'permission_request' if priority == 'critical' and 'permission request:' in report.lower() else 'state_report'
         if not duplicate_recent:
             push_agent_event({
@@ -230,21 +230,21 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
         else:
             push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'agent_input': agent_input})
     except Exception as e:
-        with state.agent.lock:
-            state.agent.status = 'idle'
-            state.agent.last_error = str(e)
+        with agent_state.lock:
+            agent_state.status = 'idle'
+            agent_state.last_error = str(e)
         push_agent_event({'type': 'agent_error', 'priority': 'important', 'message': str(e)})
     finally:
-        with state.agent.lock:
-            state.agent.busy = False
+        with agent_state.lock:
+            agent_state.busy = False
 
 def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
     config = load_config()
     if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
     if req.delivery_mode == 'injection':
-        with state.agent.lock:
-            state.agent.pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
+        with agent_state.lock:
+            agent_state.pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
         push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
         return {'ok': True, 'accepted': True, 'queued_as': 'injection', 'status': agent_snapshot()}
     threading.Thread(target=run_agent_transcript_job, args=(req,), daemon=True).start()

@@ -80,9 +80,9 @@ class KorinaAgentAdapter:
         the frontend relies on (``created_at``, ``message``, ``status``, etc.).
         Phase 4 will tighten the schema once we own the producer side.
         """
-        from korina.runtime import state as runtime_state
+        from korina.agents.state import agent_state
 
-        agent = runtime_state.agent
+        agent = agent_state
         with agent.lock:
             events: list[dict[str, Any]] = [
                 e for e in agent.events if int(e.get("id", 0)) > cursor
@@ -118,9 +118,9 @@ class KorinaAgentAdapter:
 
     def reset(self) -> None:
         """Clear agent state. Matches legacy /api/agent/reset semantics."""
-        from korina.runtime import state as runtime_state
+        from korina.agents.state import agent_state
 
-        agent = runtime_state.agent
+        agent = agent_state
         with agent.lock:
             agent.events.clear()
             agent.event_seq = 0
@@ -136,9 +136,9 @@ class KorinaAgentAdapter:
 
     def health_check(self) -> dict:
         """Lightweight probe; returns ``status`` and event count."""
-        from korina.runtime import state as runtime_state
+        from korina.agents.state import agent_state
 
-        agent = runtime_state.agent
+        agent = agent_state
         with agent.lock:
             return {
                 "ok": True,
