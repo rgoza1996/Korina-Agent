@@ -50,28 +50,11 @@ class AckState:
 
 
 @dataclass
-class AgentState:
-    """State for the Korina Agent event bus and pending injections."""
-
-    lock: "threading.RLock" = field(default_factory=threading.RLock)
-    events: list = field(default_factory=list)
-    event_seq: int = 0
-    busy: bool = False
-    status: str = "idle"
-    last_report: str = ""
-    pending_injections: list = field(default_factory=list)
-    last_error: Optional[str] = None
-    last_emitted_report_hash: str = ""
-    last_emitted_report_at: float = 0.0
-
-
-@dataclass
 class RuntimeState:
     """Top-level runtime state for Korina Voice Lab."""
 
     asr: AsrState = field(default_factory=AsrState)
     ack: AckState = field(default_factory=AckState)
-    agent: AgentState = field(default_factory=AgentState)
 
 
 # Module-level singleton. Imported as `state` by the monolith and any
