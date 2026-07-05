@@ -2,7 +2,7 @@
 
 ## Status
 
-Closed by GitHub issue: https://github.com/rgoza1996/Korina-Agent/issues/1
+Draft — repo-tracked. gh CLI unavailable on roggoz; paste body into GitHub manually.
 Labels: architecture, refactor, agent-adapter, converse
 Milestone: Converse channel compatibility
 
