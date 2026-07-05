@@ -261,7 +261,7 @@ def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch):
         def __init__(self, _path):
             self._path = Path(_path)
         def read_bytes(self):
-            return bfake-wav-bytes
+            return b'fake-wav-bytes'
 
     result = multimodal_stt.lmstudio_transcribe_wav(
         FakeWav('/tmp/fake.wav'),
@@ -301,12 +301,12 @@ def test_lmstudio_transcribe_wav_stop_finish_reason():
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_chat_url', lambda c: 'http://127.0.0.1:8080/v1/chat/completions')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_api_env', lambda c: '')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_model', lambda c: 'good-model')
+    monkeypatch.setattr(multimodal_stt, 'config_stt_llm_reasoning', lambda c: 'on')
+
     class FakeWav:
         def __init__(self, _path):
             self._path = Path(_path)
         def read_bytes(self):
-            return bfake
-        def read_bytes(self_inner):
             return b'fake'
 
     result = multimodal_stt.lmstudio_transcribe_wav(
