@@ -31,7 +31,7 @@ from pathlib import Path
 import pytest
 
 
-REPO = Path('/home/roggoz/Korina-Agent')
+REPO = Path(__file__).resolve().parents[2]
 JS_DIR = REPO / 'Korina/js'
 INDEX_HTML = REPO / 'Korina/index.html'
 

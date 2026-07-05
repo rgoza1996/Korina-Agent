@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-REPO = Path('/home/roggoz/Korina-Agent')
+REPO = Path(__file__).resolve().parents[2]
 
 HEALTH = {
     'response_llm_base_url': 'http://127.0.0.1:8080/v1',

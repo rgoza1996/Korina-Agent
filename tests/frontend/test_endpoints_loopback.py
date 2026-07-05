@@ -1,7 +1,7 @@
 """Loopback hostnames must be rewritten to the current page host so
 clicking external endpoints works when Korina is browsed over Tailscale."""
 from pathlib import Path
-EP = Path("/home/roggoz/Korina-Agent/Korina/js/endpoints.js")
+EP = Path(__file__).resolve().parents[2] / "Korina" / "js" / "endpoints.js"
 src = EP.read_text()
 
 
