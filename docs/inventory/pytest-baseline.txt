@@ -1,0 +1,48 @@
+........................................................................ [ 37%]
+........................................................................ [ 75%]
+..............................................                           [100%]
+=============================== warnings summary ===============================
+tests/api/test_app_factory.py: 1 warning
+tests/api/test_config_capabilities_models.py: 6 warnings
+tests/api/test_health_provider_load_blocks.py: 4 warnings
+tests/api/test_health_tts_block.py: 6 warnings
+tests/api/test_model_roots.py: 8 warnings
+tests/api/test_partial_any_error_fallback.py: 2 warnings
+tests/api/test_probe_models_route.py: 4 warnings
+tests/api/test_providers_audio_probe.py: 3 warnings
+tests/api/test_stream_fallback_vad_filter.py: 1 warning
+tests/api/test_stt_partial_fallback.py: 1 warning
+tests/api/test_stt_stream_fallback.py: 2 warnings
+tests/api/test_validation.py: 4 warnings
+tests/unit/test_lmstudio_activate.py: 6 warnings
+  /home/roggoz/Korina-Agent/korina/app_factory.py:71: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event('startup')
+
+tests/api/test_app_factory.py: 1 warning
+tests/api/test_config_capabilities_models.py: 6 warnings
+tests/api/test_health_provider_load_blocks.py: 4 warnings
+tests/api/test_health_tts_block.py: 6 warnings
+tests/api/test_model_roots.py: 8 warnings
+tests/api/test_partial_any_error_fallback.py: 2 warnings
+tests/api/test_probe_models_route.py: 4 warnings
+tests/api/test_providers_audio_probe.py: 3 warnings
+tests/api/test_stream_fallback_vad_filter.py: 1 warning
+tests/api/test_stt_partial_fallback.py: 1 warning
+tests/api/test_stt_stream_fallback.py: 2 warnings
+tests/api/test_validation.py: 4 warnings
+tests/unit/test_lmstudio_activate.py: 6 warnings
+  /home/roggoz/.local/lib/python3.12/site-packages/fastapi/applications.py:4656: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+190 passed, 96 warnings in 4.18s
