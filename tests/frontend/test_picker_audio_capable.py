@@ -1,5 +1,3 @@
-import shutil
-NODE_BIN = shutil.which("node") or "node"  # CI runners have node on PATH
 """Regression: the multimodal STT picker must surface audio-capability
 before the user picks a model that can't accept audio input.
 
@@ -31,7 +29,21 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import shutil
+
+import shutil  # noqa: E402  -- inserted by /tmp/fix_tests.py
+
+NODE_BIN = shutil.which("node") or "node"  # CI runners have node on PATH
+
+_HAS_NODE = shutil.which("node") is not None
+
+
+def _node_bin():
+    """Return the node executable, or skip the test if node is unavailable."""
+    if not _HAS_NODE:
+        import pytest
+        pytest.skip("node not in PATH (test shells out to node to render JS)")
+    return NODE_BIN
+
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -223,7 +235,7 @@ const mod = require({json.dumps(str(tmp_module))});
 """
     )
     return subprocess.run(
-        [NODE_BIN, str(driver)],
+        [_node_bin(), str(driver)],
         capture_output=True, text=True, timeout=15,
     )
 
@@ -277,7 +289,7 @@ def test_capability_filter_drops_gemma_4_e4b_when_override_off():
     driver_path = Path('/tmp/_capability_filter_driver.js')
     driver_path.write_text(driver)
     result = subprocess.run(
-        [NODE_BIN, str(driver_path)],
+        [_node_bin(), str(driver_path)],
         capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
@@ -320,7 +332,7 @@ def test_capability_filter_keeps_everything_when_override_on():
     driver_path = Path('/tmp/_capability_filter_driver_any.js')
     driver_path.write_text(driver)
     result = subprocess.run(
-        [NODE_BIN, str(driver_path)],
+        [_node_bin(), str(driver_path)],
         capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:

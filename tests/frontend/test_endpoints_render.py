@@ -1,5 +1,3 @@
-import shutil
-NODE_BIN = shutil.which("node") or "node"  # CI runners have node on PATH
 """Regression: populateEndpoints() must render the list within a
 reasonable time when /api/health returns a realistic response.
 
@@ -16,7 +14,21 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import shutil
+
+import shutil  # noqa: E402  -- inserted by /tmp/fix_tests.py
+
+NODE_BIN = shutil.which("node") or "node"  # CI runners have node on PATH
+
+_HAS_NODE = shutil.which("node") is not None
+
+
+def _node_bin():
+    """Return the node executable, or skip the test if node is unavailable."""
+    if not _HAS_NODE:
+        import pytest
+        pytest.skip("node not in PATH (test shells out to node to render JS)")
+    return NODE_BIN
+
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -105,7 +117,7 @@ const mod = require({json.dumps(str(tmp_module))});
 """
     )
     return subprocess.run(
-        [NODE_BIN, str(driver)],
+        [_node_bin(), str(driver)],
         capture_output=True,
         text=True,
         timeout=15,
