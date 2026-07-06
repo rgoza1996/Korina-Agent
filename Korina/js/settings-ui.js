@@ -250,6 +250,71 @@ export function nextIdleDelayMs() {
   return initial + (state.idleAckCount * step);
 }
 
+// --- Converse Channel tab (Phase 5 Commit 6) -----------------------------
+// Populates the Channel dropdown in the Settings modal from
+// GET /api/converse/channels. Switching is a POST to
+// /api/converse/channel/{name}. The active state is in-process; it does
+// NOT persist across service restarts (the registry is re-seeded with
+// the default "korina" channel on startup).
+export async function populateChannelTab() {
+  const select = $('channelSelect');
+  const hint = $('channelSelectHint');
+  if (!select) return;
+
+  let channels = [];
+  let active = null;
+  try {
+    const [list, current] = await Promise.all([
+      fetch('/api/converse/channels').then((r) => r.json()),
+      fetch('/api/converse/channel').then((r) => r.json()),
+    ]);
+    channels = list.channels || [];
+    active = current.channel || null;
+  } catch (err) {
+    if (hint) hint.textContent = `Failed to load channels: ${err.message}`;
+    return;
+  }
+
+  select.innerHTML = "";
+  if (channels.length === 0) {
+    if (hint) hint.textContent = "No channels registered.";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "-";
+    select.appendChild(opt);
+    select.disabled = true;
+    return;
+  }
+  select.disabled = false;
+  for (const name of channels) {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  }
+  select.value = active || channels[0];
+
+  if (hint) {
+    hint.textContent = active
+      ? `Active: ${active}. Restart resets to "korina".`
+      : `Default: ${channels[0]}. Switch the active channel by selecting another.`;
+  }
+}
+
+export async function saveChannelSelection() {
+  const select = $('channelSelect');
+  const hint = $('channelSelectHint');
+  if (!select || !select.value) return;
+  try {
+    const r = await fetch(`/api/converse/channel/${encodeURIComponent(select.value)}`, { method: "POST" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    if (hint) hint.textContent = `Switched to: ${select.value}. In-process; resets to "korina" on restart.`;
+    await populateChannelTab();
+  } catch (err) {
+    if (hint) hint.textContent = `Switch failed: ${err.message}`;
+  }
+}
+
 // --- Reasoning/converse sync helpers (verbatim from index.html:607-623) ---
 
 export function syncReasoningHints() {

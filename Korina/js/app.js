@@ -28,6 +28,7 @@ import {
 } from "./api.js";
 import {
   collectConfig, applyConfig, markActivity,
+  populateChannelTab, saveChannelSelection,
   syncConverseSettingsUI,
   ttsDevice, ttsProvider, ttsBaseUrl, ttsPort, ttsModel,
   sttDevice, sttModel, sttBackend,
@@ -463,6 +464,15 @@ function wireUiHandlers() {
     document.querySelectorAll('.settingsTab').forEach(x => x.classList.toggle('active', x === btn));
     $('settingsConverse')?.classList.toggle('active', btn.dataset.settingsTab === 'converse');
     $('settingsAgent')?.classList.toggle('active', btn.dataset.settingsTab === 'agent');
+    $('settingsChannel')?.classList.toggle('active', btn.dataset.settingsTab === 'channel');
+    if (btn.dataset.settingsTab === 'channel') {
+      populateChannelTab();
+      const sel = $('channelSelect');
+      if (sel && !sel.__wired) {
+        sel.addEventListener('change', () => saveChannelSelection());
+        sel.__wired = true;
+      }
+    }
   }));
   document.querySelectorAll('.tab[data-mode]').forEach(tab => tab.addEventListener('click', () => {
     state.mode = tab.dataset.mode;

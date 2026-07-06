@@ -7,8 +7,7 @@
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<main>
-  <div><h1>Korina Voice Lab</h1><p class="sub">Auto-VAD + built-in Whisper or multimodal STT → local response LLM → Kokoro SSE TTS</p></div>
+<main>  <div><h1>Korina Voice Lab</h1><p class="sub">Auto-VAD + built-in Whisper or multimodal STT → local response LLM → Kokoro SSE TTS</p></div>
   <div class="row between">
     <span class="pill"><span id="pageDot" class="dot"></span><span id="pageHealth">page server…</span></span>
     <span class="pill"><span id="ttsDot" class="dot"></span><span id="ttsHealth">kokoro…</span></span>
@@ -24,7 +23,7 @@
   <div id="settingsModal" class="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="modal">
       <div class="row between"><h2 id="settingsTitle">Korina settings</h2><button id="closeSettingsBtn" class="secondary">Close</button></div>
-      <div class="tabs settingsTabs"><div class="tab settingsTab active" data-settings-tab="converse">Korina Converse</div><div class="tab settingsTab" data-settings-tab="agent">Korina Agent</div></div>
+      <div class="tabs settingsTabs"><div class="tab settingsTab active" data-settings-tab="converse">Korina Converse</div><div class="tab settingsTab" data-settings-tab="agent">Korina Agent</div><div class="tab settingsTab" data-settings-tab="channel">Channel</div></div>
       <div id="settingsConverse" class="grid settingsPanel active sectioned">
         <details class="settingsGroup" id="sttSection" open>
           <summary>Speech to Text</summary>
@@ -99,6 +98,17 @@
               <input id="minSpeechMs" type="range" min="600" max="3000" step="100" value="1200">
               <div class="fieldHint"><span id="minSpeechMsDisplay">1.2s</span> continuous speech required before Korina treats a live utterance as a real turn.</div>
             </div>
+          </div>
+        </details>
+      </div>
+
+      <div id="settingsChannel" class="grid settingsPanel">
+        <details class="settingsGroup" open>
+          <summary>Converse Channel</summary>
+          <div class="settingsGroupBody">
+            <p class="sectionLead">Select which ConverseChannel adapter serves traffic. The default <code>korina</code> is the in-process Korina Agent. Switches are in-process and do not persist across restarts.</p>
+            <div><label for="channelSelect">Active channel</label><select id="channelSelect"></select></div>
+            <p class="small mono" id="channelSelectHint">Loading registered channels&hellip;</p>
           </div>
         </details>
       </div>
