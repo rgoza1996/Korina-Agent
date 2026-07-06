@@ -17,14 +17,13 @@
     <button id="clearSessionBtn" class="secondary">Clear Session</button>
     <button id="endpointsBtn" class="secondary endpointsBtn">🔌 Endpoints</button>
     <button id="settingsBtn" class="secondary settingsBtn">⚙ Settings</button>
-    <button id="channelBtn" class="secondary channelBtn">📡 Channel</button>
   </div>
 
 
   <div id="settingsModal" class="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
     <div class="modal">
       <div class="row between"><h2 id="settingsTitle">Korina settings</h2><button id="closeSettingsBtn" class="secondary">Close</button></div>
-      <div class="tabs settingsTabs"><div class="tab settingsTab active" data-settings-tab="converse">Korina Converse</div><div class="tab settingsTab" data-settings-tab="agent">Korina Agent</div></div>
+      <div class="tabs settingsTabs"><div class="tab settingsTab active" data-settings-tab="converse">Korina Converse</div><div class="tab settingsTab" data-settings-tab="agent">Korina Agent</div><div class="tab settingsTab" data-settings-tab="channel">Channel</div></div>
       <div id="settingsConverse" class="grid settingsPanel active sectioned">
         <details class="settingsGroup" id="sttSection" open>
           <summary>Speech to Text</summary>
@@ -103,6 +102,16 @@
         </details>
       </div>
 
+      <div id="settingsChannel" class="grid settingsPanel">
+        <details class="settingsGroup" open>
+          <summary>Converse Channel</summary>
+          <div class="settingsGroupBody">
+            <p class="sectionLead">Select which ConverseChannel adapter serves traffic. The default <code>korina</code> is the in-process Korina Agent. Switches are in-process and do not persist across restarts.</p>
+            <div><label for="channelSelect">Active channel</label><select id="channelSelect"></select></div>
+            <p class="small mono" id="channelSelectHint">Loading registered channels&hellip;</p>
+          </div>
+        </details>
+      </div>
       <div id="settingsAgent" class="grid settingsPanel">
         <div class="secretNote"><label>Korina Agent</label><div class="toggleLine"><input id="agentEnabled" type="checkbox" checked><span>Enable hidden state reports and injection</span></div></div>
         <div><label for="agentProvider">Agent endpoint type</label><select id="agentProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="anthropic">Anthropic-compatible</option></select></div>
@@ -149,18 +158,6 @@
     </div>
   </div>
 
-  <div id="channelModal" class="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="channelTitle">
-    <div class="modal">
-      <div class="row between"><h2 id="channelTitle">Converse Channel</h2><button id="closeChannelBtn" class="secondary">Close</button></div>
-      <div class="grid settingsPanel active sectioned">
-        <div class="settingsGroupBody">
-          <p class="sectionLead">Select which ConverseChannel adapter serves traffic. The default <code>korina</code> is the in-process Korina Agent. Switches are in-process and do not persist across restarts.</p>
-          <div><label for="channelSelect">Active channel</label><select id="channelSelect"></select></div>
-          <p class="small mono" id="channelSelectHint">Loading registered channels&hellip;</p>
-        </div>
-      </div>
-    </div>
-  </div>
   <div id="endpointsModal" class="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="endpointsTitle">
     <div class="modal endpointsModal">
       <div class="row between">

@@ -120,20 +120,6 @@ function closeSettings() {
   modal?.classList.remove('open');
   if (!wasOpen) return;
 
-  // Fire-and-forget background work — actual save+activate
-  // happens here without blocking the modal hide.
-  // See _closeSettingsImpl() definition below for the full sequence.
-}
-
-function openChannelModal() {
-  $('channelModal')?.classList.add('open');
-  populateChannelTab();
-}
-
-function closeChannelModal() {
-  $('channelModal')?.classList.remove('open');
-}
-
   // Persist + activate in the background. Surface errors in settings/status,
   // but never let them control whether the modal can close.
   void _closeSettingsImpl().catch(e => {
@@ -449,8 +435,6 @@ function wireUiHandlers() {
   window.__korinaUiHandlersWired = true;
 
   bindClick('settingsBtn', openSettings);
-  bindClick('channelBtn', openChannelModal);
-  bindClick('closeChannelBtn', closeChannelModal);
   bindClick('closeSettingsBtn', closeSettings);
   bindClick('saveSettingsBtn', saveSettings);
   bindClick('endpointsBtn', openEndpoints);
@@ -469,13 +453,10 @@ function wireUiHandlers() {
   if (modal) modal.addEventListener('click', e => { if (e.target === modal) closeSettings(); });
   const epModal = $('endpointsModal');
   if (epModal) epModal.addEventListener('click', e => { if (e.target === epModal) closeEndpoints(); });
-  const chModal = $('channelModal');
-  if (chModal) chModal.addEventListener('click', e => { if (e.target === chModal) closeChannelModal(); });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       // Close whichever modal is open.
       if ($('endpointsModal')?.classList.contains('open')) closeEndpoints();
-      else if ($('channelModal')?.classList.contains('open')) closeChannelModal();
       else closeSettings();
     }
   });
@@ -483,6 +464,15 @@ function wireUiHandlers() {
     document.querySelectorAll('.settingsTab').forEach(x => x.classList.toggle('active', x === btn));
     $('settingsConverse')?.classList.toggle('active', btn.dataset.settingsTab === 'converse');
     $('settingsAgent')?.classList.toggle('active', btn.dataset.settingsTab === 'agent');
+    $('settingsChannel')?.classList.toggle('active', btn.dataset.settingsTab === 'channel');
+    if (btn.dataset.settingsTab === 'channel') {
+      populateChannelTab();
+      const sel = $('channelSelect');
+      if (sel && !sel.__wired) {
+        sel.addEventListener('change', () => saveChannelSelection());
+        sel.__wired = true;
+      }
+    }
   }));
   document.querySelectorAll('.tab[data-mode]').forEach(tab => tab.addEventListener('click', () => {
     state.mode = tab.dataset.mode;
