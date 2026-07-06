@@ -11,9 +11,10 @@ Notes on schema vs events:
     * ``UserTurn.text`` is a single ``str`` — we flatten the transcript
       list to a space-joined string, since the adapter protocol does not
       expose the older ``transcript``/``delivery_mode`` fields.
-    * The adapter emits events whose ``type`` field is
+    * The adapter emits events whose ``type`` field is one of
       ``"state_report"`` / ``"injection"`` / ``"permission_request"``.
-      We match those explicitly instead of guessing the canonical name.
+    * Completion signal is ``agent_state.last_report`` becoming
+      non-empty (it's a plain ``str`` on the adapter state).
 """
 from __future__ import annotations
 
@@ -28,44 +29,39 @@ from .registry import register_converse_channel
 
 
 _MAX_POLL_SECONDS = 30.0
-_POLL_INTERVAL = 0.1  # 100ms; caps at 300 polls/send for 30s ceiling
-
-
-# Event-type names produced by the in-process adapter. Match by exact set.
-_REPORT_EVENT_TYPES = frozenset({"state_report", "injection"})
-_TERMINAL_EVENT_TYPES = frozenset({"idle", "error"})
+_POLL_INTERVAL = 0.1  # 100ms; caps at ~300 polls/send for 30s ceiling
 
 
 class KorinaConverseChannel(ConverseChannel):
     """Bridge between the ``ConverseChannel`` protocol and ``agent_gateway()``.
 
     Semantics:
-        * ``send()`` — submit the request, poll ``last_report`` until it
-          is non-empty or the deadline passes. The adapter's ``last_report``
-          is the canonical completion signal; polled events supplement it.
-        * ``stream()`` — yields an interim "thinking" event, polls the
-          adapter state itself (no double-poll), then yields the final.
-        * ``cancel()`` — placeholder; the wrapped adapter has no
+        * ``send()``  — submit a turn, poll ``last_report`` until it is
+          non-empty or the deadline passes. Single submission per call.
+        * ``stream()``— yields the interim "thinking" event, then calls
+          ``send()`` once for the final. No double-submit.
+        * ``cancel()``— placeholder; the wrapped adapter has no
           per-channel cancellation surface today.
     """
 
     name = "korina"
 
     def __init__(self) -> None:
-        # Lazy import: gateway instantiates KorinaAgentAdapter on first
-        # call, which pulls in agent_service — keep the import out of
-        # this module's import-time path.
+        # Lazy import: gateway instantiates KorinaAgentAdapter on first call,
+        # which pulls in agent_service. Keep the import out of this module's
+        # import-time path to avoid cyclic imports during Phase 3+ wiring.
         from korina.agents.gateway import agent_gateway
         self._agent_gateway = agent_gateway
 
-    # ---- helpers -----------------------------------------------------
-
-    def _adapter(self):
-        return self._agent_gateway()
+    # ---- helpers (testable; exposed at module level too) ------------
 
     @staticmethod
     def _flatten_transcript(transcript: List[dict]) -> str:
-        """Flatten a transcript list into a single space-joined string."""
+        """Flatten a transcript list into a single space-joined string.
+
+        Drops assistant turns (never replay them as user input). Empty
+        or non-dict turns are skipped.
+        """
         parts = []
         for turn in transcript or []:
             if not isinstance(turn, dict):
@@ -75,18 +71,18 @@ class KorinaConverseChannel(ConverseChannel):
                 continue
             role = (turn.get("role") or "user").lower()
             if role == "assistant":
-                continue  # never replay assistant turns as user input
+                continue
             parts.append(str(text).strip())
         return " ".join(parts).strip()
 
-    @staticmethod
-    def _turn_from_request(req: ConverseRequest) -> UserTurn:
+    @classmethod
+    def turn_from_request(cls, req: ConverseRequest) -> UserTurn:
         """Coerce a ConverseRequest into the schema's UserTurn.
 
         ``UserTurn.text`` is ``str`` (not a list); the older transcript/
         delivery_mode/reason fields are no longer on the schema.
         """
-        text = KorinaConverseChannel._flatten_transcript(req.transcript)
+        text = cls._flatten_transcript(req.transcript)
         meta = req.metadata or {}
         session_id = str(meta.get("session_id", "")) or ""
         return UserTurn(
@@ -96,106 +92,102 @@ class KorinaConverseChannel(ConverseChannel):
         )
 
     @staticmethod
-    def _poll_state(adapter) -> tuple[str, str, bool]:
-        """Read adapter state under its lock.
+    def _poll_state() -> tuple[str, str]:
+        """Snapshot adapter state under its lock.
 
-        Returns ``(last_report, status, busy)``. ``last_report`` is a
-        string (the most recent assistant reply), not a dict.
+        Returns ``(last_report, status)``. ``last_report`` is a string.
         """
         from korina.agents.state import agent_state
-
         with agent_state.lock:
             return (
                 str(agent_state.last_report or ""),
                 str(agent_state.status or "idle"),
-                bool(agent_state.busy),
             )
 
-    async def _poll_until_report(self, started_at: float) -> tuple[str, str, int, str | None]:
+    async def _poll_until_report(
+        self, started_at: float, cursor: int
+    ) -> tuple[str, str, int, int, str | None]:
         """Poll until ``last_report`` is set or we time out.
 
-        Returns ``(text, status, scanned_event_count, last_error)``.
-        We rely on ``last_report`` as the canonical completion signal
-        rather than ad-hoc event-type matching (which drifted between
-        Phase 3 and Phase 4).
+        Returns ``(text, status, scanned_events, new_cursor, last_error)``.
+        ``cursor`` is passed in from the caller; we advance it as events
+        are drained via ``adapter.poll_events``.
         """
         adapter = self._adapter()
-        cursor = 0
         last_error: str | None = None
         scanned = 0
-        text = ""
-        status = "idle"
 
         while time.monotonic() - started_at < _MAX_POLL_SECONDS:
             try:
-                text, status, _ = await asyncio.to_thread(self._poll_state, adapter)
+                text, status = await asyncio.to_thread(self._poll_state)
             except Exception as e:  # pragma: no cover
                 last_error = f"state probe failed: {e}"
                 break
 
-            # Drain any new events once; capture a non-fatal agent error if any.
             try:
-                new_cursor, events = await asyncio.to_thread(adapter.poll_events, cursor)
-                cursor = new_cursor
+                cursor, events = await asyncio.to_thread(adapter.poll_events, cursor)
                 scanned += len(events)
                 for ev in events or []:
                     if not isinstance(ev, dict):
                         continue
-                    et = ev.get("type") or ""
-                    if et == "error":
-                        last_error = str(ev.get("error") or last_error or "agent error")
+                    if ev.get("type") == "error":
+                        last_error = str(
+                            ev.get("error") or last_error or "agent error"
+                        )
             except Exception as e:  # pragma: no cover
                 last_error = f"poll_events failed: {e}"
 
             if text:
-                return text, status, scanned, last_error
+                return text, status, scanned, cursor, last_error
 
             await asyncio.sleep(_POLL_INTERVAL)
 
-        return text or "", status, scanned, last_error or "timeout"
+        text, status = await asyncio.to_thread(self._poll_state)
+        return text or "", status, scanned, cursor, last_error or "timeout"
 
     # ---- ConverseChannel surface ------------------------------------
 
+    def _adapter(self):
+        return self._agent_gateway()
+
     async def send(self, req: ConverseRequest) -> ConverseResponse:
         adapter = self._adapter()
-        turn = self._turn_from_request(req)
+        turn = self.turn_from_request(req)
         try:
             await asyncio.to_thread(adapter.submit_turn, turn)
         except Exception as e:
             return ConverseResponse(text="", finished=True, error=f"submit failed: {e}")
 
         started_at = time.monotonic()
-        text, status, scanned, err = await self._poll_until_report(started_at)
+        text, status, scanned, cursor, err = await self._poll_until_report(started_at, 0)
         return ConverseResponse(
             text=text or "",
             finished=True,
             error=err,
-            metadata={"status": status, "events_scanned": scanned},
+            metadata={
+                "status": status,
+                "events_scanned": scanned,
+                "next_cursor": cursor,
+            },
         )
 
-    async def stream(self, req: ConverseRequest) -> AsyncIterator[ConverseResponse]:
-        adapter = self._adapter()
-        turn = self._turn_from_request(req)
-        try:
-            await asyncio.to_thread(adapter.submit_turn, turn)
-        except Exception as e:
-            yield ConverseResponse(text="", finished=True, error=f"submit failed: {e}")
-            return
+    async def stream(
+        self, req: ConverseRequest
+    ) -> AsyncIterator[ConverseResponse]:
+        """Stream: emit the interim "thinking" event, then call ``send()`` once.
 
+        We intentionally delegate to ``send()`` rather than running our
+        own submit+poll loop. That keeps the single-submit guarantee and
+        lets adapters swap the polling implementation without two code
+        paths to keep in sync.
+        """
         yield ConverseResponse(
             text="",
             finished=False,
             metadata={"phase": "thinking"},
         )
-
-        started_at = time.monotonic()
-        text, status, scanned, err = await self._poll_until_report(started_at)
-        yield ConverseResponse(
-            text=text or "",
-            finished=True,
-            error=err,
-            metadata={"status": status, "events_scanned": scanned},
-        )
+        final = await self.send(req)
+        yield final
 
     async def cancel(self) -> None:
         """No-op placeholder; the wrapped adapter has no per-channel cancellation."""
@@ -214,10 +206,21 @@ class KorinaConverseChannel(ConverseChannel):
 _DEFAULT_REGISTERED = False
 
 
+def reset_default_registered() -> None:
+    """Reset the module-level _DEFAULT_REGISTERED flag.
+
+    Tests that call reset_for_testing() must also call this so the
+    next ensure_default_registered() actually re-registers.
+    """
+    global _DEFAULT_REGISTERED
+    _DEFAULT_REGISTERED = False
+
+
 def ensure_default_registered() -> None:
     """Register the default ``KorinaConverseChannel`` if nothing is active yet.
 
-    Idempotent. Phase 5 startup code should call this exactly once.
+    Idempotent. Phase 5 startup code should call this exactly once at app
+    boot, before the first HTTP request lands.
     """
     global _DEFAULT_REGISTERED
     if _DEFAULT_REGISTERED:
@@ -226,4 +229,4 @@ def ensure_default_registered() -> None:
     _DEFAULT_REGISTERED = True
 
 
-__all__ = ["KorinaConverseChannel", "ensure_default_registered"]
+__all__ = ["KorinaConverseChannel", "ensure_default_registered", "reset_default_registered"]

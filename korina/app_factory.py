@@ -71,6 +71,10 @@ def create_app() -> FastAPI:
     @app.on_event('startup')
     def _startup() -> None:
         _startup_generate_default_acks()
+        # Phase 5 (Converse/Agent boundary): ensure the default
+        # ConverseChannel is registered before routes serve traffic.
+        from korina.converse import ensure_default_registered
+        ensure_default_registered()
 
     for module in (
         _index_routes, _health_routes, _config_routes, _models_routes,

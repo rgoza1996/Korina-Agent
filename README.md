@@ -30,23 +30,87 @@ Browser (Korina Converse UI) Korina backend (FastAPI :8001)
   └────────── Web Audio playback ──┘
 ```
 
+## Converse channel architecture
+
+The chat pipeline above describes the **HTTP round-trip** for a single user turn. Underneath it, since Phase 5 Commit 1, the Converse layer talks to any agent implementation through a stable async protocol rather than reaching into the agent service directly.
+
+```
+  Converse layer (consumer code)
+        │
+        ▼
+  korina.converse.registry                # thread-safe in-process registry
+        │
+        ├── get_active_converse_channel() # returns the active ConverseChannel
+        ├── set_active_converse_channel() # swap adapter at runtime
+        └── register_converse_channel()   # adapter authors register their impl
+        │
+        ▼
+  ConverseChannel (Protocol)              # the contract between Converse and agents
+        │
+        ├── KorinaConverseChannel         # default: bridges to agent_gateway()
+        │                                 # (Hermes / OpenClaw adapters plug in here)
+        └── <future adapter impls>
+        │
+        ▼
+  AgentAdapter gateway                   # korina.agents.gateway.agent_gateway()
+        │
+        └── KorinaAgentAdapter            # today's in-process adapter
+                                          # (LLM loop, tool calls, permissions)
+```
+
+Public surface of `korina.converse` (12 exports, committed at `3951bdb`):
+
+- `ConverseChannel` (Protocol) — `send()`, `stream()`, `cancel()`, `health()`, `name`
+- `ConverseRequest` / `ConverseResponse` (dataclasses)
+- `register_converse_channel()`, `unregister_converse_channel()`
+- `get_converse_channel()`, `set_active_converse_channel()`, `get_active_channel_name()`, `list_channels()`
+- `KorinaConverseChannel` — default in-process adapter
+- `ensure_default_registered()`, `reset_default_registered()`, `reset_for_testing()`
+
+The default `KorinaConverseChannel` is registered in `korina/app_factory.py`'s `_startup()` hook so Converse routes can resolve a channel before serving any traffic.
+
+The chat endpoint (`/api/chat`) is intentionally **not** routed through `ConverseChannel`. It is a one-shot LLM completion and lives independently of the Converse/Agent split; the protocol boundary is for the agent side channel only.
+
+## Phase status
+
+| Phase | Description | Status |
+|---|---|---|
+| Phase 1 | Backend modularization + provider registry | ✅ shipped on `beta` |
+| Phase 2 | Plan/Architect split | ✅ shipped on `beta` |
+| Phase 3 | Routes call `agent_gateway()` instead of `state.agent` | ✅ shipped on `alpha` |
+| Phase 4 Commit A | `AgentState` migrated out of `korina.runtime` into `korina.agents.state` | ✅ shipped on `alpha` |
+| Phase 4 Commit B | `korina.runtime` no longer exports `AgentState` | ✅ shipped on `alpha` |
+| Phase 5 Commit 1 | `ConverseChannel` protocol + registry + `KorinaConverseChannel` + 14 tests + `_DEFAULT_REGISTERED` test isolation fix | ✅ shipped on `alpha` (CI green on 3.10/3.11/3.12) |
+| Phase 5 Commit 4 | `/api/converse/{channel,channels}` routes + Settings dropdown | ⏸ next |
+| Phase 5 Commit 5 | Stub Hermes adapter implementing `ConverseChannel` | ⏸ next |
+| Phase 6 | `korina-converse` package split, `pip install korina-converse[hermes\|openclaw]` | ⏸ next |
+
+See also:
+
+- `docs/verdict-converse-agent-boundary.md` — what is and isn't divided yet
+- `docs/plans/phase5-converse-channel-protocol.md` — Phase 5 plan
+- `docs/refactor/architecture-report.md` — module layout
+
 ## What's included
 
 - `korina_voice_lab.py` — 3-line uvicorn entrypoint shim (`from korina.app import main; main()`). The actual FastAPI app is built and configured by `korina/app_factory.py:create_app()`, which composes routers from `korina/routes/` and attaches middleware, the `/Ack` static mount, and the startup hook. See `docs/refactor/architecture-report.md` for the package layout.
 - `korina/` — backend Python package:
   - `korina/app.py`, `korina/app_factory.py` — app construction
   - `korina/routes/` — one router per concern (`health`, `config`, `models`, `chat`, `stt`, `acks`, `agent`, `providers`, `capabilities`)
+  - `korina/converse/` — Converse channel protocol, registry, and default `KorinaConverseChannel` (Phase 5)
+  - `korina/agents/` — `AgentAdapter` Protocol, `agent_gateway()` singleton, `KorinaAgentAdapter` implementation, `AgentState` (Phase 3+ migrated here in Phase 4)
   - `korina/services/` — provider manager, model catalog, whisper service, multimodal STT, response LLM, agent service, ack service
   - `korina/util/presets.py` — `PROVIDER_CAPABILITIES` registry (single source of truth for provider metadata; served at `GET /api/capabilities`; documented in `docs/capabilities.md`)
   - `korina/schemas.py`, `korina/schemas_capabilities.py` — Pydantic request/response models
   - `korina/config.py` — `DEFAULT_CONFIG`, `load_config`, `save_config`, legacy-key migration
-  - `korina/runtime/` — `RuntimeState` (gathered module globals)
+  - `korina/runtime/` — `RuntimeState` (gathered module globals, minus the `AgentState` that moved in Phase 4)
 - `kokoro-streaming-server.py` — Kokoro TTS server: SSE streaming, buffered WAV fallback. (Separate process; unchanged by the Phase 1 backend modularization.)
 - `Korina/index.html` — Browser UI: live VAD, partial transcription queue, settings modal (Converse + Agent tabs), Web Audio playback. Reads provider presets and base-URL editability from `/api/capabilities` via `loadCapabilities()` at boot.
 - `Korina/config.json` — runtime test-site settings (gitignored). The tracked example is at `Korina/config/config.example.json`.
 - `Korina/start.sh` / `stop.sh` — Service lifecycle.
 - `Korina/Ack/ack_phrases.json` — tagged acknowledgement phrase manifest. Generated WAVs are cache files and are ignored by git.
 - `tests/` — pytest unit/API/static tests for CI plus `tests/regression_smoke.py` for live server smoke tests. CI tests avoid live model servers; live regression can optionally exercise provider activation, chat, and transcription when local services are up.
+- `tests/converse/` — Phase 5 ConverseChannel registry and Protocol tests.
 - `docs/wiki/` — repo-backed wiki fallback pages that mirror the architecture overview and issue backlog until the GitHub Wiki repo is initialized.
 
 ## Process supervision
@@ -57,72 +121,6 @@ Korina-owned long-running services are managed with `systemd --user`:
 |---|---:|---|
 | `korina-voice-lab.service` | 8001 | FastAPI app + browser UI |
 | `kokoro-streaming-server.service` | 8880 | Kokoro streaming TTS |
-
-> Note: `start.sh` is for first-launch; for restarts use `systemctl --user restart korina-voice-lab.service`.
-
-Install/update user units from a source checkout:
-
-```bash
-cd /path/to/Korina-Agent
-./Korina/install-services.sh
-```
-
-Start/restart:
-
-```bash
-systemctl --user restart kokoro-streaming-server.service korina-voice-lab.service
-```
-
-Compatibility wrappers:
-
-```bash
-./Korina/start.sh
-./Korina/stop.sh
-```
-
-Status and logs:
-
-```bash
-systemctl --user status kokoro-streaming-server.service korina-voice-lab.service --no-pager -l
-journalctl --user -u korina-voice-lab.service -f
-journalctl --user -u kokoro-streaming-server.service -f
-```
-
-Boot behavior requires user lingering:
-
-```bash
-loginctl show-user "$USER" -p Linger
-```
-
-If `Linger=no`, a privileged user can enable boot startup with:
-
-```bash
-sudo loginctl enable-linger "$USER"
-```
-
-## Setup on a new machine
-
-```bash
-# 1. Clone
-git clone https://github.com/rgoza1996/Korina-Agent
-cd Korina-Agent
-
-# 2. Python environment (3.10+)
-python3 -m venv korina-env
-source korina-env/bin/activate
-pip install fastapi uvicorn python-multipart soundfile numpy torch
-pip install faster-whisper
-
-# 3. Kokoro TTS
-pip install kokoro-onnx pydub
-# Download voice manifests / models separately (see Kokoro docs)
-
-# 4. Run an OpenAI-compatible LLM server, e.g. llama.cpp on :8080/v1 or LM Studio on :1234/v1
-
-# 5. Start
-./Korina/start.sh
-# Open http://hostname:8001
-```
 
 ## Default ports
 
@@ -209,7 +207,7 @@ The settings modal has two tabs:
 
 Korina Converse and Korina Agent run as independent loops: Converse stays focused on real-time voice while Agent receives transcript deliveries through `/api/agent/transcript`, works in the background, and emits events through `/api/agent/events`. The frontend polls those events and either stores normal reports as hidden next-reply injections or routes important/critical reports through Converse as voice interrupts. Permission requests are spoken by Converse and answered through `/api/agent/permission-answer`, so Converse remains the human-facing permission UX while Agent remains the background worker.
 
-Agent debugging is visible in the **Korina Agent Debug** panel. It logs transcript deliveries/prompts, queued injection updates, Agent events, and Agent output. The top bar includes **Clear Session**, which clears visible transcript/conversation/debug state, client-side model history, Agent delivery counters/cooldowns, and calls `/api/agent/reset` to clear backend Agent state/events. Agent interrupts and ack phrases are added to the visible conversation transcript as explicit labels (`Korina Agent Interrupt` and `Ack Phrase`). Ack phrase labels are UI-only: they are not stored in model history, and model/Agent contexts are sanitized before delivery. Agent interrupt labels are also excluded from later model/Agent context so interrupts cannot recursively trigger new interrupts. Agent interrupts use a cooldown: while an Agent interrupt is speaking, and until its scheduled audio end plus configurable padding (`agent_interrupt_cooldown_padding_ms`, default 3000ms), new Agent reports are deferred/injected rather than interrupting again. `speakText()` strips transcript labels and `<think>` blocks before sending text to Kokoro, so Korina should never say “Ack Phrase” or hidden reasoning out loud even if a model emits those strings. Ack phrase playback is suppressed briefly during Agent interrupts so a thinking/idle ack does not overlap an interrupt.
+Agent debugging is visible in the **Korina Agent Debug** panel. It logs transcript deliveries/prompts, queued injection updates, Agent events, and Agent output. The top bar includes **Clear Session**, which clears visible transcript/conversation/debug state, client-side model history, Agent delivery counters/cooldowns, and calls `/api/agent/reset` to clear backend Agent state/events. Agent interrupts and ack phrases are added to the visible conversation transcript as explicit labels (`Korina Agent Interrupt` and `Ack Phrase`). Ack phrase labels are UI-only: they are not stored in model history, and model/Agent contexts are sanitized before delivery. Agent interrupt labels are also excluded from later model/Agent context so interrupts cannot recursively trigger new interrupts. Agent interrupts use a cooldown: while an Agent interrupt is speaking, and until its scheduled audio end plus configurable padding (`agent_interrupt_cooldown_padding_ms`, default 3000ms), new Agent reports are deferred/injected rather than interrupting again. `speakText()` strips transcript labels and `think` blocks before sending text to Kokoro, so Korina should never say "Ack Phrase" or hidden reasoning out loud even if a model emits those strings. Ack phrase playback is suppressed briefly during Agent interrupts so a thinking/idle ack does not overlap an interrupt.
 
 Korina Agent can use a separate vendor-agnostic endpoint from Korina Converse. The Agent tab supports:
 
@@ -248,3 +246,77 @@ Partial transcription windows (~1.8s each) are queued rather than dropped, so sl
 - `alpha` — development branch / pre-release work
 
 Recent refactor work has been landing on `beta` as the release-candidate branch. Check `docs/refactor/PROGRESS.md` before starting a multi-step change so the active branch, last verified commit, and live-regression status are explicit.
+
+### Service management
+
+For first launch:
+
+```bash
+./Korina/start.sh
+```
+
+> Note: `start.sh` is for first-launch; for restarts use `systemctl --user restart korina-voice-lab.service`.
+
+Install/update user units from a source checkout:
+
+```bash
+cd /path/to/Korina-Agent
+./Korina/install-services.sh
+```
+
+Start/restart:
+
+```bash
+systemctl --user restart kokoro-streaming-server.service korina-voice-lab.service
+```
+
+Compatibility wrappers:
+
+```bash
+./Korina/start.sh
+./Korina/stop.sh
+```
+
+Status and logs:
+
+```bash
+systemctl --user status kokoro-streaming-server.service korina-voice-lab.service --no-pager -l
+journalctl --user -u korina-voice-lab.service -f
+journalctl --user -u kokoro-streaming-server.service -f
+```
+
+Boot behavior requires user lingering:
+
+```bash
+loginctl show-user "$USER" -p Linger
+```
+
+If `Linger=no`, a privileged user can enable boot startup with:
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+## Setup on a new machine
+
+```bash
+# 1. Clone
+git clone https://github.com/rgoza1996/Korina-Agent
+cd Korina-Agent
+
+# 2. Python environment (3.10+)
+python3 -m venv korina-env
+source korina-env/bin/activate
+pip install fastapi uvicorn python-multipart soundfile numpy torch
+pip install faster-whisper
+
+# 3. Kokoro TTS
+pip install kokoro-onnx pydub
+# Download voice manifests / models separately (see Kokoro docs)
+
+# 4. Run an OpenAI-compatible LLM server, e.g. llama.cpp on :8080/v1 or LM Studio on :1234/v1
+
+# 5. Start
+./Korina/start.sh
+# Open http://hostname:8001
+```
