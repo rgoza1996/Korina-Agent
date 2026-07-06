@@ -259,7 +259,18 @@ export function nextIdleDelayMs() {
 export async function populateChannelTab() {
   const select = $('channelSelect');
   const hint = $('channelSelectHint');
-  if (!select) return;
+  if (!select) {
+    // Surface a visible diagnostic instead of failing silently. Common
+    // causes: the panel was just hidden by a tab toggle (DOM race), the
+    // user clicked the Channel tab before the panel had .active toggled
+    // (CSS animation lag), or a stale browser cache where #channelSelect
+    // doesn't exist yet. Without this hint, the UI shows "Loading
+    // registered channels..." forever and the user has no recourse
+    // other than a hard-refresh guess.
+    if (hint) hint.textContent = 'Channel panel not ready. Click the Channel tab again, or hard-refresh (Ctrl+Shift+R).';
+    console.warn('populateChannelTab: #channelSelect not found in DOM');
+    return;
+  }
 
   let channels = [];
   let active = null;
