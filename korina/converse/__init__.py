@@ -29,7 +29,11 @@ from .registry import (
     unregister_converse_channel,
     reset_for_testing,
 )
-from .korina_channel import KorinaConverseChannel, ensure_default_registered
+from .korina_channel import (
+    KorinaConverseChannel,
+    ensure_default_registered,
+    reset_default_registered,
+)
 
 
 __all__ = [
@@ -45,4 +49,5 @@ __all__ = [
     "reset_for_testing",
     "KorinaConverseChannel",
     "ensure_default_registered",
+    "reset_default_registered",
 ]

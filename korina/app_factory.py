@@ -20,6 +20,7 @@ from korina.config import load_config
 from korina.routes import acks as _acks_routes
 from korina.routes import capabilities as _capabilities_routes
 from korina.routes import agent as _agent_routes
+from korina.routes import converse as _converse_routes
 from korina.routes import chat as _chat_routes
 from korina.routes import config as _config_routes
 from korina.routes import health as _health_routes
@@ -78,7 +79,9 @@ def create_app() -> FastAPI:
 
     for module in (
         _index_routes, _health_routes, _config_routes, _models_routes,
-        _model_roots_routes, _providers_routes, _capabilities_routes, _acks_routes, _agent_routes, _stt_routes, _chat_routes,
+        _model_roots_routes, _providers_routes, _capabilities_routes,
+        _acks_routes, _agent_routes, _stt_routes, _chat_routes,
+        _converse_routes,
     ):
         app.include_router(module.router)
 
