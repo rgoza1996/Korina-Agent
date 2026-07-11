@@ -28,6 +28,7 @@ import {
   llmReasoningEnabled,
   llmProvider, llmBaseUrl, lmModel,
   partialWindowMsSetting,
+  markActivity,
 } from './settings-ui.js';
 import { loadAgentModelOptions } from './providers-ui.js';   // lands in 3.2.6
 
@@ -242,7 +243,7 @@ export async function initApp() {
   await (await import('./acks.js')).loadAcks('global');
   health();
   setInterval(health, 5000); // poll debug strip every 5s so it reflects runtime state, not last config-change
-  await (await import('./live.js')).markActivity('init');
+  markActivity('init');
   setInterval(async () => (await import('./agent-ui.js')).maybeDeliverTranscriptToAgent('timer'), 3000);
   setInterval(async () => (await import('./agent-ui.js')).pollAgentEvents(), 2000);
   setInterval(async () => (await import('./agent-ui.js')).maybeReleaseDeferredAgentInterrupt(), 500);
