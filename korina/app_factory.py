@@ -45,10 +45,19 @@ def create_app() -> FastAPI:
         title='Korina Voice Lab: Built-in Whisper, multimodal STT, llama.cpp, and Kokoro',
     )
 
+    cfg = load_config()
+    _converse_block = cfg.get("converse") if isinstance(cfg.get("converse"), dict) else None
+    allowed_origins = (
+        _converse_block.get("allowed_origins") if _converse_block else None
+    ) or ['http://127.0.0.1:8001', 'http://localhost:8001']
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=['*'],
-        allow_credentials=True,
+        allow_origins=list(allowed_origins),
+        # Spec-compliant: wildcard+credentials is invalid. No frontend
+        # code sends cookies (see commit: docs(cors): credentialed-fetch
+        # audit). Credentials flow through env-var API keys at the
+        # backend boundary, not browser cookie jars.
+        allow_credentials=False,
         allow_methods=['*'],
         allow_headers=['*'],
     )
