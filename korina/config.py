@@ -90,6 +90,10 @@ DEFAULT_CONFIG = {
     'idle_ack_step_ms': 5000,
     'audio_unsupported': {},
     'local_model_roots': [],
+    'converse': {
+        'channel': 'korina',
+        'allowed_origins': ['http://127.0.0.1:8001', 'http://localhost:8001'],
+    },
 }
 
 CONFIG_KEYS = set(DEFAULT_CONFIG.keys())
