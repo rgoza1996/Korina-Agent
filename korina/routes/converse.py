@@ -63,6 +63,12 @@ def switch_active_channel(name: str):
                 f"Registered: {list_channels()}"
             ),
         )
+    # WS1.3: persist the switch to config.json so it survives a restart.
+    # Late-bound lookup so tests can monkeypatch korina.config.save_config.
+    import korina.config as _cfg
+    cfg = _cfg.load_config()
+    cfg.setdefault("converse", {})["channel"] = name
+    _cfg.save_config(cfg)
     return {"channel": name, "ok": True}
 
 
