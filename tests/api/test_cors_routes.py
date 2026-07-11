@@ -1,11 +1,12 @@
 """Tests for CORS middleware config-driven allowlist (WS0.2)."""
+import korina.config
 from fastapi.testclient import TestClient
 from korina import app_factory
 
 
 def test_cors_allows_listed_origin(monkeypatch):
     monkeypatch.setattr(
-        app_factory, "load_config",
+        korina.config, "load_config",
         lambda: {"converse": {"allowed_origins": ["http://allowed.test:9000"]}},
     )
     app = app_factory.create_app()
@@ -22,7 +23,7 @@ def test_cors_allows_listed_origin(monkeypatch):
 
 def test_cors_blocks_unlisted_origin(monkeypatch):
     monkeypatch.setattr(
-        app_factory, "load_config",
+        korina.config, "load_config",
         lambda: {"converse": {"allowed_origins": ["http://allowed.test:9000"]}},
     )
     app = app_factory.create_app()
@@ -41,7 +42,7 @@ def test_cors_blocks_unlisted_origin(monkeypatch):
 
 def test_cors_uses_default_when_config_has_no_converse_block(monkeypatch):
     """Legacy configs without `converse` block should still work via DEFAULT_CONFIG."""
-    monkeypatch.setattr(app_factory, "load_config", lambda: {})
+    monkeypatch.setattr(korina.config, "load_config", lambda: {})
     app = app_factory.create_app()
     with TestClient(app) as c:
         r = c.options(
