@@ -466,14 +466,19 @@ function wireUiHandlers() {
     $('settingsAgent')?.classList.toggle('active', btn.dataset.settingsTab === 'agent');
     $('settingsChannel')?.classList.toggle('active', btn.dataset.settingsTab === 'channel');
     if (btn.dataset.settingsTab === 'channel') {
-      populateChannelTab();
-      const sel = $('channelSelect');
-      if (sel && !sel.__wired) {
-        sel.addEventListener('change', () => saveChannelSelection());
-        sel.__wired = true;
-      }
+      populateChannelTab().catch((err) => {
+        console.warn('populateChannelTab failed:', err);
+      });
     }
   }));
+
+  // Wire the Channel dropdown's `change` listener once during initialization
+  // so repeated tab clicks do not accumulate duplicate listeners.
+  const _channelSelect = $('channelSelect');
+  if (_channelSelect && !_channelSelect.__wired) {
+    _channelSelect.addEventListener('change', () => saveChannelSelection());
+    _channelSelect.__wired = true;
+  }
   document.querySelectorAll('.tab[data-mode]').forEach(tab => tab.addEventListener('click', () => {
     state.mode = tab.dataset.mode;
     document.querySelectorAll('.tab[data-mode]').forEach(x => x.classList.toggle('active', x === tab));

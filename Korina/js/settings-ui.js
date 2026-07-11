@@ -256,54 +256,89 @@ export function nextIdleDelayMs() {
 // /api/converse/channel/{name}. The active state is in-process; it does
 // NOT persist across service restarts (the registry is re-seeded with
 // the default "korina" channel on startup).
+//
+// Returns a Promise. Callers MUST attach `.catch(...)` or `await` it
+// inside try/catch — fire-and-forget invocations swallow rejection
+// into an unhandled-promise warning.
+//
+// Fetch errors are caught internally; the returned Promise only rejects
+// on unexpected render-time errors (e.g. DOM mutation throws).
+//
+// Why no "DOM race" guard: `#channelSelect` is static HTML in index.html.
+// CSS visibility (`.settingsPanel.active` toggle) does not affect
+// `getElementById`. If `$('channelSelect')` is null at click time, the
+// served page is malformed or the bundled JS is stale relative to the
+// HTML. The diagnostic below reflects that without overclaiming which
+// scenario applies; the original CSS-race explanation is wrong.
+async function fetchChannelList() {
+  const [list, current] = await Promise.all([
+    fetch('/api/converse/channels').then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status} from /api/converse/channels`);
+      return r.json();
+    }),
+    fetch('/api/converse/channel').then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status} from /api/converse/channel`);
+      return r.json();
+    }),
+  ]);
+  return { channels: list.channels || [], active: current.channel || null };
+}
+
 export async function populateChannelTab() {
   const select = $('channelSelect');
   const hint = $('channelSelectHint');
+
+  // Missing static control at click time. The page may be malformed,
+  // the bundled JS may be stale relative to the HTML, or a future code
+  // path may have removed the element. This is NOT the CSS-visibility
+  // race the previous diagnostic described (#channelSelect is static
+  // HTML; getElementById ignores display state).
   if (!select) {
-    // Surface a visible diagnostic instead of failing silently. Common
-    // causes: the panel was just hidden by a tab toggle (DOM race), the
-    // user clicked the Channel tab before the panel had .active toggled
-    // (CSS animation lag), or a stale browser cache where #channelSelect
-    // doesn't exist yet. Without this hint, the UI shows "Loading
-    // registered channels..." forever and the user has no recourse
-    // other than a hard-refresh guess.
-    if (hint) hint.textContent = 'Channel panel not ready. Click the Channel tab again, or hard-refresh (Ctrl+Shift+R).';
-    console.warn('populateChannelTab: #channelSelect not found in DOM');
+    if (hint) {
+      hint.textContent = 'Channel control missing from the served page. Refresh and verify the frontend deployment.';
+    }
+    console.error(
+      'populateChannelTab: #channelSelect not found in DOM. ' +
+      'The static Channel control is missing from the served page; ' +
+      'this is not a CSS-visibility race (the element is static HTML).'
+    );
     return;
   }
 
-  let channels = [];
-  let active = null;
+  // Mark as loading so the hint never gets stuck on "Loading…".
+  if (hint) hint.textContent = 'Loading registered channels…';
+  select.disabled = true;
+
+  let result;
   try {
-    const [list, current] = await Promise.all([
-      fetch('/api/converse/channels').then((r) => r.json()),
-      fetch('/api/converse/channel').then((r) => r.json()),
-    ]);
-    channels = list.channels || [];
-    active = current.channel || null;
+    result = await fetchChannelList();
   } catch (err) {
-    if (hint) hint.textContent = `Failed to load channels: ${err.message}`;
+    if (hint) hint.textContent = `Failed to load channels: ${err.message}. Click the Channel tab to retry.`;
+    console.warn('populateChannelTab: fetch failed', err);
     return;
   }
 
-  select.innerHTML = "";
+  const { channels, active } = result;
+
+  select.innerHTML = '';
   if (channels.length === 0) {
-    if (hint) hint.textContent = "No channels registered.";
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "-";
+    if (hint) hint.textContent = 'No channels registered.';
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '-';
     select.appendChild(opt);
     select.disabled = true;
     return;
   }
-  select.disabled = false;
+
   for (const name of channels) {
-    const opt = document.createElement("option");
+    const opt = document.createElement('option');
     opt.value = name;
     opt.textContent = name;
     select.appendChild(opt);
   }
   select.value = active || channels[0];
+  select.disabled = false;
 
   if (hint) {
     hint.textContent = active
