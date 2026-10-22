@@ -212,6 +212,8 @@ The default `KorinaConverseChannel` joins non-assistant transcript `text`/`conte
 
 If an admitted send times out, its caller is cancelled, or polling fails, the channel cannot reliably associate a later report with a new turn. It returns a recovery error for further sends until an explicit `cancel()` successfully resets the captured adapter, including after gateway replacement. A failed reset leaves that barrier in place for retry. There is no automatic custom-adapter reset on timeout. Cancelling a queued send before admission leaves the active send unaffected; completed empty/error report events allow the next turn normally.
 
+An adapter may raise `korina.agents.AgentAdmissionRejected` only when it guarantees that no background work was admitted. The channel returns that rejection immediately and permits a later send without resetting adapter memory. The built-in adapter uses it for disabled-agent and retired-session admissions, so enabling the agent or sending fresh context after Clear can retry normally. Other submission exceptions remain uncertain and retain the explicit recovery requirement.
+
 ```python
 import asyncio
 from korina.converse import ConverseRequest, get_converse_channel

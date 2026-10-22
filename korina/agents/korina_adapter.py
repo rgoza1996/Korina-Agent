@@ -10,12 +10,23 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from korina.agents.base import AgentAdmissionRejected
 from korina.schemas import (
     AgentCapabilities,
     PermissionAnswerEvent,
     UserTurn,
 )
 
+
+def _require_admitted(result: object, operation: str) -> None:
+    if not isinstance(result, dict):
+        return
+    if result.get('disabled'):
+        raise AgentAdmissionRejected('Korina Agent is disabled in settings')
+    if result.get('stale'):
+        raise AgentAdmissionRejected(f'Korina Agent session changed before {operation} admission')
+    if result.get('accepted') is False:
+        raise AgentAdmissionRejected('Korina Agent did not admit this request')
 
 
 class KorinaAgentAdapter:
@@ -50,8 +61,7 @@ class KorinaAgentAdapter:
             turn_count=turn.turn_count,
         )
         result = agent_service.submit_agent_transcript(req)
-        if isinstance(result, dict) and result.get("disabled"):
-            raise RuntimeError("Korina Agent is disabled in settings")
+        _require_admitted(result, 'turn')
 
     # ---- outbound: adapter -> Converse ---------------------------------------
 
@@ -94,10 +104,7 @@ class KorinaAgentAdapter:
             "answer": answer.answer,
             "transcript": answer.transcript,
         })
-        if result.get('disabled'):
-            raise RuntimeError('Korina Agent is disabled in settings')
-        if result.get('stale'):
-            raise RuntimeError('Korina Agent session changed before permission admission')
+        _require_admitted(result, 'permission')
 
     def reset(self) -> None:
         """Clear agent state. Matches legacy /api/agent/reset semantics."""

@@ -20,6 +20,14 @@ from korina.schemas import (
 )
 
 
+class AgentAdmissionRejected(RuntimeError):
+    """The adapter guarantees this request admitted no background work.
+
+    Callers may retry without resetting agent memory. Other submission
+    exceptions remain uncertain and may require explicit recovery.
+    """
+
+
 @runtime_checkable
 class AgentAdapter(Protocol):
     """Stable contract: Converse talks to any agent through this interface."""
@@ -39,6 +47,8 @@ class AgentAdapter(Protocol):
 
         The synchronous submission returns immediately; background work emits
         events that are observable via :meth:`poll_events`.
+        AgentAdmissionRejected explicitly guarantees no work was admitted;
+        callers treat other submission failures as uncertain.
         """
         ...
 

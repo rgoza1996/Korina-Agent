@@ -10,7 +10,7 @@ Public API:
     - ``register_adapter(adapter)`` -- swap the active adapter at runtime.
 """
 
-from korina.agents.base import AgentAdapter, LegacyAgentHttpAdapter
+from korina.agents.base import AgentAdapter, AgentAdmissionRejected, LegacyAgentHttpAdapter
 from korina.agents.gateway import (
     AgentHttpBridge,
     UnsupportedAgentOperation,
@@ -20,6 +20,7 @@ from korina.agents.gateway import (
 
 __all__ = [
     "AgentAdapter",
+    "AgentAdmissionRejected",
     "LegacyAgentHttpAdapter",
     "AgentHttpBridge",
     "UnsupportedAgentOperation",

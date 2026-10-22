@@ -24,6 +24,7 @@ import time
 from typing import AsyncIterator, List
 
 from korina.agents import AgentAdapter, AgentHttpBridge
+from korina.agents.base import AgentAdmissionRejected
 from korina.schemas import UserTurn
 
 from .protocol import ConverseChannel, ConverseRequest, ConverseResponse
@@ -222,6 +223,10 @@ class KorinaConverseChannel(ConverseChannel):
                 submitted = await asyncio.to_thread(self._submit_if_current, adapter, turn, generation)
                 if not submitted or self._cancelled(generation):
                     return ConverseResponse(error='cancelled')
+            except AgentAdmissionRejected as exc:
+                if self._cancelled(generation):
+                    return ConverseResponse(error='cancelled')
+                return ConverseResponse(error=f'submit rejected: {exc}')
             except Exception as exc:
                 if self._cancelled(generation):
                     return ConverseResponse(error='cancelled')
