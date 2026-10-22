@@ -10,6 +10,7 @@ from korina.config import (
 
 from korina.runtime.http import auth_headers_from_env
 from korina.runtime.json_http import HTTPStatusError, request_json
+from korina.runtime.completion import completion_text, openai_text_completion
 
 from korina.schemas import ChatRequest
 
@@ -68,7 +69,6 @@ def response_llm_chat(req: ChatRequest) -> str:
     except Exception as e:
         raise RuntimeError(f'Response LLM request failed: {e}')
 
-    try:
-        return format_voice_reply(body['choices'][0]['message']['content'] or '')
-    except Exception:
-        raise RuntimeError(f'Unexpected response LLM payload: {body!r}')
+    reply = openai_text_completion(body).text
+    # Sentence splitting can add newlines; validate the final history value.
+    return completion_text(format_voice_reply(reply), label='Response LLM')

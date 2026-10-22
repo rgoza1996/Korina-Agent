@@ -16,6 +16,7 @@ from korina.config import (
 
 from korina.agents.state import agent_state
 from korina.runtime.json_http import HTTPStatusError, RequestCancelledError, request_json
+from korina.runtime.completion import anthropic_text_completion, openai_text_completion
 from korina.services.agent_priority import PERMISSION_REQUEST, classify_agent_priority
 
 from korina.schemas import (
@@ -88,13 +89,9 @@ def generate_agent_state_report(
         raise RuntimeError(f'Korina Agent {provider} HTTP {e.status_code}: {e.detail}') from e
     except Exception as e:
         raise RuntimeError(f'Korina Agent request failed: {e}')
-    try:
-        if provider == 'anthropic':
-            parts = body.get('content') or []
-            return ''.join(part.get('text', '') for part in parts if isinstance(part, dict)).strip()
-        return (body['choices'][0]['message']['content'] or '').strip()
-    except Exception:
-        raise RuntimeError(f'Unexpected Korina Agent response: {body!r}')
+    if provider == 'anthropic':
+        return anthropic_text_completion(body)
+    return openai_text_completion(body).text
 
 def sanitize_agent_report(report: str) -> str:
     text = report or ''

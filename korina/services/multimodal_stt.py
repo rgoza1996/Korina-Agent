@@ -21,6 +21,7 @@ from korina.config import (
 )
 from korina.runtime.http import auth_headers_from_env
 from korina.runtime.json_http import HTTPStatusError, request_json
+from korina.runtime.completion import openai_text_completion
 from korina.services.model_catalog import llm_models_for
 
 
@@ -125,10 +126,8 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
         raise RuntimeError(
             f'Multimodal STT model {selected_model!r} rejected audio transcription request: HTTP {e.status_code}: {e.detail}'
         ) from e
-    choice = (body.get('choices') or [{}])[0] or {}
-    message = choice.get('message') or {}
-    text = (message.get('content') or '').strip()
-    finish_reason = str(choice.get('finish_reason') or '')
+    completion = openai_text_completion(body)
+    text, finish_reason = completion.text, completion.finish_reason
     return {
         'text': text,
         'finish_reason': finish_reason,

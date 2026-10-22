@@ -46,3 +46,5 @@ Health advertises the effective upload and decoded duration budgets in read-only
 Source checkouts serve tracked `Korina/` files. Built wheels contain the same allowlisted assets; generated config/audio goes into the user data directory. `KORINA_APP_DIR` selects a complete alternate runtime tree. Optional binaries and model roots come from configuration, environment overrides, or discovery.
 
 See [agent protocol](../agent-protocol.md), [setup](../../README.md), [testing](../testing.md), [hackathon rehearsal](../hackathon.md), and [tracker #23](https://github.com/rgoza1996/Korina-Agent/issues/23). Earlier architecture reports and phase plans are historical records, not the current deployment contract.
+
+Provider completion parsing is shared across response, agent, and multimodal STT. Text must be valid Unicode and fit the existing 8192-character conversation bound before it enters history or agent state. Malformed success bodies produce short structural diagnostics without embedding the provider payload. Null/empty text retains the completion reason used by silent-audio fallback; Anthropic reports include visible text blocks only.
