@@ -117,3 +117,26 @@ test('an explicit server audio-limit error blocks recording until valid limits r
   assert.deepEqual(state.audioLimits, recovered);
   assert.match(el('settingsLiveStatus').textContent, /STT up/);
 });
+
+test('a degraded ACK catalog reports unknown counts separately and recovers without claiming audio ready', async () => {
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ...healthy,
+    ack_count: null, ack_status: { ok: false, error: 'Repair Ack/ack_phrases.json and retry', generated_count: null } }) });
+  await health();
+  assert.match(el('ackStatus').textContent, /clip counts unknown.*Repair Ack/);
+  assert.doesNotMatch(el('ackStatus').textContent, /0 cached|ready/);
+  assert.match(el('settingsLiveStatus').textContent, /LLM up · STT up/);
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ...healthy, ack_status: { ok: true, generated_count: 0 } }) });
+  await health();
+  assert.match(el('ackStatus').textContent, /catalog available; cached clips reload on use/);
+  assert.doesNotMatch(el('ackStatus').textContent, /ready/);
+});
+
+test('an old health response cannot overwrite a newer voice operation diagnostic', async () => {
+  let finish;
+  globalThis.fetch = () => new Promise(resolve => { finish = resolve; });
+  const pending = health();
+  el('ackStatus').textContent = 'Voice settings save failed: Disk unavailable';
+  finish({ ok: true, json: async () => ({ ...healthy, ack_status: { ok: false, error: 'Older catalog error' } }) });
+  await pending;
+  assert.equal(el('ackStatus').textContent, 'Voice settings save failed: Disk unavailable');
+});

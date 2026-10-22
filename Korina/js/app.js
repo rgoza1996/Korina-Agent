@@ -26,7 +26,7 @@ import {
   loadModelOptions, loadAgentModelOptions,
 } from "./providers-ui.js";
 import { setCapabilityFilterOverride } from "./capability-filter.js";
-import { loadAcks, preloadAckBuffers, playRandomAck, cancelAckPlayback } from "./acks.js";
+import { loadAcks, preloadAckBuffers, playRandomAck, cancelAckPlayback, changeAckVoice } from "./acks.js";
 import { drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad } from "./vad.js";
 import { setupMic, releaseMic, makeRecorder, transcribeBlob, transcribePartialBlob } from "./recorder.js";
 import {
@@ -421,25 +421,8 @@ function wireSettingsInputs() {
   });
   if ($('agentEnabled')) $('agentEnabled').onchange = () => { void setAgentEnabledFromUi(); };
   const voice = $('voice');
-  if (voice) voice.onchange = async () => {
-    cancelAckPlayback();
-    state.ackFiles = [];
-    state.ackBuffers = [];
-    state.ackBuffersByTag = {};
-    const acksEnabled = $('ackEnabled').value === 'on';
-    if (acksEnabled) {
-      status($('sttStatus'), `Voice changed to ${voice.value}. Rebuilding acknowledgement phrases…`, 'warn');
-      try {
-        const response = await fetch('/api/acks/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voice: voice.value, clear: true }) });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
-        $('transcriptInfo').textContent = `Ack rebuild for ${result.voice}: removed ${result.removed}, missing/queued ${result.queued_or_missing}.`;
-      } catch (error) { console.warn('ack rebuild failed', error); }
-      setTimeout(() => loadAcks('global'), 1500);
-    } else {
-      status($('sttStatus'), `Voice changed to ${voice.value}. Acknowledgement phrases are disabled.`, 'good');
-    }
-    saveConfigSoon();
+  if (voice) voice.onchange = () => {
+    void changeAckVoice(saveConfigNow);
     markActivity('voice-change');
   };
   const finalSttModeEl = $('finalSttMode');

@@ -1,7 +1,7 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
-import { cancelAckPlayback, loadAcks, playRandomAck, preloadAckBuffers } from '../../Korina/js/acks.js';
+import { cancelAckPlayback, changeAckVoice, loadAcks, playRandomAck, preloadAckBuffers } from '../../Korina/js/acks.js';
 import { stopLive } from '../../Korina/js/live.js';
 import { MAX_ACK_AUDIO_BYTES } from '../../Korina/js/response-body.js';
 
@@ -13,6 +13,7 @@ function element(id) {
     classList: { add() {}, remove() {} }, appendChild(node) { this.children.push(node); } });
   return elements.get(id);
 }
+function jsonResponse(value, status = 200) { return new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } }); }
 function deferred() {
   let resolve;
   const promise = new Promise(done => { resolve = done; });
@@ -23,7 +24,7 @@ function delayedAudio() {
   const finish = deferred();
   globalThis.fetch = async url => {
     requests.push(url);
-    if (url.startsWith('/api/acks')) return { ok: true, json: async () => ({ acks: [{ url: '/ack.wav', text: 'One moment.' }] }) };
+    if (url.startsWith('/api/acks')) return jsonResponse({ acks: [{ url: '/ack.wav', text: 'One moment.' }] });
     started.resolve();
     await finish.promise;
     return new Response(new Uint8Array(4));
@@ -115,7 +116,7 @@ test('completed empty preload attempts back off instead of polling on every idle
   let catalogs = 0;
   globalThis.fetch = async () => {
     catalogs++;
-    return { ok: true, json: async () => ({ acks: [] }) };
+    return jsonResponse({ acks: [] });
   };
   for (let frame = 0; frame < 20; frame++) await playRandomAck('idle');
   assert.equal(catalogs, 1);
@@ -130,7 +131,7 @@ test('failed audio preload attempts also back off', async () => {
   try {
     globalThis.fetch = async url => {
       requests.push(url);
-      if (url.startsWith('/api/acks')) return { ok: true, json: async () => ({ acks: [{ url: '/missing.wav' }] }) };
+      if (url.startsWith('/api/acks')) return jsonResponse({ acks: [{ url: '/missing.wav' }] });
       return { ok: false, status: 503 };
     };
     for (let frame = 0; frame < 20; frame++) await playRandomAck();
@@ -143,7 +144,7 @@ test('cancellation aborts a pending acknowledgement download', async () => {
   const started = deferred();
   let signal;
   globalThis.fetch = async (url, options) => {
-    if (url.startsWith('/api/acks')) return { ok: true, json: async () => ({ acks: [{ url: '/pending.wav' }] }) };
+    if (url.startsWith('/api/acks')) return jsonResponse({ acks: [{ url: '/pending.wav' }] });
     signal = options.signal;
     started.resolve();
     return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Stopped', 'AbortError')), { once: true }));
@@ -160,7 +161,7 @@ test('oversized acknowledgement downloads never reach the native decoder', async
   let decodes = 0, cancelled = 0;
   state.audioCtx.decodeAudioData = async () => { decodes++; return { duration: 1 }; };
   globalThis.fetch = async url => {
-    if (url.startsWith('/api/acks')) return { ok: true, json: async () => ({ acks: [{ url: '/huge.wav' }] }) };
+    if (url.startsWith('/api/acks')) return jsonResponse({ acks: [{ url: '/huge.wav' }] });
     return new Response(new ReadableStream({ cancel() { cancelled++; } }), {
       headers: { 'Content-Length': String(MAX_ACK_AUDIO_BYTES + 1) },
     });
@@ -193,7 +194,7 @@ test('acknowledgement cancellation releases a pending native response reader', {
   const started = deferred();
   let body;
   globalThis.fetch = async url => {
-    if (url.startsWith('/api/acks')) return { ok: true, json: async () => ({ acks: [{ url: '/pending.wav' }] }) };
+    if (url.startsWith('/api/acks')) return jsonResponse({ acks: [{ url: '/pending.wav' }] });
     body = new ReadableStream({ pull() { started.resolve(); }, cancel() { return new Promise(() => {}); } });
     return new Response(body);
   };
@@ -203,4 +204,97 @@ test('acknowledgement cancellation releases a pending native response reader', {
   await playing;
   assert.equal(body.locked, false);
   assert.equal(sources.length, 0);
+});
+
+for (const [name, response] of [
+  ['HTTP 503', () => jsonResponse({ detail: [{ loc: ['body', 'voice'], msg: 'Service unavailable' }] }, 503)],
+  ['malformed JSON', () => new Response('{')],
+  ['explicit failure', () => jsonResponse({ ok: false, voice: 'af_heart', removed: 0, queued_or_missing: 0 })],
+]) {
+  test(`voice rebuild ${name} is visible without replacing transcription status`, async () => {
+    globalThis.fetch = async () => response();
+    element('sttStatus').textContent = 'Current STT error';
+    element('transcriptInfo').textContent = 'Current transcript';
+    await changeAckVoice(async () => {});
+    assert.match(element('ackStatus').textContent, /Acknowledgement rebuild failed:/);
+    assert.doesNotMatch(element('ackStatus').textContent, /\[object Object\]/);
+    if (name === 'HTTP 503') assert.match(element('ackStatus').textContent, /voice: Service unavailable/);
+    assert.equal(element('sttStatus').textContent, 'Current STT error');
+    assert.equal(element('transcriptInfo').textContent, 'Current transcript');
+  });
+}
+
+test('voice save failure preserves cached clips and cannot clear or rebuild on the backend', async () => {
+  const buffers = [{ buffer: 'previous audio' }];
+  state.ackBuffers = buffers;
+  globalThis.fetch = async () => assert.fail('A failed settings save must precede any rebuild request');
+  await changeAckVoice(async () => { throw new Error('Disk unavailable'); });
+  assert.equal(state.ackBuffers, buffers);
+  assert.match(element('ackStatus').textContent, /Voice settings save failed: Disk unavailable/);
+});
+
+test('voice rebuild waits for settings acceptance and serializes/coalesces newer voices', async () => {
+  const first = deferred(), entered = deferred(), save = deferred();
+  const voices = [];
+  globalThis.fetch = async (_url, options) => {
+    const voice = JSON.parse(options.body).voice;
+    voices.push(voice);
+    if (voice === 'af_heart') { entered.resolve(); await first.promise; }
+    return jsonResponse({ ok: true, voice, removed: 0, queued_or_missing: 1 });
+  };
+  const initial = changeAckVoice(() => save.promise);
+  assert.deepEqual(voices, []);
+  save.resolve(); await entered.promise;
+  element('voice').value = 'af_bella';
+  const middle = changeAckVoice(async () => {});
+  element('voice').value = 'af_nicole';
+  const newest = changeAckVoice(async () => {});
+  await Promise.resolve();
+  assert.deepEqual(voices, ['af_heart']);
+  first.resolve(); await Promise.all([initial, middle, newest]);
+  assert.deepEqual(voices, ['af_heart', 'af_nicole']);
+  assert.match(element('ackStatus').textContent, /queued for af_nicole/);
+  assert.doesNotMatch(element('ackStatus').textContent, /af_heart|af_bella/);
+});
+
+test('a rebuild completing after session cancellation cannot publish status or schedule a catalog reload', async () => {
+  const entered = deferred(), finish = deferred();
+  globalThis.fetch = async () => { entered.resolve(); await finish.promise;
+    return jsonResponse({ ok: true, voice: 'af_heart', removed: 0, queued_or_missing: 1 }); };
+  const rebuilding = changeAckVoice(async () => {});
+  await entered.promise;
+  cancelAckPlayback();
+  state.agentSession++;
+  element('ackStatus').textContent = 'The new session owns this status';
+  finish.resolve(); await rebuilding;
+  assert.equal(element('ackStatus').textContent, 'The new session owns this status');
+});
+
+test('invalid catalog shapes are visible and do not become a successful empty catalog', async () => {
+  globalThis.fetch = async () => jsonResponse({ acks: 'invalid' });
+  assert.deepEqual(await loadAcks(), []);
+  assert.match(element('ackStatus').textContent, /ACK catalog unavailable: Invalid acknowledgement catalog/);
+});
+
+test('a stalled rebuild times out visibly and a later voice selection can retry', async () => {
+  const nativeTimeout = globalThis.setTimeout;
+  const entered = deferred();
+  let expire;
+  globalThis.setTimeout = (callback, delay, ...args) => {
+    if (delay === 15000) { expire = callback; return undefined; }
+    return nativeTimeout(callback, delay, ...args);
+  };
+  globalThis.fetch = async (_url, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(new DOMException('Timed out', 'AbortError')), { once: true });
+    entered.resolve();
+  });
+  try {
+    const first = changeAckVoice(async () => {});
+    await entered.promise;
+    expire(); await first;
+    assert.match(element('ackStatus').textContent, /request timed out/);
+  } finally { globalThis.setTimeout = nativeTimeout; }
+  globalThis.fetch = async () => jsonResponse({ ok: true, voice: 'af_heart', removed: 0, queued_or_missing: 1 });
+  await changeAckVoice(async () => {});
+  assert.match(element('ackStatus').textContent, /rebuild queued for af_heart/);
 });

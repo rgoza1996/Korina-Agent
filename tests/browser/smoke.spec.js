@@ -11,7 +11,7 @@ async function mockProviders(page, request) {
     agent_provider: 'openai-compatible', agent_base_url: 'http://agent.example/v1',
   };
   const capabilities = await (await request.get('/api/capabilities')).json();
-  const scenario = { config, configReads: 0, configFailures: 0, configBarrier: null, healthCalls: 0, agentModelCalls: 0, agentModelCompletions: 0, agentModelBarrier: null, ackBarrier: null, capabilities, capabilityFailures: 0, capabilityCalls: 0, capabilityBarrier: null, saves: [], activations: [], activeChannel: 'korina', failSave: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0, resets: 0, polls: 0, deliveries: 0, failReset: false, resetBarrier: null, agentEvents: [] };
+  const scenario = { config, configReads: 0, configFailures: 0, configBarrier: null, healthCalls: 0, agentModelCalls: 0, agentModelCompletions: 0, agentModelBarrier: null, ackBarrier: null, failRebuild: false, rebuildVoices: [], rebuildBarrier: null, capabilities, capabilityFailures: 0, capabilityCalls: 0, capabilityBarrier: null, saves: [], activations: [], activeChannel: 'korina', failSave: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0, resets: 0, polls: 0, deliveries: 0, failReset: false, resetBarrier: null, agentEvents: [] };
   await page.route('**/api/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -59,7 +59,14 @@ async function mockProviders(page, request) {
       if (scenario.ackBarrier) await scenario.ackBarrier;
       body = { acks: [] };
     }
-    else if (endpoint === '/api/acks/rebuild') { scenario.rebuilds++; body = { voice: config.voice, removed: 0, queued_or_missing: 0 }; }
+    else if (endpoint === '/api/acks/rebuild') {
+      scenario.rebuilds++;
+      const voice = request.postDataJSON().voice;
+      scenario.rebuildVoices.push(voice);
+      if (scenario.rebuilds === 1 && scenario.rebuildBarrier) await scenario.rebuildBarrier;
+      if (scenario.failRebuild) { status = 503; body = { detail: [{ loc: ['body', 'voice'], msg: 'Acknowledgement service unavailable' }] }; }
+      else body = { ok: true, voice, removed: 0, queued_or_missing: 1 };
+    }
     else if (endpoint === '/api/agent/events') { scenario.polls++; body = { events: scenario.agentEvents }; }
     else if (endpoint === '/api/agent/transcript') { scenario.deliveries++; body = { ok: true, accepted: true }; }
     else if (endpoint === '/api/agent/reset') {
@@ -404,7 +411,54 @@ test('changing voice with acknowledgements disabled does not enqueue synthesis',
   await page.locator('#voice').selectOption('af_bella');
   await expect.poll(() => scenario.config.voice).toBe('af_bella');
   expect(scenario.rebuilds).toBe(0);
-  await expect(page.locator('#sttStatus')).toContainText('Acknowledgement phrases are disabled');
+  await expect(page.locator('#ackStatus')).toContainText('Acknowledgements are disabled');
+});
+
+test('a failed voice save preserves cached acknowledgements without requesting a rebuild', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.ack_enabled = 'on';
+  await page.goto('/'); await waitForBoot(page);
+  await page.evaluate(() => { window.state.ackBuffers = [{ marker: 'previous cached audio' }]; });
+  scenario.failSave = true;
+  await page.locator('#voice').selectOption('af_bella');
+  await expect(page.locator('#ackStatus')).toContainText('Voice settings save failed: Disk unavailable');
+  expect(scenario.rebuilds).toBe(0);
+  expect(await page.evaluate(() => window.state.ackBuffers[0].marker)).toBe('previous cached audio');
+});
+
+test('a rebuild failure shows its structured diagnostic without changing transcription status', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.ack_enabled = 'on'; scenario.failRebuild = true;
+  await page.goto('/'); await waitForBoot(page);
+  const stt = await page.locator('#sttStatus').textContent();
+  const transcript = await page.locator('#transcriptInfo').textContent();
+  await page.locator('#voice').selectOption('af_bella');
+  await expect(page.locator('#ackStatus')).toContainText('voice: Acknowledgement service unavailable');
+  await expect(page.locator('#ackStatus')).not.toContainText('[object Object]');
+  await expect(page.locator('#sttStatus')).toHaveText(stt);
+  await expect(page.locator('#transcriptInfo')).toHaveText(transcript);
+});
+
+test('delayed voice rebuilds stay serialized and coalesce to the latest saved voice', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.ack_enabled = 'on';
+  let release;
+  scenario.rebuildBarrier = new Promise(resolve => { release = resolve; });
+  try {
+    await page.goto('/'); await waitForBoot(page);
+    await page.locator('#voice').selectOption('af_bella');
+    await expect.poll(() => scenario.rebuilds).toBe(1);
+    await page.locator('#voice').selectOption('af_nicole');
+    await page.locator('#voice').selectOption('af_sarah');
+    await expect.poll(() => scenario.config.voice).toBe('af_sarah');
+    expect(scenario.rebuilds).toBe(1);
+    release();
+    await expect.poll(() => scenario.rebuilds).toBe(2);
+    expect(scenario.rebuildVoices).toEqual(['af_bella', 'af_sarah']);
+    await expect(page.locator('#ackStatus')).toContainText('queued for af_sarah');
+    await expect(page.locator('#voice')).toHaveValue('af_sarah');
+    await expect(page.locator('#transcriptInfo')).not.toContainText('Ack rebuild');
+  } finally { release(); }
 });
 
 test('a late provider activation cannot overwrite edits made after settings reopen', async ({ page, request }) => {

@@ -157,3 +157,20 @@ def test_status_tolerates_concurrent_inprogress_updates_and_cache_clear(ack_runt
         assert isinstance(ack_service.ack_status('af_heart')['in_progress'], list)
     worker.join(3)
     assert ack_service.ack_status('af_heart')['manifest_count'] == 1
+
+
+def test_synthesis_names_audio_from_captured_queue_text(ack_runtime, mock_provider_http):
+    import json
+    captured = 'The text captured when queued.'
+    payloads = []
+
+    def respond(request):
+        payloads.append(json.loads(request.content))
+        return httpx.Response(200, content=WAV)
+
+    mock_provider_http(respond)
+    assert ack_service.synthesize_ack_wav('af_heart', 'test_phrase', captured)
+    queued_phrase = {'id': 'test_phrase', 'text': captured, 'tags': ['global']}
+    assert ack_service.ack_path('af_heart', queued_phrase).read_bytes() == WAV
+    assert not ack_service.ack_path('af_heart', ack_runtime['phrase']).exists()
+    assert payloads[0]['input'] == captured

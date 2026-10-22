@@ -1,0 +1,11 @@
+# Acknowledgement recovery
+
+Acknowledgements are optional cached phrases played while Korina thinks. Their catalog lives in `Korina/Ack/ack_phrases.json` for a source checkout, or `Ack/ack_phrases.json` inside an explicit `KORINA_APP_DIR`. Wheels include the manifest as an asset.
+
+The loader accepts the legacy list of strings and the tagged `{"version":2,"phrases":[{"id":"okay","text":"Okay.","tags":["global"]}]}` format. A catalog is at most 64 KiB and 256 phrases. Text is limited to 512 characters, IDs to 64, and each phrase has one to eight tags of at most 32 characters. IDs must remain unique after filename normalization. An explicit empty list is valid; a missing or malformed file is an error.
+
+An invalid catalog does not stop application startup or `/api/health`. Health reports `ack_status.ok=false`, an actionable error, and `null` clip counts. ACK catalog, status, and rebuild endpoints return HTTP 503 until the file is repaired. Voice readiness remains independent of this optional feature. Repairing the file restores those endpoints on their next request; no restart is needed.
+
+Invalid rebuild requests leave existing audio and queued work intact. A valid rebuild uses one validated manifest snapshot before clearing or queuing anything. Worker filenames use the ID and text captured when the phrase was queued, so editing the manifest cannot label old speech as new text.
+
+Changing the voice first saves settings. A failed save preserves the server cache and requests no rebuild. The browser serializes rebuild requests and coalesces pending choices into the latest saved voice, with a 15-second request deadline. The ACK status beside the selector shows save/rebuild/catalog errors without replacing transcription status. “Queued” describes generation work, not ready audio. Stop or Clear Session prevents old requests and timers from updating the new session or playing cached audio.

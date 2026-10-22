@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import tempfile
 import threading
 
 from korina.config import config_tts_base_url, load_config
+from korina.services.ack_manifest import AckPhrase, read_ack_manifest
 
 from korina.runtime import state
 from korina.runtime.json_http import RequestCancelledError, request_bytes
@@ -40,49 +40,21 @@ def _wav_size(path: Path) -> int:
         return 0
 
 
-def load_ack_manifest() -> list[dict]:
-    """Read ack_phrases.json. Supports old list[str] format and new tagged format."""
-    if not ACK_PHRASES_PATH.exists():
-        return []
-    data = json.loads(ACK_PHRASES_PATH.read_text())
-    if isinstance(data, list):
-        phrases = data
-        return [
-            {'id': f'ack_{i:02d}', 'text': str(text), 'tags': ['global']}
-            for i, text in enumerate(phrases, start=1)
-            if str(text).strip()
-        ]
-    raw_phrases = data.get('phrases', []) if isinstance(data, dict) else []
-    out = []
-    for i, item in enumerate(raw_phrases, start=1):
-        if isinstance(item, str):
-            text = item.strip()
-            tags = ['global']
-            ack_id = f'ack_{i:02d}'
-        elif isinstance(item, dict):
-            text = str(item.get('text', '')).strip()
-            tags = item.get('tags') or ['global']
-            if isinstance(tags, str):
-                tags = [tags]
-            tags = [safe_slug(str(t)) for t in tags if str(t).strip()] or ['global']
-            ack_id = safe_slug(str(item.get('id') or text or f'ack_{i:02d}'))
-        else:
-            continue
-        if text:
-            out.append({'id': ack_id, 'text': text, 'tags': tags})
-    return out
+def load_ack_manifest() -> list[AckPhrase]:
+    return read_ack_manifest(ACK_PHRASES_PATH)
 
-def ack_filename(voice: str, phrase: dict) -> str:
+
+def ack_filename(voice: str, phrase: AckPhrase) -> str:
     digest = hashlib.sha1(f"{phrase['id']}|{phrase['text']}".encode('utf-8')).hexdigest()[:8]
     return f"{safe_slug(voice)}__{safe_slug(phrase['id'])}__{digest}.wav"
 
-def ack_path(voice: str, phrase: dict) -> Path:
+def ack_path(voice: str, phrase: AckPhrase) -> Path:
     return ACK_DIR / ack_filename(voice, phrase)
 
-def ack_files_for(voice: str, tag: Optional[str] = None) -> list[dict]:
+def ack_files_for(voice: str, tag: Optional[str] = None, *, manifest: list[AckPhrase] | None = None) -> list[dict]:
     ACK_DIR.mkdir(parents=True, exist_ok=True)
     requested_tag = safe_slug(tag or 'global')
-    manifest = load_ack_manifest()
+    manifest = load_ack_manifest() if manifest is None else manifest
     matching = [p for p in manifest if requested_tag in p.get('tags', [])]
     if tag and not matching:
         matching = [p for p in manifest if 'global' in p.get('tags', [])]
@@ -104,9 +76,9 @@ def ack_files_for(voice: str, tag: Optional[str] = None) -> list[dict]:
             })
     return files
 
-def missing_ack_phrases(voice: str, tag: Optional[str] = None) -> list[dict]:
+def missing_ack_phrases(voice: str, tag: Optional[str] = None, *, manifest: list[AckPhrase] | None = None) -> list[AckPhrase]:
     requested_tag = safe_slug(tag) if tag else None
-    manifest = load_ack_manifest()
+    manifest = load_ack_manifest() if manifest is None else manifest
     if requested_tag:
         manifest = [p for p in manifest if requested_tag in p.get('tags', [])]
     missing = []
@@ -116,14 +88,14 @@ def missing_ack_phrases(voice: str, tag: Optional[str] = None) -> list[dict]:
             missing.append(phrase)
     return missing
 
-def enqueue_missing_acks(voice: str, tag: Optional[str] = None, *, force: bool = False) -> int:
+def enqueue_missing_acks(voice: str, tag: Optional[str] = None, *, force: bool = False, manifest: list[AckPhrase] | None = None) -> int:
     """Queue at most MAX_ACK_QUEUE missing phrases; return the missing count.
 
     Normal background work respects the enabled setting. An explicit rebuild
     can force generation even while playback is disabled.
     """
     voice = (voice or ACK_DEFAULT_VOICE).strip() or ACK_DEFAULT_VOICE
-    missing = missing_ack_phrases(voice, tag)
+    missing = missing_ack_phrases(voice, tag, manifest=manifest)
     if not force and not acks_enabled():
         return len(missing)
     with state.ack.queue_lock:
@@ -161,7 +133,7 @@ def synthesize_ack_wav(
             generation = state.ack.generation
         if not _generation_allowed(generation, force):
             return False
-    phrase = next((p for p in load_ack_manifest() if p['id'] == phrase_id), {'id': phrase_id, 'text': text, 'tags': ['global']})
+    phrase: AckPhrase = {'id': phrase_id, 'text': text, 'tags': ['global']}
     out = ack_path(voice, phrase)
     payload = {'input': text, 'voice': voice, 'speed': 1.0, 'device': 'cpu'}
 
@@ -248,8 +220,8 @@ def cancel_ack_generation() -> None:
         state.ack.queue.clear()
 
 
-def ack_status(voice: str) -> dict:
-    manifest = load_ack_manifest()
+def ack_status(voice: str, *, manifest: list[AckPhrase] | None = None) -> dict:
+    manifest = load_ack_manifest() if manifest is None else manifest
     generated_count = sum(_wav_size(ack_path(voice, phrase)) > 44 for phrase in manifest)
     with state.ack.queue_lock:
         snapshot = {
@@ -261,6 +233,7 @@ def ack_status(voice: str) -> dict:
             'last_error': state.ack.last_error,
         }
     return {
+        'ok': True, 'status': 'available', 'error': None,
         'voice': voice, 'manifest_count': len(manifest),
         'generated_count': generated_count, 'missing_count': len(manifest) - generated_count,
         'enabled': acks_enabled(), **snapshot,

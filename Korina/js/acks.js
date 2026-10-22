@@ -1,11 +1,12 @@
 // Acknowledgement catalog loading, bounded preloading, and idle playback.
 
 import { state } from './state.js';
-import { $ } from './dom.js';
+import { $, status } from './dom.js';
+import { apiErrorMessage } from './api-errors.js';
 import { addTranscriptEntry } from './history.js';
 import { markActivity, recordIdleAck } from './settings-ui.js';
 import { ensureAudio } from './speech.js';
-import { MAX_ACK_AUDIO_BYTES, MAX_AUDIO_SECONDS, readResponseBlob } from './response-body.js';
+import { MAX_ACK_AUDIO_BYTES, MAX_AUDIO_SECONDS, readResponseBlob, responseError } from './response-body.js';
 
 let generation = 0;
 let cachedVoice = null;
@@ -13,6 +14,79 @@ let pendingPlayback = null;
 const preloads = new Map();
 const retryAfter = new Map();
 const EMPTY_RETRY_MS = 2000;
+let catalogTimer = null;
+let nextRebuild = null;
+let rebuildWorker = null;
+
+function ackStatus(message, level = 'warn') {
+  if ($('ackStatus')) status($('ackStatus'), message, level);
+}
+
+async function ackJson(response, options = {}) {
+  if (!response.ok) throw await responseError(response, options);
+  const blob = await readResponseBlob(response, { ...options, maxBytes: 256 * 1024 });
+  const payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await blob.arrayBuffer()));
+  if (options.isCurrent && !options.isCurrent()) throw new DOMException('ACK request superseded', 'AbortError');
+  return payload;
+}
+
+// Voice saves precede destructive rebuilds. One worker coalesces newer voice
+// selections and never starts a newer clear before the old request completes.
+export function changeAckVoice(saveSettings) {
+  cancelAckPlayback();
+  const context = snapshot();
+  ackStatus(`Saving voice ${context.voice}…`);
+  let saved;
+  try { saved = Promise.resolve(saveSettings()); }
+  catch (error) { saved = Promise.reject(error); }
+  const job = { context, saved: saved.then(() => true, error => {
+    if (current(context)) ackStatus(`Voice settings save failed: ${apiErrorMessage(error)}. Retry the voice selection.`, 'bad');
+    return false;
+  }) };
+  nextRebuild = job;
+  return startRebuilds();
+}
+
+function startRebuilds() {
+  if (!rebuildWorker) rebuildWorker = runRebuilds().finally(() => {
+    rebuildWorker = null;
+    if (nextRebuild) return startRebuilds();
+  });
+  return rebuildWorker;
+}
+
+async function runRebuilds() {
+  while (nextRebuild) {
+    const job = nextRebuild;
+    nextRebuild = null;
+    const { context } = job;
+    if (!await job.saved || !current(context)) continue;
+    state.ackFiles = []; state.ackBuffers = []; state.ackBuffersByTag = {};
+    if ($('ackEnabled').value !== 'on') {
+      ackStatus(`Voice ${context.voice} saved. Acknowledgements are disabled.`);
+      continue;
+    }
+    ackStatus(`Preparing acknowledgements for ${context.voice}…`);
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch('/api/acks/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice: context.voice, clear: true }), signal: controller.signal });
+      const payload = await ackJson(response, { signal: controller.signal, isCurrent: () => current(context) });
+      if (!current(context)) continue;
+      if (!payload || payload.ok !== true || payload.voice !== context.voice
+        || !Number.isSafeInteger(payload.removed) || payload.removed < 0
+        || !Number.isSafeInteger(payload.queued_or_missing) || payload.queued_or_missing < 0) throw new Error('Invalid acknowledgement rebuild response');
+      ackStatus(`Acknowledgement rebuild queued for ${context.voice}: ${payload.queued_or_missing} missing clips.`);
+      catalogTimer = setTimeout(() => {
+        catalogTimer = null;
+        if (current(context)) void loadAcks('global', context);
+      }, 1500);
+    } catch (error) {
+      if (current(context)) ackStatus(`Acknowledgement rebuild failed: ${controller.signal.aborted ? 'request timed out' : apiErrorMessage(error)}. Retry the voice selection.`, 'bad');
+    } finally { clearTimeout(deadline); }
+  }
+}
 
 function snapshot() {
   return { generation, liveSession: state.liveSession, agentSession: state.agentSession,
@@ -34,7 +108,11 @@ function selectVoice(voice) {
 }
 
 export function cancelAckPlayback() {
+  if (nextRebuild || rebuildWorker || catalogTimer) ackStatus('Acknowledgement playback stopped.');
   generation++;
+  clearTimeout(catalogTimer);
+  catalogTimer = null;
+  nextRebuild = null;
   pendingPlayback = null;
   for (const job of preloads.values()) job.controller.abort();
   preloads.clear();
@@ -48,17 +126,21 @@ export async function loadAcks(tag = 'global', context = snapshot(), { signal } 
   selectVoice(context.voice);
   try {
     const response = await fetch(`/api/acks?voice=${encodeURIComponent(context.voice)}&tag=${encodeURIComponent(tag)}`, { signal });
-    if (!response.ok) throw new Error(`Acknowledgement catalog HTTP ${response.status}`);
-    const payload = await response.json();
+    const payload = await ackJson(response, { signal, isCurrent: () => current(context) });
     if (!current(context)) return [];
-    const urls = (payload.acks || []).map(item => ({ url: item.url,
+    if (!payload || !Array.isArray(payload.acks) || payload.acks.length > 256
+      || payload.acks.some(item => !item || typeof item.url !== 'string' || !item.url || item.url.length > 2048
+        || item.text !== undefined && typeof item.text !== 'string')) throw new Error('Invalid acknowledgement catalog response');
+    const urls = payload.acks.map(item => ({ url: item.url,
       text: item.text || item.id || item.name || item.url, id: item.id,
       name: item.name, tags: item.tags || [] }));
     if (tag === 'global') state.ackFiles = urls;
     if (urls.length) retryAfter.delete(tag);
+    if (tag === 'global') ackStatus(urls.length ? `${urls.length} cached acknowledgement clips available.`
+      : payload.status?.missing_count > 0 ? 'Acknowledgement audio is being generated; no cached clips yet.' : 'No cached acknowledgement clips available.', urls.length ? 'good' : 'warn');
     return urls;
   } catch (error) {
-    if (current(context) && error.name !== 'AbortError') console.warn('ack load failed', error);
+    if (current(context) && error.name !== 'AbortError') ackStatus(`ACK catalog unavailable: ${apiErrorMessage(error)}. Repair the catalog or retry.`, 'bad');
     return [];
   }
 }

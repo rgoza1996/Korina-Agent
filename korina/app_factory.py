@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
@@ -23,6 +24,7 @@ from korina.routes import models as _models_routes
 from korina.routes import providers as _providers_routes
 from korina.routes import stt as _stt_routes
 from korina.services.ack_service import cancel_ack_generation, enqueue_missing_acks
+from korina.services.ack_manifest import AckManifestError
 from korina.runtime.limits import RequestSizeLimit
 from korina.routes.validation import sanitized_validation_error
 from korina.util.paths import ACK_DEFAULT_VOICE, ACK_DIR, APP_DIR
@@ -40,7 +42,10 @@ def _startup_generate_default_acks() -> None:
     ACK_DIR.mkdir(parents=True, exist_ok=True)
     config = _cfg.load_config()
     if config.get('ack_enabled') == 'on':
-        enqueue_missing_acks(str(config.get('voice') or ACK_DEFAULT_VOICE))
+        try:
+            enqueue_missing_acks(str(config.get('voice') or ACK_DEFAULT_VOICE))
+        except AckManifestError as error:
+            logging.getLogger(__name__).warning('%s', error)
 
 
 def create_app() -> FastAPI:

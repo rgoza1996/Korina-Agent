@@ -231,6 +231,8 @@ export function saveConfigSoon() {
 const HEALTH_FAIL_GRACE = 3; // consecutive misses before flipping pageDot red
 
 export async function health() {
+  const ackContext = { text: $('ackStatus')?.textContent, voice: $('voice')?.value,
+    liveSession: state.liveSession, agentSession: state.agentSession };
   let j = null;
   let pageFailed = false;
   try {
@@ -258,6 +260,13 @@ export async function health() {
   }
 
   if (!pageFailed) {
+    const ack = $('ackStatus');
+    const ownsAckStatus = ack && ack.textContent === ackContext.text && $('voice')?.value === ackContext.voice
+      && state.liveSession === ackContext.liveSession && state.agentSession === ackContext.agentSession;
+    if (ownsAckStatus && j.ack_status?.ok === false) status(ack, `ACK catalog unavailable (clip counts unknown): ${apiErrorMessage({ detail: j.ack_status.error })}`, 'bad');
+    else if (ownsAckStatus && j.ack_status?.ok === true && ack.textContent.startsWith('ACK catalog unavailable')) {
+      status(ack, 'Acknowledgement catalog available; cached clips reload on use.', 'warn');
+    }
     setDot('pageDot', j.whisper_loaded ? 'good' : 'warn');
     const sttSummary = sttBackend() === 'llm'
       ? `multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()} (${sttLlmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`

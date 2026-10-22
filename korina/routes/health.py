@@ -38,7 +38,8 @@ from korina.model_ids import limit_model_ids, model_list_info, normalize_model_i
 from korina.runtime.limits import AudioLimits, MAX_AUDIO_UPLOAD_BYTES, resolve_audio_limits
 from korina.runtime.http import auth_headers_from_env
 from korina.runtime.json_http import HTTPStatusError, request_json
-from korina.services.ack_service import ack_files_for, ack_status
+from korina.services.ack_service import ack_files_for, ack_status, load_ack_manifest
+from korina.services.ack_manifest import AckManifestError
 from korina.services.whisper_service import compute_type_for, cuda_available, normalize_device
 from korina.util.paths import (
     LMSTUDIO_MODEL,
@@ -312,6 +313,15 @@ async def health(request: Request):
             'provider': provider, 'base_url': base,
         }
     whisper_available = importlib.util.find_spec('faster_whisper') is not None
+    try:
+        manifest = load_ack_manifest()
+        acknowledgements = ack_status(state.ack.current_voice, manifest=manifest)
+        ack_count = len(ack_files_for(state.ack.current_voice, manifest=manifest))
+    except AckManifestError as error:
+        acknowledgements = {'ok': False, 'status': 'unavailable', 'error': str(error),
+            'voice': state.ack.current_voice, 'enabled': config.get('ack_enabled') == 'on',
+            'manifest_count': None, 'generated_count': None, 'missing_count': None}
+        ack_count = None
     result = {
         'ok': True,
         'service': 'korina-voice-lab',
@@ -350,8 +360,8 @@ async def health(request: Request):
         'tts_base_url': config_tts_base_url(config),
         'tts': await tts_task,
         **loads,
-        'ack_count': len(ack_files_for(state.ack.current_voice)),
-        'ack_status': ack_status(state.ack.current_voice),
+        'ack_count': ack_count,
+        'ack_status': acknowledgements,
     }
     checks = {
         'audio_limits': audio_limits is not None,
