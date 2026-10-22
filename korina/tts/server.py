@@ -7,7 +7,7 @@ import os
 from typing import Literal
 
 from anyio import CancelScope
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
@@ -15,6 +15,8 @@ from pydantic import AliasChoices, BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from korina.runtime.limits import RequestSizeLimit
+from korina.runtime.json_http import RequestCancelledError
+from korina.runtime.request_owner import RequestOwner, check_current
 from korina.routes.validation import sanitized_validation_error
 from korina.tts.runtime import SAMPLE_RATE, SynthesisBusy, SynthesisRuntime, SynthesisSession, wav_header
 
@@ -80,13 +82,16 @@ def create_app(runtime: SynthesisRuntime | None = None) -> FastAPI:
         allow_headers=['Content-Type'],
     )
 
-    def open_session(request: SpeechRequest) -> SynthesisSession:
+    def open_session(request: SpeechRequest, *, is_current=None) -> SynthesisSession:
         if not request.input.strip():
             raise HTTPException(400, detail='No text provided')
         try:
-            return runtime.open_session(request.input, request.voice, request.speed, request.device)
+            return runtime.open_session(request.input, request.voice, request.speed, request.device,
+                                        is_current=is_current)
         except SynthesisBusy as exc:
             raise HTTPException(503, detail=str(exc), headers={'Retry-After': '1'}) from exc
+        except RequestCancelledError:
+            raise
         except Exception as exc:
             raise HTTPException(500, detail=str(exc)) from exc
 
@@ -106,16 +111,29 @@ def create_app(runtime: SynthesisRuntime | None = None) -> FastAPI:
             headers={'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff'},
         )
 
-    @app.post('/v1/audio/speech')
-    def buffered_speech(request: SpeechRequest):
-        session = open_session(request)
+    def buffered_response(payload: SpeechRequest, owner: RequestOwner):
+        session = open_session(payload, is_current=owner.is_current)
         try:
             pcm = b''.join(chunk.pcm for chunk in session.chunks())
+            check_current(owner.is_current)
             return Response(wav_header(len(pcm) // 2) + pcm, media_type='audio/wav')
+        except RequestCancelledError:
+            raise
         except Exception as exc:
             raise HTTPException(500, detail=str(exc)) from exc
         finally:
             session.close()
+
+    @app.post('/v1/audio/speech')
+    async def buffered_speech(payload: SpeechRequest, request: Request):
+        owner = RequestOwner()
+        try:
+            async with owner.watch(request):
+                response = await run_in_threadpool(buffered_response, payload, owner)
+                check_current(owner.is_current)
+                return response
+        except RequestCancelledError as exc:
+            raise HTTPException(499, detail='Speech request was cancelled') from exc
 
     @app.get('/health')
     def health():

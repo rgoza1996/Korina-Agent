@@ -14,6 +14,7 @@ import pytest
 from korina.tts import runtime as module
 from korina.tts.runtime import SAMPLE_RATE, SynthesisBusy, SynthesisRuntime, SynthesisSession, to_int16
 from korina.tts.server import sse_chunks, wav_chunks
+from korina.runtime.json_http import RequestCancelledError
 
 
 def pipeline(text, voice, speed):
@@ -27,6 +28,52 @@ def runtime(factory=None):
 
 def open_session(engine):
     return engine.open_session('hello', 'af_heart', 1.0, 'cpu')
+
+
+@pytest.mark.parametrize('stage', ['before_load', 'after_load', 'after_prime', 'after_conversion'])
+def test_retired_synthesis_owner_admits_no_later_work_and_releases_slot(monkeypatch, stage):
+    current = stage != 'before_load'
+    calls = []
+
+    def generate(text, voice, speed):
+        try:
+            calls.append('first native step')
+            yield text, voice, np.zeros(1)
+            calls.append('second native step')
+            yield text, voice, np.zeros(1)
+        finally:
+            calls.append('closed')
+
+    def factory(device):
+        nonlocal current
+        calls.append('load')
+        if stage == 'after_load':
+            current = False
+        return generate
+
+    convert = module.to_int16
+
+    def converted(*args, **kwargs):
+        nonlocal current
+        result = convert(*args, **kwargs)
+        if stage == 'after_conversion':
+            current = False
+        return result
+
+    monkeypatch.setattr(module, 'to_int16', converted)
+    engine = runtime(factory)
+    with pytest.raises(RequestCancelledError):
+        session = engine.open_session('retired', 'af_heart', 1, 'cpu', is_current=lambda: current)
+        current = False
+        list(session.chunks())
+    if stage == 'before_load':
+        assert calls == []
+    elif stage == 'after_load':
+        assert calls == ['load']
+    else:
+        assert calls == ['load', 'first native step', 'closed']
+    # Omitting the optional predicate retains ordinary callers' behavior.
+    assert len(list(open_session(engine).chunks())) == 2
 
 
 def test_sse_pcm_contract_matches_browser():

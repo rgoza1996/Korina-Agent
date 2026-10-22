@@ -8,6 +8,8 @@ from typing import Callable, Iterator
 
 import numpy as np
 
+from korina.runtime.request_owner import check_current
+
 SAMPLE_RATE = 24000
 MAX_AUDIO_SAMPLES = SAMPLE_RATE * 600
 
@@ -85,10 +87,12 @@ class AudioChunk:
 class SynthesisSession:
     """Own inference until advancement and cleanup finish, including disconnects."""
 
-    def __init__(self, generator, device: str, release: Callable[[], None]):
+    def __init__(self, generator, device: str, release: Callable[[], None],
+                 *, is_current: Callable[[], bool] | None = None):
         self.device = device
         self._generator = iter(generator)
         self._release = release
+        self._is_current = is_current
         self._operation_lock = threading.Lock()
         self._close_requested = threading.Event()
         self._closed = False
@@ -98,10 +102,13 @@ class SynthesisSession:
 
     def _next_chunk_locked(self) -> AudioChunk:
         while not self._close_requested.is_set():
+            check_current(self._is_current)
             gs, ps, audio = next(self._generator)
+            check_current(self._is_current)
             if self._close_requested.is_set():
                 break
             pcm = to_int16(audio, max_samples=MAX_AUDIO_SAMPLES - self._total_samples)
+            check_current(self._is_current)
             samples = len(pcm)
             if not samples:
                 continue
@@ -130,6 +137,7 @@ class SynthesisSession:
         try:
             while True:
                 with self._operation_lock:
+                    check_current(self._is_current)
                     if self._close_requested.is_set():
                         return
                     if self._first is not None:
@@ -194,14 +202,19 @@ class SynthesisRuntime:
                 with self._state_lock:
                     self._loading_device = None
 
-    def open_session(self, text: str, voice: str, speed: float, device: str | None) -> SynthesisSession:
+    def open_session(self, text: str, voice: str, speed: float, device: str | None,
+                     *, is_current: Callable[[], bool] | None = None) -> SynthesisSession:
+        check_current(is_current)
         if not self._slot.acquire(blocking=False):
             raise SynthesisBusy('Kokoro is already synthesizing speech; retry shortly')
         session = None
         try:
             resolved = normalize_device(device)
+            check_current(is_current)
             pipeline = self.get_pipeline(resolved)
-            session = SynthesisSession(pipeline(text, voice=voice, speed=speed), resolved, self._slot.release)
+            check_current(is_current)
+            session = SynthesisSession(pipeline(text, voice=voice, speed=speed), resolved,
+                                       self._slot.release, is_current=is_current)
             session.prime()
             return session
         except BaseException:
