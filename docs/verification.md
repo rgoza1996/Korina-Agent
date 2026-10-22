@@ -14,6 +14,12 @@ Backend tests include role-aware provider retention, protected refresh/config co
 
 GitHub Actions jobs did not start because the account payment/spending limit blocked them. These local results do not claim a passing hosted run. The earlier fully passing `fb996a1` checkpoint and actual model observations below remain historical evidence for their stated snapshots.
 
+## Later focused probe and gateway checks
+
+After the complete `96a8d5c` checkpoint, `437283e`, `acca9fe`, and `98f8955` address probe ownership in the browser, explicit probe batches, and STT fallback. Real HTTP fixtures cover held response headers/bodies under disconnect, scope cancellation, and raw task cancellation: connected I/O closes, no later candidate or stale cache write starts, and the same sole pool worker serves a fresh request. Held settings-lock cases verify that cache reads and mutations recheck ownership after waiting. Browser socket cases exercise the five-second deadline, query/forced-refresh retirement, preserved failure state, and Reset completion independent of discovery. Targeted native picker, discovery, and boot checks passed. These are focused results; the complete checkpoint above retains its own source identity and counts.
+
+At `f571274`, four gateway publication cases verify explicit registration during lazy default construction, concurrent first readers, and falsey custom adapters. At `fd24762`, real temporary-file regressions verify close/unlink after synthetic WAV generation or partial-write failure, without provider calls or cache changes. Independent review passed for both fixes.
+
 ## Synthesis and channel ownership
 
 At `96a8d5c`, buffered WAV, streamed WAV, and PCM SSE synthesis share request ownership through model preparation and playback. Twenty-four real HTTP fixture cases cover disconnect and AnyIO cancellation during load, first inference, and a later step, plus raw task cancellation for both stream formats. They verify one ASGI receive consumer, no later native step after retirement, retained inference admission until active work drains, and a fresh successful request on the same cached runtime. Eight preparation-error cases retain JSON HTTP 400/500/503 responses before stream headers.

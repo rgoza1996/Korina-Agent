@@ -14,6 +14,8 @@ The built-in Korina Agent produces state reports, events, and permission questio
 
 `POST /api/chat` remains the independent response-LLM endpoint used by the browser voice conversation. Selecting a Converse channel does not reroute `/api/chat`, microphone/STT requests, or TTS. There is currently no public HTTP `send`/`stream` route for the Python `ConverseChannel` interface.
 
+Gateway selection and publication are synchronized. An explicit adapter registered while the lazy default is being constructed remains selected; concurrent first readers receive the same published adapter. Adapter construction and calls run outside the selection lock.
+
 ## Discover the selected adapter
 
 ```sh

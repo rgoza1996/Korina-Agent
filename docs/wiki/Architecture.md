@@ -22,6 +22,7 @@ The browser orchestrates voice turns and calls the compatible TTS service direct
 - `Korina/js/sse.js` shares bounded UTF-8/event framing across STT and speech, including CRLF and truncated-stream rejection. `response-body.js` bounds downloaded audio and errors; speech playback validates cumulative PCM duration and native buffered metadata before accepting a long reply.
 - `Korina/js/channel-ui.js` owns channel discovery and explicit selection. A rendering generation rejects stale reads; selection disables the control until its save is confirmed. `settings-ui.js` retains re-exports for existing consumers.
 - `Korina/js/audio-probes.js` owns probe-cache requests and cache-key normalization. Provider pickers import it directly; `api.js` retains its public re-exports without an API/provider import cycle.
+- Probe-cache reads belong to the current picker query, are bounded through body completion, and preserve confirmed warnings on failure. A confirmed Reset releases its control before optional background discovery.
 - Optional ACK catalogs are validated once per operation before cache changes. Invalid catalogs leave startup and voice readiness available, with explicit degraded health and unknown clip counts. Voice rebuilds follow successful settings saves; browser ACK status is separate from transcription status.
 
 ## Provider transport
@@ -33,6 +34,8 @@ Background agent and ACK requests also carry ownership predicates. A small in-lo
 Clear Session aborts its existing browser chat fetches through response-body completion. Stop Live cancels only its live/interruption chats and capture; a separate typed Ask remains independent. Temporary audio uses a fixed filename and FFmpeg inspects its bytes, so client filenames cannot become filesystem names or mislabel the format.
 
 Blank role credentials inherit response credentials only at the same normalized API base URL. Explicit independent endpoints require explicit credentials. Model refresh merges only its owned settings under shared activation admission, preserving unrelated edits and probe-cache changes.
+
+Explicit probe batches and ordinary STT fallback carry request ownership through provider I/O and cache transactions. Ownership is checked after acquiring the settings lock, so retired work cannot publish a stale unsupported result or clear a newer warning. Disconnect closes connected I/O and prevents later candidates; already-running native work finishes before cleanup.
 
 ## Health and readiness
 
