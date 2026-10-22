@@ -9,7 +9,7 @@ import asyncio
 import importlib.util
 import shutil
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from korina.config import (
@@ -31,6 +31,7 @@ from korina.config import (
     config_tts_provider,
 )
 from korina.runtime import state
+from korina.runtime.limits import AudioLimits, MAX_AUDIO_UPLOAD_BYTES, resolve_audio_limits
 from korina.runtime.http import auth_headers_from_env
 from korina.services.ack_service import ack_files_for, ack_status
 from korina.services.whisper_service import compute_type_for, cuda_available, normalize_device
@@ -241,8 +242,17 @@ def _aggregate_tts(config):
 
 
 @router.get('/api/health')
-async def health():
+async def health(request: Request):
     config = load_config()
+    audio_limits: AudioLimits | None
+    audio_limits_error: str | None = None
+    try:
+        audio_limits = resolve_audio_limits(
+            max_upload_bytes=request.scope.get('korina.audio_max_upload_bytes', MAX_AUDIO_UPLOAD_BYTES),
+        )
+    except ValueError as exc:
+        audio_limits = None
+        audio_limits_error = str(exc)
     roles = {
         'response_llm_load': (str(config.get('llm_provider') or 'llama.cpp'), config_llm_base_url(config), str(config.get('lm_model') or LMSTUDIO_MODEL), auth_headers_from_env(str(config.get('llm_api_key_env') or ''))),
         'multimodal_stt_load': (config_stt_llm_provider(config), config_stt_llm_base_url(config), config_stt_llm_model(config), auth_headers_from_env(config_stt_llm_api_env(config))),
@@ -265,6 +275,8 @@ async def health():
     result = {
         'ok': True,
         'service': 'korina-voice-lab',
+        'audio_limits': audio_limits,
+        'audio_limits_error': audio_limits_error,
         'whisper_backend': 'faster-whisper',
         'whisper_model': WHISPER_MODEL_ID,
         'whisper_model_choices': WHISPER_MODEL_CHOICES,
@@ -302,6 +314,7 @@ async def health():
         'ack_status': ack_status(state.ack.current_voice),
     }
     checks = {
+        'audio_limits': audio_limits is not None,
         'frontend': (APP_DIR / 'index.html').is_file() and (APP_DIR / 'js' / 'app.js').is_file() and (APP_DIR / 'styles.css').is_file(),
         'response_llm': bool(loads['response_llm_load']['ok'] and loads['response_llm_load']['loaded']),
         'stt': bool(shutil.which('ffmpeg')) and (
@@ -316,7 +329,7 @@ async def health():
 
 
 @router.get('/api/ready')
-async def ready():
+async def ready(request: Request):
     """Voice-stack readiness for rehearsal/monitoring; liveness stays HTTP 200."""
-    result = (await health())['readiness']
+    result = (await health(request))['readiness']
     return JSONResponse(result, status_code=200 if result['ready'] else 503)

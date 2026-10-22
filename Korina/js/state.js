@@ -35,6 +35,9 @@ export const state = {
   liveSession: 0,
   liveBusy: false,
   liveTranscriptionController: null,
+  // Server-resolved recording budgets; kept outside persisted settings.
+  audioLimits: null,
+  audioLimitsError: '',
   liveSilenceStart: 0,
   liveSpeechStart: 0,
   liveLastVoice: 0,

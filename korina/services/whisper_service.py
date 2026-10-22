@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import json
-import math
-import os
 import shutil
 import soundfile as sf
 import subprocess
@@ -19,6 +17,7 @@ from korina.config import (
 )
 
 from korina.runtime import state
+from korina.runtime.limits import bounded_seconds, resolve_audio_limits
 
 from korina.services.multimodal_stt import (
     lmstudio_transcribe_wav,
@@ -244,16 +243,6 @@ class AudioDurationLimitError(ValueError):
     """A recording exceeds the configured decoded duration limit."""
 
 
-def _bounded_seconds(name: str, default: float, maximum: float) -> float:
-    try:
-        value = float(os.environ.get(name, default))
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f'{name} must be between 1 and {maximum:g} seconds') from exc
-    if not math.isfinite(value) or not 1 <= value <= maximum:
-        raise ValueError(f'{name} must be between 1 and {maximum:g} seconds')
-    return value
-
-
 def convert_to_16k_wav(src: Path, dst: Path) -> None:
     """Decode a bounded mono WAV, even when a small upload expands greatly.
 
@@ -261,8 +250,8 @@ def convert_to_16k_wav(src: Path, dst: Path) -> None:
     ending exactly at the limit, then reject rather than silently truncate it.
     The output byte ceiling and subprocess timeout bound disk and CPU work.
     """
-    max_seconds = _bounded_seconds('KORINA_MAX_AUDIO_SECONDS', 300, 1800)
-    timeout = _bounded_seconds('KORINA_FFMPEG_TIMEOUT_SECONDS', 60, 300)
+    max_seconds = resolve_audio_limits()['max_duration_seconds']
+    timeout = bounded_seconds('KORINA_FFMPEG_TIMEOUT_SECONDS', 60, 300)
     cmd = [
         'ffmpeg', '-y', '-nostdin', '-hide_banner', '-loglevel', 'error',
         '-i', str(src), '-map', '0:a:0', '-vn',

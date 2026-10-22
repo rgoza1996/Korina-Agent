@@ -109,6 +109,18 @@ export async function health() {
     if (!response.ok) throw new Error(`Health check failed: HTTP ${response.status}`);
     j = await response.json();
     if (!j || typeof j !== 'object' || j.ok !== true) throw new Error('Invalid health response');
+    const limits = j.audio_limits;
+    const limitsError = typeof j.audio_limits_error === 'string' ? j.audio_limits_error.trim() : '';
+    if (limitsError) state.audioLimitsError = limitsError;
+    else if (limits && Number.isFinite(limits.max_duration_seconds)
+      && limits.max_duration_seconds >= 1 && limits.max_duration_seconds <= 1800
+      && Number.isSafeInteger(limits.max_upload_bytes) && limits.max_upload_bytes > 0) {
+      state.audioLimits = {
+        max_duration_seconds: limits.max_duration_seconds,
+        max_upload_bytes: limits.max_upload_bytes,
+      };
+      state.audioLimitsError = '';
+    }
     state.healthFailures = 0;
   } catch (e) {
     j = null;
@@ -131,12 +143,12 @@ export async function health() {
 
     // Live LLM/STT health uses server-resolved provider load blocks.
     const llmOk = !!(j.response_llm_load?.ok && j.response_llm_load?.loaded);
-    const sttOk = j.stt_backend === 'llm'
+    const sttOk = !state.audioLimitsError && (j.stt_backend === 'llm'
       ? !!(j.multimodal_stt_load?.ok && j.multimodal_stt_load?.loaded)
-      : !!j.whisper_available;
+      : !!j.whisper_available);
     const parts = [];
     parts.push(`LLM ${llmOk ? 'up' : 'down'}${llmOk ? '' : ' (' + (j.response_llm_load?.error || 'model not loaded') + ')'}`);
-    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + (j.multimodal_stt_load?.error || 'speech runtime unavailable') + ')'}`);
+    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + (state.audioLimitsError || j.multimodal_stt_load?.error || 'speech runtime unavailable') + ')'}`);
     const liveEl = $('settingsLiveStatus');
     if (liveEl) liveEl.textContent = parts.join(' · ');
   } else {

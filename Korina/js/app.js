@@ -176,20 +176,25 @@ async function startRecording() {
   $('stopRecBtn').disabled = false;
   try {
     if (!await setupMic() || !isCurrent()) return;
-    makeRecorder(async () => {
+    makeRecorder(async (metadata = {}) => {
       if (!isCurrent()) return;
       const controller = new AbortController();
       manualTranscriptionController = controller;
       try {
         releaseMic();
+        if (metadata.discarded || metadata.error) {
+          status($('sttStatus'), metadata.error || 'The recording exceeded its limit. Start a shorter recording.', 'bad');
+          return;
+        }
         status($('sttStatus'), 'Uploading to faster-whisper streaming STT…', 'warn');
         const blob = new Blob(state.recChunks, { type: state.recChunks[0]?.type || 'audio/webm' });
         const j = await transcribeBlob(blob, { signal: controller.signal, isCurrent });
         if (!isCurrent()) return;
         $('transcript').value = j.text || '';
         const seconds = Number.isFinite(j.seconds) ? j.seconds.toFixed(2) : '0.00';
-        status($('sttStatus'), `Transcribed in ${seconds}s · ${j.model || 'STT model'}`, 'good');
-        $('transcriptInfo').textContent = 'Manual recording transcribed.';
+        const limitMessage = metadata.limitReached ? ' Recording limit reached; start another recording to continue.' : '';
+        status($('sttStatus'), `Transcribed in ${seconds}s · ${j.model || 'STT model'}.${limitMessage}`, 'good');
+        $('transcriptInfo').textContent = `Manual recording transcribed.${limitMessage}`;
       } catch (e) {
         if (isCurrent() && e.name !== 'AbortError') status($('sttStatus'), 'Transcribe error: ' + e.message, 'bad');
       } finally {
@@ -199,7 +204,7 @@ async function startRecording() {
           $('stopRecBtn').disabled = true;
         }
       }
-    });
+    }, 500, { isCurrent });
     $('recBtn').disabled = true;
     $('stopRecBtn').disabled = false;
     status($('sttStatus'), 'Recording…', 'warn');

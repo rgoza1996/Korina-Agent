@@ -2,7 +2,7 @@
 
 import { state } from "./state.js";
 import { askAndSpeak } from "./agent-ui.js";
-import { $, status } from "./dom.js";
+import { $, status, log } from "./dom.js";
 import { markActivity, nextIdleDelayMs, minSpeechMs, finalSttMode, endpointMode } from "./settings-ui.js";
 import { cancelAckPlayback, preloadAckBuffers, playRandomAck } from "./acks.js";
 import { setupMic, releaseMic, makeRecorder, transcribeBlob } from "./recorder.js";
@@ -76,7 +76,11 @@ export function stopLive() {
   state.liveLoopId = null;
   state.bargeLoopId = null;
   if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') state.mediaRecorder.stop();
+  state.mediaRecorder = null;
+  state.recChunks = [];
   if (state.bargeRecorder && state.bargeRecorder.state !== 'inactive') state.bargeRecorder.stop();
+  state.bargeRecorder = null;
+  state.bargeChunks = [];
   releaseMic();
   stopTtsNow();
   cancelAckPlayback();
@@ -95,8 +99,33 @@ export function startLiveRecorder() {
   state.vadSilenceFrames = 0;
   state.partialWindowIndex = 0;
   state.latestPartialText = '';
-  makeRecorder(async () => {
+  makeRecorder(async (metadata) => {
     if (!state.live || session !== state.liveSession) return;
+    if (metadata.discarded) {
+      stopLive();
+      status($('sttStatus'), metadata.error, 'bad');
+      return;
+    }
+    if (metadata.limitReached) {
+      if (!state.liveSpeechStart && !state.vadSpeechFrames) {
+        // No speech was detected: replace the whole silent file, keeping the mic.
+        state.recChunks.length = 0;
+        try { startLiveRecorder(); liveMonitor(); }
+        catch (error) {
+          stopLive();
+          status($('sttStatus'), `Microphone restart failed: ${error.message} Try starting live mode again.`, 'bad');
+        }
+        return;
+      }
+      state.liveBusy = true;
+      state.partialNeedsFullPass = true;
+      state.partialFallbackReason = metadata.limitReached.message;
+      stopPartialTranscriptionLoop(true);
+      if (state.liveLoopId) cancelAnimationFrame(state.liveLoopId);
+      state.liveLoopId = null;
+      status($('sttStatus'), metadata.limitReached.message, 'warn');
+      log('Recording limit', metadata.limitReached.message);
+    }
     await handleLiveTurn(session);
   }, 500);
   startPartialTranscriptionLoop();

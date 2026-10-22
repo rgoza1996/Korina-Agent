@@ -5,6 +5,7 @@ import { $, status } from "./dom.js";
 import { resetAdaptiveVad, drawWave } from "./vad.js";
 import { sttDevice, sttModel, sttBackend, effectiveSttLlmModel } from "./settings-ui.js";
 import { recordSttBackend } from "./api.js";
+import { createBoundedRecorder } from "./bounded-recorder.js";
 
 let microphoneGeneration = 0;
 let microphoneSetup = null;
@@ -88,19 +89,21 @@ export function setupMic() {
 }
 
 // Each recorder owns its chunks; starting twice cannot replace an active capture.
-export function makeRecorder(onstop, timeslice = 0) {
+export function makeRecorder(onstop, timeslice = 500, { isCurrent = () => true, clock } = {}) {
   if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
     throw new Error('The microphone is already recording.');
   }
   if (!state.stream) throw new Error('The microphone is not ready. Try starting the recording again.');
-  const chunks = [];
   const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-  const recorder = new MediaRecorder(state.stream, { mimeType: mime });
-  recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
-  recorder.onstop = onstop;
-  state.recChunks = chunks;
-  state.mediaRecorder = recorder;
-  recorder.start(timeslice || undefined);
+  const capture = createBoundedRecorder(state.stream, {
+    mimeType: mime, onstop, clock,
+    isCurrent: () => state.mediaRecorder === capture.recorder && isCurrent(),
+  });
+  state.recChunks = capture.chunks;
+  state.mediaRecorder = capture.recorder;
+  try { capture.start(timeslice); }
+  catch (error) { capture.cancel(); state.mediaRecorder = null; state.recChunks = []; throw error; }
+  return capture;
 }
 
 function transcriptionAborted() {

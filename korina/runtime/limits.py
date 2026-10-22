@@ -1,7 +1,39 @@
-"""Reject oversized bodies before JSON or multipart parsing allocates them."""
+"""Resolve audio budgets and reject oversized bodies before parsing."""
+
+import math
+import os
+from typing import TypedDict
 
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+MAX_JSON_BODY_BYTES = 2 * 1024 * 1024
+MAX_AUDIO_UPLOAD_BYTES = 50 * 1024 * 1024
+DEFAULT_MAX_AUDIO_SECONDS = 300
+MAX_AUDIO_SECONDS = 1800
+
+
+class AudioLimits(TypedDict):
+    max_duration_seconds: float
+    max_upload_bytes: int
+
+
+def bounded_seconds(name: str, default: float, maximum: float) -> float:
+    try:
+        value = float(os.environ.get(name, default))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'{name} must be between 1 and {maximum:g} seconds') from exc
+    if not math.isfinite(value) or not 1 <= value <= maximum:
+        raise ValueError(f'{name} must be between 1 and {maximum:g} seconds')
+    return value
+
+
+def resolve_audio_limits(*, max_upload_bytes: int = MAX_AUDIO_UPLOAD_BYTES) -> AudioLimits:
+    """Shared decoded duration and effective multipart request budget."""
+    return {
+        'max_duration_seconds': bounded_seconds('KORINA_MAX_AUDIO_SECONDS', DEFAULT_MAX_AUDIO_SECONDS, MAX_AUDIO_SECONDS),
+        'max_upload_bytes': max_upload_bytes,
+    }
 
 
 class RequestSizeLimit:
@@ -11,13 +43,19 @@ class RequestSizeLimit:
     partially consumed oversized upload into a different error or side effect.
     """
 
-    def __init__(self, app: ASGIApp, *, json_bytes: int = 2 * 1024 * 1024,
-                 audio_bytes: int = 50 * 1024 * 1024):
+    def __init__(self, app: ASGIApp, *, json_bytes: int = MAX_JSON_BODY_BYTES,
+                 audio_bytes: int = MAX_AUDIO_UPLOAD_BYTES):
         self.app = app
         self.json_bytes = json_bytes
         self.audio_bytes = audio_bytes
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
+        if scope['type'] == 'http':
+            # Health must describe this ASGI stack's actual budget, including
+            # deployments with a tighter middleware override.
+            scope['korina.audio_max_upload_bytes'] = min(
+                scope.get('korina.audio_max_upload_bytes', self.audio_bytes), self.audio_bytes,
+            )
         if scope['type'] != 'http' or scope['method'] not in {'POST', 'PUT', 'PATCH'}:
             return await self.app(scope, receive, send)
         limit = self.audio_bytes if scope['path'].startswith('/api/transcribe') else self.json_bytes

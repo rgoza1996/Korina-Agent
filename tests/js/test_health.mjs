@@ -70,3 +70,50 @@ test('unsupported custom TTS health remains unverified instead of claiming offli
   assert.match(el('ttsHealth').textContent, /OpenAI TTS health unverified/);
   assert.doesNotMatch(el('ttsHealth').textContent, /offline/);
 });
+
+test('health accepts only resolved numeric capture budgets and preserves them through old or failed polls', async () => {
+  state.audioLimits = null;
+  state.audioLimitsError = '';
+  const initialConfig = structuredClone(state.appConfig);
+  const limits = { max_duration_seconds: 90.5, max_upload_bytes: 4 * 1024 * 1024 };
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ...healthy, audio_limits: limits }) });
+  await health();
+  assert.deepEqual(state.audioLimits, limits);
+  assert.notEqual(state.audioLimits, limits);
+  assert.deepEqual(state.appConfig, initialConfig, 'read-only budgets are not persisted settings');
+
+  for (const malformed of [
+    null, [], { max_duration_seconds: '120', max_upload_bytes: 1024 },
+    { max_duration_seconds: Infinity, max_upload_bytes: 1024 },
+    { max_duration_seconds: NaN, max_upload_bytes: 1024 },
+    { max_duration_seconds: 0, max_upload_bytes: 1024 },
+    { max_duration_seconds: 1801, max_upload_bytes: 1024 },
+    { max_duration_seconds: 120, max_upload_bytes: 0 },
+    { max_duration_seconds: 120, max_upload_bytes: 1.5 },
+    { max_duration_seconds: 120, max_upload_bytes: Number.MAX_SAFE_INTEGER + 1 },
+  ]) {
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ ...healthy, audio_limits: malformed }) });
+    await health();
+    assert.deepEqual(state.audioLimits, limits);
+  }
+  globalThis.fetch = async () => ({ ok: true, json: async () => healthy });
+  await health();
+  assert.deepEqual(state.audioLimits, limits);
+  globalThis.fetch = async () => { throw new Error('temporary network loss'); };
+  await health();
+  assert.deepEqual(state.audioLimits, limits);
+});
+
+test('an explicit server audio-limit error blocks recording until valid limits recover', async () => {
+  const error = 'KORINA_MAX_AUDIO_SECONDS must be between 1 and 1800 seconds';
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ...healthy, audio_limits: null, audio_limits_error: error }) });
+  await health();
+  assert.equal(state.audioLimitsError, error);
+  assert.match(el('settingsLiveStatus').textContent, /STT down \(KORINA_MAX_AUDIO_SECONDS/);
+  const recovered = { max_duration_seconds: 120, max_upload_bytes: 1024 * 1024 };
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ...healthy, audio_limits: recovered, audio_limits_error: null }) });
+  await health();
+  assert.equal(state.audioLimitsError, '');
+  assert.deepEqual(state.audioLimits, recovered);
+  assert.match(el('settingsLiveStatus').textContent, /STT up/);
+});

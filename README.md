@@ -55,6 +55,8 @@ python scripts/check_stack.py
 
 `/api/health` reports backend liveness and individual provider states. `/api/ready` returns HTTP 200 only when required voice components are ready, or HTTP 503 with a check map. A lazy, reachable Kokoro server counts as available; custom TTS remains unverified until `tts_health_url` is configured. Model warm-up is still part of rehearsal. `--allow-degraded` on the smoke command verifies the HTTP/assets layer without requiring models.
 
+Health also publishes read-only `audio_limits` with the effective decoded duration and upload budget. Invalid audio-limit environment settings appear as `audio_limits_error` and fail readiness while liveness remains available.
+
 ```bash
 python -m pip install -e '.[dev]'
 python -m pytest -q
@@ -83,7 +85,7 @@ See [observed verification](docs/verification.md) and [testing](docs/testing.md)
 | `KORINA_LLM_HOST` | Managed LLM bind address; default `127.0.0.1` |
 | `KORINA_PYTHON`, `KORINA_TTS_PYTHON` | Interpreters for installed user services |
 | `KORINA_TTS_HOST`, `KORINA_TTS_PORT` | Kokoro bind address and port; defaults `127.0.0.1:8880` |
-| `KORINA_MAX_AUDIO_SECONDS` | Decoded transcription duration cap; default 300 seconds |
+| `KORINA_MAX_AUDIO_SECONDS` | Decoded transcription duration cap; default 300 seconds, allowed range 1–1800 |
 | `KORINA_FFMPEG_TIMEOUT_SECONDS` | Audio conversion deadline; default 60 seconds |
 | `KORINA_TTS_ALLOWED_ORIGINS` | Comma-separated browser origins accepted by Kokoro |
 
