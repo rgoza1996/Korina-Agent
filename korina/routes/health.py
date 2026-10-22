@@ -9,6 +9,7 @@ import shutil
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from korina.asset_manifest import REQUIRED_FRONTEND_ASSETS
 from korina.config import (
     agent_base_url,
     agent_chat_url,
@@ -273,6 +274,20 @@ def _aggregate_ack(config: dict) -> tuple[int | None, dict]:
             'manifest_count': None, 'generated_count': None, 'missing_count': None}
 
 
+def _frontend_available() -> bool:
+    """Check the complete browser file contract without prescribing content."""
+    try:
+        for relative in REQUIRED_FRONTEND_ASSETS:
+            asset = APP_DIR / relative
+            if not asset.is_file():
+                return False
+            with asset.open('rb') as stream:
+                stream.read(1)
+    except OSError:
+        return False
+    return True
+
+
 @router.get('/api/health')
 async def health(request: Request):
     config = load_config()
@@ -364,7 +379,7 @@ async def health(request: Request):
     }
     checks = {
         'audio_limits': audio_limits is not None,
-        'frontend': (APP_DIR / 'index.html').is_file() and (APP_DIR / 'js' / 'app.js').is_file() and (APP_DIR / 'styles.css').is_file(),
+        'frontend': await asyncio.to_thread(_frontend_available),
         'response_llm': bool(loads['response_llm_load']['ok'] and loads['response_llm_load']['loaded']),
         'stt': bool(shutil.which('ffmpeg')) and (
             bool(loads['multimodal_stt_load']['ok'] and loads['multimodal_stt_load']['loaded'])

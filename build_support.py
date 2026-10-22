@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from runpy import run_path
 
 from setuptools.command.build_py import build_py
 
@@ -16,14 +17,10 @@ class BuildPy(build_py):
         destination = Path(self.build_lib) / 'korina' / '_assets'
         if destination.exists():
             shutil.rmtree(destination)
-        files = [
-            source / 'index.html',
-            source / 'styles.css',
-            source / 'Ack' / 'ack_phrases.json',
-            source / 'config' / 'config.example.json',
-            *sorted((source / 'js').glob('*.js')),
-        ]
-        for asset in files:
-            target = destination / asset.relative_to(source)
+        # Load only the constant module: build isolation has no app dependencies.
+        assets = run_path(str(Path(__file__).parent / 'korina' / 'asset_manifest.py'))['BUNDLED_ASSETS']
+        for relative in assets:
+            asset = source / relative
+            target = destination / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(asset, target)

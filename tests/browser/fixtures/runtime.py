@@ -10,18 +10,18 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+from runpy import run_path
 import shutil
 import sys
 import tempfile
 
 REPO = Path(__file__).resolve().parents[3]
 SOURCE_ASSETS = REPO / 'Korina'
+BUNDLED_ASSETS = run_path(str(REPO / 'korina' / 'asset_manifest.py'))['BUNDLED_ASSETS']
 
 
-def frontend_assets(source: Path = SOURCE_ASSETS) -> list[Path]:
-    return [Path('index.html'), Path('styles.css'), Path('Ack/ack_phrases.json'),
-            Path('config/config.example.json'),
-            *(path.relative_to(source) for path in sorted((source / 'js').glob('*.js')))]
+def frontend_assets() -> list[Path]:
+    return [Path(relative) for relative in BUNDLED_ASSETS]
 
 
 @contextmanager
@@ -31,7 +31,7 @@ def browser_runtime(*, source: Path = SOURCE_ASSETS):
     with tempfile.TemporaryDirectory(prefix='korina-browser-') as directory:
         root = Path(directory)
         app = root / 'app'
-        for relative in frontend_assets(source):
+        for relative in frontend_assets():
             destination = app / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source / relative, destination)

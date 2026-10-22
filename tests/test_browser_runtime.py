@@ -13,6 +13,8 @@ import time
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+from korina.asset_manifest import BUNDLED_ASSETS
+
 REPO = Path(__file__).resolve().parents[1]
 FIXTURES = REPO / 'tests/browser/fixtures'
 
@@ -74,9 +76,7 @@ def server(tmp_path):
 def test_browser_server_serves_matching_assets_and_mutates_only_temporary_settings(tmp_path):
     with server(tmp_path) as (base, runtime, sentinel, original):
         source = REPO / 'Korina'
-        assets = [Path('index.html'), Path('styles.css'), Path('Ack/ack_phrases.json'),
-                  Path('config/config.example.json'),
-                  *(path.relative_to(source) for path in sorted((source / 'js').glob('*.js')))]
+        assets = [Path(relative) for relative in BUNDLED_ASSETS]
         for asset in assets:
             assert (runtime / asset).read_bytes() == (source / asset).read_bytes(), str(asset)
             if str(asset) != 'config/config.example.json':
@@ -110,7 +110,7 @@ def test_browser_server_serves_matching_assets_and_mutates_only_temporary_settin
 
 def test_runtime_allowlist_excludes_private_files_and_restores_environment(tmp_path):
     source = tmp_path / 'assets'
-    for relative in ['index.html', 'styles.css', 'js/app.js', 'Ack/ack_phrases.json', 'config/config.example.json']:
+    for relative in BUNDLED_ASSETS:
         target = source / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text('{}' if target.suffix == '.json' else 'fixture')
@@ -120,12 +120,12 @@ def test_runtime_allowlist_excludes_private_files_and_restores_environment(tmp_p
 import json, os, shutil, sys
 from runtime import browser_runtime
 sys.path.insert(0, str(Path.cwd().parents[2]))
+from korina.asset_manifest import BUNDLED_ASSETS
 from korina.services import provider_processes
 before = dict(os.environ)
 before_proc = provider_processes.PROC_ROOT
 with browser_runtime(source=Path(os.environ['FIXTURE_ASSETS'])) as app:
-    assert set(str(path.relative_to(app)) for path in app.rglob('*') if path.is_file()) == {
-        'index.html', 'styles.css', 'js/app.js', 'Ack/ack_phrases.json', 'config/config.example.json', 'config.json'}
+    assert set(str(path.relative_to(app)) for path in app.rglob('*') if path.is_file()) == set(BUNDLED_ASSETS) | {'config.json'}
     config = json.loads((app / 'config.json').read_text())
     assert config['ack_enabled'] == config['agent_enabled'] == 'off'
     assert config['agent_api_key'] == ''

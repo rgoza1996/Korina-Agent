@@ -25,6 +25,7 @@ def main() -> int:
         # Import only after selecting disposable state, so no user config or
         # ACK cache is read or changed by this verification process.
         from fastapi.testclient import TestClient
+        from korina.asset_manifest import BUNDLED_ASSETS
         from korina.app_factory import create_app
         from korina.config import load_config, update_config_values
         from korina.util.paths import APP_DIR, CONFIG_PATH, ACK_DIR
@@ -34,12 +35,14 @@ def main() -> int:
         assert not (APP_DIR / 'config.json').exists()
         assert not list(APP_DIR.rglob('*.wav')), 'Wheel contains generated audio'
 
-        assets = ['index.html', 'styles.css', 'config/config.example.json', 'Ack/ack_phrases.json']
-        assets += [str(path.relative_to(APP_DIR)) for path in sorted((APP_DIR / 'js').glob('*.js'))]
-        assert len(assets) > 4, 'Wheel contains no JavaScript modules'
+        assets = BUNDLED_ASSETS
+        for asset in assets:
+            assert (APP_DIR / asset).is_file(), f'Missing wheel asset: {asset}'
+        expected_modules = sorted(Path(asset).name for asset in assets if asset.startswith('js/'))
+        assert sorted(path.name for path in (APP_DIR / 'js').glob('*.js')) == expected_modules
         if args.source_assets:
             expected = sorted(path.name for path in (args.source_assets / 'js').glob('*.js'))
-            assert sorted(path.name for path in (APP_DIR / 'js').glob('*.js')) == expected
+            assert expected_modules == expected
             for asset in assets:
                 assert (APP_DIR / asset).read_bytes() == (args.source_assets / asset).read_bytes(), asset
 

@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from korina.asset_manifest import REQUIRED_FRONTEND_ASSETS
+
 
 @pytest.fixture
 def asgi_server():
@@ -125,8 +127,9 @@ def _write_minimal_runtime(app_dir: Path = _TEST_APP_DIR) -> Path:
     (app_dir / "config").mkdir(parents=True, exist_ok=True)
     app_dir.joinpath("index.html").write_text(MINIMAL_INDEX)
     app_dir.joinpath("styles.css").write_text("body { font-family: sans-serif; }\n")
-    for name in ["app.js", "state.js", "providers-ui.js", "capability-filter.js"]:
-        app_dir.joinpath("js", name).write_text(f"export const testModule = {name!r};\n")
+    for relative in REQUIRED_FRONTEND_ASSETS:
+        if relative.startswith('js/'):
+            app_dir.joinpath(relative).write_text(f"export const testModule = {relative!r};\n")
     app_dir.joinpath("Ack", "ack_phrases.json").write_text(json.dumps({
         "phrases": [{"id": "ack_01", "text": "OK.", "tags": ["global"]}],
     }) + "\n")
