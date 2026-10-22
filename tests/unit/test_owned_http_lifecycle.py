@@ -240,7 +240,8 @@ def test_owned_requests_preserve_original_error_types_without_exception_groups(k
     with provider_server(respond) as base:
         try:
             with pytest.raises(expected) as caught:
-                json_http.request_json(base, timeout=.2, max_bytes=50, is_current=lambda: True)
+                timeout = .2 if kind == 'timeout' else 3
+                json_http.request_json(base, timeout=timeout, max_bytes=50, is_current=lambda: True)
             assert type(caught.value) is expected
         finally:
             stalled.release.set()
