@@ -1,18 +1,9 @@
-"""Runtime state container for Korina Voice Lab.
+"""Shared speech-model and acknowledgement state.
 
-Phase 1.3 gathers the module-level runtime mutables that previously lived at
-the top of ``Korina/korina_voice_lab.py`` into a single ``RuntimeState``
-dataclass. Each subsystem (``asr``, ``ack``, ``agent``) owns its own
-dataclass so the call sites read as ``state.asr.models`` /
-``state.ack.queue`` / ``state.agent.events``.
-
-The dataclass fields are the *exact* set of variables that previously lived
-as module globals. No behavior changes; this is a pure refactor.
-
-Locks are upgraded from ``threading.Lock`` to ``threading.RLock`` so nested
-acquisitions (e.g. an agent worker that already holds ``state.agent.lock``
-calling another helper that re-acquires it) do not deadlock. The blueprint
-explicitly called this out.
+Each subsystem owns its cache, counters, and reentrant locks. Agent events
+and worker state live separately in ``korina.agents.state``. Lazy Whisper
+iterators retain their owning AsrState so cleanup remains valid across pool
+threads and runtime replacement.
 """
 
 from __future__ import annotations
@@ -59,6 +50,5 @@ class RuntimeState:
     ack: AckState = field(default_factory=AckState)
 
 
-# Module-level singleton. Imported as `state` by the monolith and any
-# future korina.* modules. Do not instantiate more than once per process.
+# One shared owner for the process; tests may substitute isolated owners.
 state = RuntimeState()
