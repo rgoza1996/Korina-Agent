@@ -2,14 +2,9 @@
 
 Korina Converse owns the human-facing voice loop. Korina Agent receives bounded conversation snapshots and emits background reports, injection context, or permission requests. The current agent does not execute external tools.
 
-```text
-Browser ES modules
-  microphone → adaptive VAD → STT upload/stream
-                           → response LLM → Kokoro/OpenAI-compatible TTS
-  transcript snapshots → agent adapter → bounded worker → cursor-based events
+![Current browser, API, model and speech boundaries](../images/architecture.svg)
 
-FastAPI routes → small service functions → configured model endpoints
-```
+The browser orchestrates voice turns and calls the compatible TTS service directly. The API handles transcription, response-model requests, and agent delivery; the agent returns context and permissions through cursor-based events.
 
 ## Boundaries
 
