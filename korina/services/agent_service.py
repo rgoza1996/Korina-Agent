@@ -5,6 +5,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 import time
+from collections.abc import Callable
 
 from korina.config import (
     agent_auth_headers,
@@ -14,7 +15,7 @@ from korina.config import (
 )
 
 from korina.agents.state import agent_state
-from korina.runtime.json_http import HTTPStatusError, request_json
+from korina.runtime.json_http import HTTPStatusError, RequestCancelledError, request_json
 from korina.services.agent_priority import PERMISSION_REQUEST, classify_agent_priority
 
 from korina.schemas import (
@@ -25,7 +26,9 @@ from korina.schemas import (
 from korina.util.paths import LMSTUDIO_MODEL
 
 
-def generate_agent_state_report(req: AgentStateRequest) -> str:
+def generate_agent_state_report(
+    req: AgentStateRequest, *, is_current: Callable[[], bool] | None = None,
+) -> str:
     config = load_config()
     selected_model = (req.model or str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL)).strip()
     turns = []
@@ -78,7 +81,9 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
             'stream': False,
         }
     try:
-        body = request_json(agent_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90)
+        body = request_json(agent_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90, is_current=is_current)
+    except RequestCancelledError:
+        raise
     except HTTPStatusError as e:
         raise RuntimeError(f'Korina Agent {provider} HTTP {e.status_code}: {e.detail}') from e
     except Exception as e:
@@ -173,7 +178,11 @@ def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
             'transcript': state_req.transcript,
             'model': state_req.model,
         }
-        report = sanitize_agent_report(generate_agent_state_report(state_req))
+        def is_current() -> bool:
+            with agent_state.lock:
+                return generation == agent_state.generation
+
+        report = sanitize_agent_report(generate_agent_state_report(state_req, is_current=is_current))
         if not report:
             push_agent_event({'type': 'agent_status', 'status': 'empty_report_suppressed', 'priority': 'low', 'message': 'Empty/internal Korina Agent report suppressed.', 'agent_input': agent_input}, generation=generation)
             return
@@ -249,8 +258,8 @@ def reset_agent_state() -> None:
 def shutdown_agent_worker() -> None:
     """Drop queued work and suppress in-flight output; next submit can restart.
 
-    An active urllib request completes with its normal timeout. Shutdown does
-    not wait for that request and cannot cancel the remote model's execution.
+    Owned connected HTTP I/O stops on its next ownership check (about 50 ms).
+    Shutdown does not wait or establish cancellation of remote model compute.
     """
     global _executor, _worker_running, _worker_epoch
     with agent_state.lock:

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import math
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from functools import partial
 from typing import Any
 
@@ -21,6 +21,7 @@ import httpx
 MAX_JSON_BYTES = 2 * 1024 * 1024
 MAX_ERROR_BYTES = 16 * 1024
 READ_CHUNK_BYTES = 64 * 1024
+OWNERSHIP_POLL_SECONDS = .05
 
 
 class HTTPStatusError(RuntimeError):
@@ -85,6 +86,45 @@ def _origin(url: httpx.URL) -> tuple[str, str, int]:
     return url.scheme, url.host, url.port or (443 if url.scheme == 'https' else 80)
 
 
+async def _run_owned_request(
+    operation: Callable[[], Awaitable[bytes]], is_current: Callable[[], bool] | None,
+) -> bytes:
+    if is_current is None:
+        return await operation()
+    _check_current(is_current)
+    result: bytes | None = None
+    failure: BaseException | None = None
+    ownership_failure: Exception | None = None
+    with anyio.CancelScope() as request_scope:
+        async def watch_ownership() -> None:
+            nonlocal ownership_failure
+            while True:
+                try:
+                    _check_current(is_current)
+                except Exception as exc:
+                    ownership_failure = exc
+                    request_scope.cancel()
+                    return
+                await anyio.sleep(OWNERSHIP_POLL_SECONDS)
+
+        async with anyio.create_task_group() as tasks:
+            tasks.start_soon(watch_ownership)
+            try:
+                result = await operation()
+            except BaseException as exc:
+                # Raise outside the task group so callers retain HTTP status,
+                # timeout and validation errors, without ExceptionGroup wrapping.
+                failure = exc
+            finally:
+                tasks.cancel_scope.cancel()
+    if ownership_failure is not None:
+        raise ownership_failure
+    if failure is not None:
+        raise failure
+    assert result is not None
+    return result
+
+
 async def _request_bytes(
     url: str, *, deadline: float, timeout: float, method: str,
     headers: Mapping[str, str] | None, json_body: Any, max_bytes: int,
@@ -145,6 +185,9 @@ def request_bytes(
     HTTP(S) only. Redirects retain the same deadline; provider credentials are
     removed when crossing origins. OS DNS resolver shutdown remains subject
     to platform behavior; the deadline cancels connected network operations.
+    An optional fast, synchronous ``is_current`` predicate also cancels
+    connected I/O when ownership expires, checked about every 50 ms without
+    another thread. This does not establish cancellation of remote compute.
     """
     timeout = float(timeout)
     if not math.isfinite(timeout) or timeout <= 0:
@@ -158,23 +201,25 @@ def request_bytes(
     if parsed.scheme not in {'http', 'https'} or not parsed.host:
         raise ValueError('provider request requires an http(s) URL')
     deadline = time.monotonic() + timeout
-    return anyio.run(partial(
+    operation = partial(
         _request_bytes, url, deadline=deadline, timeout=timeout, method=method,
         headers=headers, json_body=json_body, max_bytes=max_bytes,
         is_current=is_current,
-    ))
+    )
+    return anyio.run(_run_owned_request, operation, is_current)
 
 
 def request_json(
     url: str, *, timeout: float, method: str = 'GET',
     headers: Mapping[str, str] | None = None, json_body: Any = None,
     max_bytes: int = MAX_JSON_BYTES,
+    is_current: Callable[[], bool] | None = None,
 ) -> Any:
     """Fetch and decode a bounded UTF-8 JSON response."""
     started = time.monotonic()
     data = request_bytes(
         url, timeout=timeout, method=method, headers=headers,
-        json_body=json_body, max_bytes=max_bytes,
+        json_body=json_body, max_bytes=max_bytes, is_current=is_current,
     )
 
     def reject_constant(value: str) -> None:
@@ -190,6 +235,7 @@ def request_json(
         body = json.loads(data.decode('utf-8'), parse_constant=reject_constant, parse_float=finite_float)
     except RecursionError as exc:
         raise ValueError('provider JSON exceeded the supported nesting depth') from exc
+    _check_current(is_current)
     if time.monotonic() - started >= timeout:
         raise TimeoutError(f'provider request timeout after {timeout:g}s')
     return body

@@ -29,6 +29,8 @@ FastAPI routes → small service functions → configured model endpoints
 
 `runtime/json_http.py` shares HTTPX/AnyIO transport across model discovery, health, response/agent generation, multimodal transcription, provider status, and ACK downloads. Synchronous callers run in workers; connected I/O is asynchronous under a total network deadline. Successful JSON is capped at 2 MiB, error details at 16 KiB, and ACK WAVs at 2 MiB. Raw identity responses avoid unbounded decompression. Redirects share the deadline and discard unread bodies; credentials and cookies cannot cross origins. Operating-system DNS resolver shutdown remains platform-dependent.
 
+Background agent and ACK requests also carry ownership predicates. A small in-loop watcher closes their connected I/O when reset, shutdown, cache clear, or disable invalidates that owner, freeing the existing worker for fresh work. It adds no request thread and does not establish remote model-compute cancellation.
+
 Blank role credentials inherit response credentials only at the same normalized API base URL. Explicit independent endpoints require explicit credentials. Model refresh merges only its owned settings under shared activation admission, preserving unrelated edits and probe-cache changes.
 
 ## Health and readiness
