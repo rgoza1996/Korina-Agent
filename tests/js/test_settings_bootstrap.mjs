@@ -2,11 +2,11 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
 import { initializeSettingsForm, loadConfig, saveConfigNow } from '../../Korina/js/api.js';
-import { applyConfig } from '../../Korina/js/settings-ui.js';
+import { applyConfig, collectConfig, effectiveSttLlmModel } from '../../Korina/js/settings-ui.js';
 
 const elements = new Map();
 function element(id) {
-  if (!elements.has(id)) elements.set(id, { value: '', checked: false, textContent: '', className: '', options: [],
+  if (!elements.has(id)) elements.set(id, { value: '', checked: false, textContent: '', className: '', options: [], style: {}, dataset: {},
     querySelector() { return null; }, appendChild() {}, classList: { toggle() {} } });
   return elements.get(id);
 }
@@ -124,4 +124,129 @@ test('partial config preserves omitted reasoning, model selections, and activati
   assert.equal(element('sttLlmModel').value, '');
   assert.equal(element('llmReasoningEnabled').checked, false);
   assert.equal(element('sttLlmReasoningEnabled').checked, false);
+});
+
+const following = { llm_provider: 'openai-compatible', llm_base_url: 'http://response.test/v1', lm_model: 'response-a',
+  stt_backend: 'llm', stt_llm_provider: 'openai-compatible', stt_llm_base_url: 'http://response.test/v1', stt_llm_model: 'response-a',
+  agent_base_url: 'http://response.test/v1', agent_model: 'response-a' };
+
+test('successful saves reconcile server-derived following models while preserving the activation baseline', async () => {
+  applyConfig(following);
+  state.settingsBootstrap.observed = collectConfig();
+  const baseline = state.appConfigSnapshot;
+  const posts = [];
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/api/config', 'a save must not activate providers or perform model discovery');
+    posts.push(JSON.parse(options.body));
+    return response({ ...following, lm_model: 'response-b', stt_llm_model: 'response-b', agent_model: 'response-b' });
+  };
+  element('lmModel').value = 'response-b';
+  await saveConfigNow();
+  assert.deepEqual(posts, [{ lm_model: 'response-b' }]);
+  assert.equal(effectiveSttLlmModel(), 'response-b');
+  assert.equal(element('agentModel').value, 'response-b');
+  assert.equal(state.appConfig.stt_llm_model, 'response-b');
+  assert.equal(state.appConfigSnapshot, baseline);
+  assert.equal(state.appConfigSnapshot.lm_model, 'response-a');
+  assert.deepEqual(state.settingsBootstrap.dirty, {});
+  await saveConfigNow();
+  assert.equal(posts.length, 1, 'clean reconciliation must not create a second save');
+});
+
+test('an explicit STT edit during save survives reconciliation while untouched following agent fields advance', async () => {
+  applyConfig(following);
+  state.settingsBootstrap.observed = collectConfig();
+  const held = deferred(), posts = [];
+  globalThis.fetch = async (_url, options) => {
+    const patch = JSON.parse(options.body); posts.push(patch);
+    return posts.length === 1 ? held.promise : response({ ...following,
+      lm_model: 'response-b', stt_llm_model: 'independent-audio', agent_model: 'response-b' });
+  };
+  element('lmModel').value = 'response-b';
+  const saving = saveConfigNow();
+  element('sttLlmModel').value = 'independent-audio';
+  held.resolve(response({ ...following, lm_model: 'response-b', stt_llm_model: 'response-b', agent_model: 'response-b' }));
+  await saving;
+  assert.equal(element('sttLlmModel').value, 'independent-audio');
+  assert.equal(element('agentModel').value, 'response-b');
+  assert.equal(state.settingsBootstrap.dirty.stt_llm_model, 'independent-audio');
+  assert.equal(state.appConfig.stt_llm_model, 'response-b');
+  await saveConfigNow();
+  assert.deepEqual(posts, [{ lm_model: 'response-b' }, { stt_llm_model: 'independent-audio' }]);
+  assert.equal(state.appConfig.stt_llm_model, 'independent-audio');
+});
+
+test('confirmed independent STT and agent settings remain independent after a response-model save', async () => {
+  const independent = { ...following, stt_llm_base_url: 'http://audio.test/v1', stt_llm_model: 'audio-only',
+    agent_base_url: 'http://agent.test/v1', agent_model: 'agent-only' };
+  applyConfig(independent);
+  state.settingsBootstrap.observed = collectConfig();
+  globalThis.fetch = async () => response({ ...independent, lm_model: 'response-b' });
+  element('lmModel').value = 'response-b';
+  await saveConfigNow();
+  assert.equal(element('sttLlmBaseUrl').value, independent.stt_llm_base_url);
+  assert.equal(effectiveSttLlmModel(), 'audio-only');
+  assert.equal(element('agentBaseUrl').value, independent.agent_base_url);
+  assert.equal(element('agentModel').value, 'agent-only');
+});
+
+test('a late initial GET cannot revert derived values confirmed by a newer save', async () => {
+  applyConfig(following); state.settingsBootstrap.observed = collectConfig();
+  const held = deferred();
+  globalThis.fetch = async (_url, options) => options?.method === 'POST'
+    ? response({ ...following, lm_model: 'response-b', stt_llm_model: 'response-b', agent_model: 'response-b' }) : held.promise;
+  const reading = loadConfig();
+  element('lmModel').value = 'response-b'; await saveConfigNow();
+  held.resolve(response(following)); await reading;
+  assert.equal(effectiveSttLlmModel(), 'response-b');
+  assert.equal(element('agentModel').value, 'response-b');
+  assert.equal(state.appConfig.stt_llm_model, 'response-b');
+  assert.equal(state.appConfigSnapshot.lm_model, 'response-a');
+});
+
+test('a partial save response leaves omitted fields and explicit blank STT model unchanged', async () => {
+  applyConfig({ ...following, stt_llm_base_url: 'http://independent-audio.test/v1', stt_llm_model: '' });
+  state.settingsBootstrap.observed = collectConfig();
+  element('modelOptionsStatus').textContent = 'A previous discovery failure stays visible.';
+  globalThis.fetch = async () => response({ speed: 1.5 });
+  element('speed').value = '1.5'; await saveConfigNow();
+  assert.equal(element('sttLlmModel').value, '');
+  assert.equal(effectiveSttLlmModel(), '');
+  assert.equal(element('sttLlmBaseUrl').value, 'http://independent-audio.test/v1');
+  assert.equal(element('agentModel').value, 'response-a');
+  assert.equal(element('modelOptionsStatus').textContent, 'A previous discovery failure stays visible.');
+});
+
+test('a failed save cannot apply normalized response fields or clear dirty edits', async () => {
+  applyConfig(following); state.settingsBootstrap.observed = collectConfig();
+  const baseline = state.appConfigSnapshot;
+  globalThis.fetch = async () => response({ ...following, lm_model: 'response-b', stt_llm_model: 'response-b', detail: 'Disk unavailable' }, 503);
+  element('lmModel').value = 'response-b';
+  await assert.rejects(saveConfigNow(), /Disk unavailable/);
+  assert.equal(effectiveSttLlmModel(), 'response-a');
+  assert.equal(state.appConfig.lm_model, 'response-a');
+  assert.equal(state.settingsBootstrap.dirty.lm_model, 'response-b');
+  assert.equal(state.appConfigSnapshot, baseline);
+});
+
+test('derived provider/base changes update cached editability and probe selection without new provider requests', async () => {
+  applyConfig({ ...following, stt_llm_provider: '', stt_llm_base_url: '', stt_llm_model: '' });
+  state.settingsBootstrap.observed = collectConfig();
+  state._capabilitiesCache = { providers: { 'openai-compatible': { editable_base_url: true }, lmstudio: { editable_base_url: false } }, agentProviders: {} };
+  element('sttLlmBaseUrl').disabled = true;
+  state.audioUnsupported = { 'openai-compatible::http://response.test/v1::response-b': { reason: 'cached unsupported' } };
+  globalThis.fetch = async url => {
+    assert.equal(url, '/api/config', 'cached metadata reconciliation must not discover or activate providers');
+    return response({ ...following, lm_model: 'response-b', stt_llm_model: 'response-b', agent_model: 'response-b' });
+  };
+  element('lmModel').value = 'response-b'; await saveConfigNow();
+  assert.equal(element('sttLlmBaseUrl').disabled, false);
+  assert.equal(element('clearProbeBtn').dataset.model, 'response-b');
+  assert.equal(element('clearProbeBtn').style.display, '');
+  globalThis.fetch = async () => response({ ...following, llm_provider: 'lmstudio', llm_base_url: 'http://localhost:1234/v1',
+    stt_llm_provider: 'lmstudio', stt_llm_base_url: 'http://localhost:1234/v1', lm_model: 'response-b', stt_llm_model: 'response-b' });
+  element('llmProvider').value = 'lmstudio'; await saveConfigNow();
+  assert.equal(element('sttLlmProvider').value, 'lmstudio');
+  assert.equal(element('sttLlmBaseUrl').disabled, true);
+  assert.equal(element('clearProbeBtn').style.display, 'none');
 });

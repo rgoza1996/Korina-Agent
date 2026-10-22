@@ -14,7 +14,7 @@ import {
   llmProvider, llmBaseUrl, lmModel,
   markActivity,
 } from './settings-ui.js';
-import { loadAgentModelOptions, loadCapabilities, setBaseUrlEditability } from './providers-ui.js';
+import { loadAgentModelOptions, loadCapabilities, setBaseUrlEditability, syncAudioProbeButton } from './providers-ui.js';
 
 let capabilitiesInFlight = null;
 const CAPABILITIES_FAILURE = 'Provider capabilities unavailable: ';
@@ -185,6 +185,16 @@ function flushConfigSaves() {
         for (const [key, value] of Object.entries(saved)) bootstrap.confirmed[key] = { value, revision: bootstrap.writeRevision };
         state.appConfig = { ...state.appConfig, ...saved };
         clearSavedEdits(config);
+        // The server may move following STT/agent fields with the response
+        // model. Reconcile confirmed values without replacing newer edits or
+        // advancing the last activated provider's baseline.
+        if (Object.entries(saved).some(([key, value]) => Object.hasOwn(bootstrap.observed, key)
+          && !(key === 'agent_enabled' && state.agentControlPending)
+          && !Object.hasOwn(bootstrap.dirty, key) && !sameSetting(value, bootstrap.observed[key]))) {
+          applyConfig(saved, { preserveKeys: Object.keys(bootstrap.dirty), updateSnapshot: false });
+          syncAudioProbeButton();
+          if (state._capabilitiesCache) await setBaseUrlEditability();
+        }
         bootstrap.observed = collectConfig();
         if (control) agentControlQueue.shift();
       }
