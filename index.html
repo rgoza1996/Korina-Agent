@@ -84,15 +84,17 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
  Korina is designed to keep your voice data and inference on your own hardware —
  and it can use cloud-compatible endpoints when explicitly configured.
  </p>
+ <p>The focused Meta hackathon prototype uses local Whisper transcription and Kokoro speech around one useful <strong>Meta Model API</strong> answer using conversation context and a current-session remembered fact. The named profile is implemented as pre-event preparation; authenticated live Meta output and prompt-cache hits remain unverified. Record the actual kickoff SHA and event additions in the <a href="Hackathon.html#event-baseline">preparation ledger</a>; this scope makes no durable-memory or tool-execution claim.</p>
 
  <div class="card-grid">
  <div class="card"><h3> Korina Converse</h3><p>Browser-based voice UI: live VAD, rolling partial transcription, response LLM, Kokoro TTS, barge-in, and voice interrupts.</p><div class="card-footer"><a href="Converse.html">Read more →</a></div></div>
  <div class="card"><h3> Korina Agent</h3><p>Background agent that receives transcript deltas, maintains compact state, emits reports/events, and asks Converse to inject context or speak interrupts.</p><div class="card-footer"><a href="Agent.html">Read more →</a></div></div>
  <div class="card"><h3> Agent Side Channel</h3><p>The <code>ConverseChannel</code> protocol defines the seam for compatible adapters. The built-in Korina adapter is implemented; external integrations require their own working adapter.</p><div class="card-footer"><a href="Converse.html">See Converse protocol →</a></div></div>
- <div class="card"><h3> Provider Architecture</h3><p>Backend-owned registry at GET /api/capabilities. Supports llama.cpp, LM Studio, Ollama, OpenAI-compatible, and Anthropic-compatible.</p><div class="card-footer"><a href="Providers.html">Read more →</a></div></div>
+ <div class="card"><h3> Provider Architecture</h3><p>Backend-owned registry at GET /api/capabilities. Responses support llama.cpp, LM Studio, Ollama, Meta Model API, and generic OpenAI-compatible endpoints. Agent settings also support Anthropic-compatible APIs.</p><div class="card-footer"><a href="Providers.html">Read more →</a></div></div>
  <div class="card"><h3> CI & Testing</h3><p>Backend, frontend, and packaging checks protect the preview. Live model and microphone rehearsal remains a separate gate.</p><div class="card-footer"><a href="Testing.html">Read more →</a></div></div>
  <div class="card"><h3> Open Issues</h3><p>Hackathon progress and the remaining architecture backlog are tracked in GitHub Issues.</p><div class="card-footer"><a href="Issues.html">Read more →</a></div></div>
  </div>
+ <p><a href="Providers.html#meta-model-api">Meta Model API</a> uses the fixed <code>https://api.meta.ai/v1</code> base and registry-scoped <code>MODEL_API_KEY</code> default. Choose an account-enabled model through authenticated discovery. Requests use the existing Chat Completions shape with supplied context and model-default reasoning; a generic/custom hostname does not implicitly receive Meta credentials. See the <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/README.md">current setup contract</a>.</p>
 
  <h2>Latest: hackathon refactor preview</h2>
  <div class="card-grid">
