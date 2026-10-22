@@ -9,10 +9,10 @@ export default defineConfig({
   reporter: 'list',
   // Activate the Python environment before invoking the browser suite.
   webServer: process.env.KORINA_TEST_BASE_URL ? undefined : {
-    command: 'python3 -m korina.app',
-    env: { KORINA_HOST: '127.0.0.1', KORINA_PORT: '8765' },
+    command: 'python3 tests/browser/fixtures/browser_server.py',
     url: 'http://127.0.0.1:8765/api/health',
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 5000 },
     timeout: 30_000,
   },
   use: {

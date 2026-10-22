@@ -2,22 +2,18 @@
 from __future__ import annotations
 
 import json
-import os
-from pathlib import Path
-import shutil
 import signal
 import socket
 import socketserver
 import sys
-import tempfile
 import threading
 import time
 from contextlib import asynccontextmanager
 
 import anyio
 import uvicorn
+from runtime import REPO, browser_runtime
 
-REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO))
 phase = sys.argv[1]
 entered = threading.Event()
@@ -71,18 +67,16 @@ class ProviderServer(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
-with tempfile.TemporaryDirectory(prefix='korina-browser-chat-') as directory:
-    runtime = Path(directory)
-    shutil.copytree(REPO / 'Korina', runtime, dirs_exist_ok=True)
+with browser_runtime() as runtime:
     provider = ProviderServer(('127.0.0.1', 0), Provider)
     provider_thread = threading.Thread(target=provider.serve_forever, kwargs={'poll_interval': .01}, daemon=True)
     provider_thread.start()
-    (runtime / 'config.json').write_text(json.dumps({
-        'ack_enabled': 'off', 'agent_enabled': 'off', 'llm_provider': 'openai-compatible',
+    config = json.loads((runtime / 'config.json').read_text())
+    config.update({
         'llm_base_url': f'http://127.0.0.1:{provider.server_address[1]}/v1',
-        'lm_model': 'fixture-model', 'stt_backend': 'whisper',
-    }))
-    os.environ['KORINA_APP_DIR'] = directory
+        'lm_model': 'fixture-model',
+    })
+    (runtime / 'config.json').write_text(json.dumps(config))
     from korina.app_factory import create_app
     from korina.services import response_llm
 
