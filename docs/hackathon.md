@@ -41,6 +41,8 @@ See [API reference](https://dev.meta.ai/docs/api-reference), [Chat Completions](
 
 ## One interaction to demonstrate
 
+The [suggested practice outline](demo-script.md) helps rehearse the interaction and record actual evidence; its pacing is not an official submission requirement.
+
 1. Start a clean conversation and say: “Remember that this demo uses a headset, and I want answers in two sentences.”
 2. Ask: “Given what I told you, what should I rehearse first?”
 3. Verify the actual Meta request includes the earlier fact and current question once. Hear a useful answer that respects both constraints.

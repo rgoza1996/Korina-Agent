@@ -30,9 +30,11 @@ To repeat the installed-wheel check, install the built wheel in a separate envir
 
 ## Current verification checkpoint
 
-The current draft stopped at the requested usage limit before its final complete rerun and native Meta UI case. See [budget-stop status](verification.md#budget-stop-and-current-draft); the following complete result remains pinned to its earlier source.
+On 2026-10-22, immutable code `d48a374` passed **1128 Python tests / 94% coverage** on Python 3.12.3. Clean Python 3.10.20, 3.11.15, 3.13.14 and a separate minimum-dependency Python 3.10 tier each passed **1127 + one optional Whisper-decoder skip**; Python 3.12 exercised the actual decoder. All **402 Node and 82 real Chromium cases**, expanded Ruff/ESLint, mypy over 67 modules, isolated builds and all **30 matching installed assets** passed. Python tiers finished before the managed browser server started.
 
-On 2026-10-22, immutable checkpoint `96a8d5c` passed 1051 Python tests with 94% coverage on Python 3.12.3, 357 executable Node tests, 76 real Chromium tests, expanded Ruff/ESLint, mypy over 66 modules, isolated source/wheel builds, and an installed-wheel check of all 30 matching assets. Clean Python 3.10.20, 3.11.15, and 3.13.14 each passed 1050 tests with only the optional Whisper decoder skipped; Python 3.12 exercised it. GitHub Actions jobs did not start because of the account payment/spending-limit problem. See [observed verification](verification.md) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) for exact boundaries and later work.
+The native Meta settings/config→next-request case and independent credential-isolation proof passed with fixture model responses. [Current evidence](verification.md#current-archived-verification) and the [versioned summary](verification/d48a374.json) identify the exact source, dependency versions, outcomes and asset hashes. Earlier actual CPU speech/model observations retain their original source identity. Hosted GitHub Actions did not start because of the account payment/spending-limit problem; local results do not establish a passing hosted run or authenticated Meta access.
+
+The subsequent UI-only `8583016` passed 403 Node tests, 51 Python frontend checks, native Meta Chromium, ESLint, rebuilt packages and all 30 installed assets. It changes labels/hints and their tests, with no production Python, authentication, capability-data or STT-filter change. [Focused follow-up evidence](verification/8583016.json) remains separate from the complete `d48a374` matrix.
 
 ## HTTP smoke without changing state
 
