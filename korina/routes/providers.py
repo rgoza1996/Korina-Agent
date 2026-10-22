@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
@@ -19,6 +20,7 @@ from korina.util.presets import capabilities_for_section
 
 router = APIRouter()
 _activation_lock = provider_activation_lock
+MAX_PROBE_BATCH_SECONDS = 60.0
 
 
 @router.post('/api/llm/provider/activate')
@@ -116,21 +118,26 @@ def probe_models(req: ProbeModelsRequest):
         raise HTTPException(status_code=400, detail='provider is required')
     if not base_url_clean:
         raise HTTPException(status_code=400, detail='base_url is required')
-    if not req.models:
+    models = list(dict.fromkeys(model.strip() for model in req.models if model.strip()))
+    if not models:
         raise HTTPException(status_code=400, detail='models list is empty')
 
     cache_before = config_audio_unsupported()
     triple_prefix = f"{provider_id}::"
 
     results: dict[str, dict] = {}
-    for model in req.models:
-        mid = str(model or '').strip()
-        if not mid:
-            continue
+    deadline = time.monotonic() + MAX_PROBE_BATCH_SECONDS
+    skipped: list[str] = []
+    for index, mid in enumerate(models):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            skipped = models[index:]
+            break
+        timeout = min(15.0, remaining)
         if req.api_key_env is None:
-            probe = probe_audio_support(provider_id, base_url_clean, mid)
+            probe = probe_audio_support(provider_id, base_url_clean, mid, timeout=timeout)
         else:
-            probe = probe_audio_support(provider_id, base_url_clean, mid, api_env=req.api_key_env)
+            probe = probe_audio_support(provider_id, base_url_clean, mid, api_env=req.api_key_env, timeout=timeout)
         triple = triple_key(provider_id, base_url_clean, mid)
         results[mid] = {
             'supported': probe.supported,
@@ -153,4 +160,7 @@ def probe_models(req: ProbeModelsRequest):
         'base_url': base_url_clean,
         'triple_prefix': triple_prefix,
         'results': results,
+        'skipped_models': skipped,
+        'timed_out': bool(skipped),
+        'max_seconds': MAX_PROBE_BATCH_SECONDS,
     }

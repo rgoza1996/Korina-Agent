@@ -357,3 +357,21 @@ test('a retained saved STT choice keeps its known no-audio and red unusable warn
   assert.match(saved.textContent, /no audio.*red: no audio input support.*saved; not listed/);
   assert.match(saved.title, /no audio input support.*retained/);
 });
+
+test('large local refresh keeps the selected STT model inside the bounded audio probe batch', async () => {
+  element('llmProvider').value = element('sttLlmProvider').value = 'llama.cpp';
+  const ids = Array.from({ length: 65 }, (_, index) => `local-${index}.gguf`);
+  element('sttLlmModel').value = ids.at(-1);
+  const refreshing = localRefresh(); await waitRequests(2);
+  pending[1].resolve(response({ discovered_count: ids.length, restarted: false })); await waitRequests(3);
+  pending[2].resolve(response({ roots: [] })); await waitRequests(4);
+  const catalog = { ...payload('local'), stt_llm_models: ids, llama_cpp_local_models: ids };
+  pending[3].resolve(response(catalog)); await waitRequests(5);
+  const probe = JSON.parse(pending[4].options.body);
+  assert.equal(probe.models.length, 64, 'the API accepts at most 64 models');
+  assert.equal(probe.models[0], ids.at(-1), 'selected STT model is checked first');
+  pending[4].resolve(response({ results: {}, skipped_models: probe.models.slice(4), timed_out: true })); await waitRequests(6);
+  pending[5].resolve(response(catalog)); await refreshing;
+  assert.match(element('localModelsStatus').textContent, /1.*catalog.*omitted/i);
+  assert.match(element('localModelsStatus').textContent, /60.*not probed.*time/i);
+});

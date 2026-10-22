@@ -101,7 +101,7 @@ def test_probe_models_passes_explicit_auth_env(monkeypatch, client):
 
     calls = []
 
-    def probe(provider, base_url, model, *, api_env):
+    def probe(provider, base_url, model, *, api_env, timeout):
         calls.append(api_env)
         return ProbeResult(model, True, '', 1, 200, '', '')
 
@@ -122,3 +122,52 @@ def test_probe_models_bounds_transport_and_model_identifiers(client):
         {'models': ['m' * 513]}, {'api_key_env': 'k' * 129},
     ]:
         assert client.post('/api/llm/probe-models', json={**default, **extra}).status_code == 422
+
+
+def test_probe_batch_deadline_returns_completed_results_and_skips_remaining_without_caching(monkeypatch, client):
+    from korina.routes import providers
+    from korina.services.active_probe import ProbeResult
+    from korina.config import config_audio_unsupported
+    now = [100.0]
+    calls = []
+    monkeypatch.setattr(providers.time, 'monotonic', lambda: now[0])
+
+    def probe(provider, base, model, *, timeout):
+        calls.append((model, timeout))
+        now[0] += timeout
+        return ProbeResult(model, False, 'transient_runtime_error', int(timeout * 1000), 0, '', 'timeout')
+
+    monkeypatch.setattr(providers, 'probe_audio_support', probe)
+    result = client.post('/api/llm/probe-models', json={
+        'provider': 'openai-compatible', 'base_url': 'https://fixture.test/v1',
+        'models': [f'model-{i}' for i in range(10)],
+    })
+    assert result.status_code == 200
+    body = result.json()
+    assert calls == [(f'model-{i}', 15.0) for i in range(4)]
+    assert set(body['results']) == {f'model-{i}' for i in range(4)}
+    assert body['timed_out'] is True
+    assert body['skipped_models'] == [f'model-{i}' for i in range(4, 10)]
+    assert body['max_seconds'] == 60
+    assert config_audio_unsupported() == {}
+
+
+def test_final_probe_uses_only_remaining_time_and_deduplicates_ids(monkeypatch, client):
+    from korina.routes import providers
+    from korina.services.active_probe import ProbeResult
+    now = [0.0]
+    calls = []
+    monkeypatch.setattr(providers.time, 'monotonic', lambda: now[0])
+
+    def probe(provider, base, model, *, timeout):
+        calls.append((model, timeout))
+        now[0] += 23  # Include work outside the HTTP request as well.
+        return ProbeResult(model, True, '', 1, 200, '', '')
+
+    monkeypatch.setattr(providers, 'probe_audio_support', probe)
+    result = client.post('/api/llm/probe-models', json={
+        'provider': 'llama.cpp', 'base_url': 'http://fixture.test/v1',
+        'models': [' first ', 'first', '', 'second', 'third', 'fourth'],
+    }).json()
+    assert calls == [('first', 15), ('second', 15), ('third', 14)]
+    assert result['skipped_models'] == ['fourth']

@@ -10,7 +10,10 @@ import {
   effectiveSttLlmProvider,
   effectiveSttLlmBaseUrl,
   effectiveSttLlmApiKeyEnv,
+  effectiveSttLlmModel,
 } from './settings-ui.js';
+
+const MAX_PROBE_MODELS = 64;
 
 const listEl = () => document.getElementById('localModelRootsList');
 const statusEl = () => document.getElementById('localModelsStatus');
@@ -161,16 +164,22 @@ async function probeActiveModels(payload, isCurrent) {
     ...(payload.lmstudio_catalog_models || []),
   ]);
   // Filter out mmproj sidecars; they aren't real models.
-  const candidates = Array.from(allIds).filter(
+  const available = Array.from(allIds).filter(
     (id) => id && !/mmproj/i.test(String(id))
   );
-  if (candidates.length === 0) return;
+  const selected = effectiveSttLlmModel();
+  if (available.includes(selected)) available.splice(available.indexOf(selected), 1);
+  if (selected && allIds.has(selected) && !/mmproj/i.test(selected)) available.unshift(selected);
+  const candidates = available.slice(0, MAX_PROBE_MODELS);
+  const omitted = available.length - candidates.length;
+  if (!candidates.length) return;
 
   setStatus('Probing audio support for ' + candidates.length + ' model' + (candidates.length === 1 ? '' : 's') + '…');
 
   let probed = 0;
   let failed = 0;
   let transient = 0;
+  let skipped = 0;
   try {
     const r = await fetch('/api/llm/probe-models', {
       method: 'POST',
@@ -181,6 +190,7 @@ async function probeActiveModels(payload, isCurrent) {
     if (!r.ok) throw await responseError(r, { isCurrent });
     const j = await r.json();
     if (!isCurrent()) return;
+    skipped = Array.isArray(j.skipped_models) ? j.skipped_models.length : 0;
     for (const id of Object.keys(j.results || {})) {
       probed++;
       if (!j.results[id].supported) {
@@ -200,7 +210,9 @@ async function probeActiveModels(payload, isCurrent) {
   const parts = ['Probed ' + probed + ' model' + (probed === 1 ? '' : 's')];
   if (failed > 0) parts.push(failed + ' confirmed audio-unsupported');
   if (transient > 0) parts.push(transient + ' transient (no cache)');
-  setStatus(parts.join(' · ') + '. Dropdown refreshed.', 'good');
+  if (omitted) parts.push(omitted + ' catalog choices omitted (64-model batch limit)');
+  if (skipped) parts.push(skipped + ' not probed (batch time limit)');
+  setStatus(parts.join(' · ') + '. Dropdown refreshed.', omitted || skipped ? 'warn' : 'good');
 }
 
 async function refreshLocalModels() {
