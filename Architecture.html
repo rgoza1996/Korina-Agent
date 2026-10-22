@@ -176,6 +176,7 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
 <li>Response, agent, and multimodal STT share completion validation. Malformed provider payloads produce short structural errors; valid Unicode text must fit the existing 8192-character conversation limit before it enters state/history.</li>
 <li>Candidate agent discovery uses a bounded POST body without saving settings. Browser errors show known reasons and validation fields with bounded text rather than dumping raw request inputs.</li>
 <li>Health aggregates server-resolved providers and readiness signals; frontend polling distinguishes transient misses, loading, and unavailable services.</li>
+<li>Browser startup keeps controls and diagnostics available through failed or delayed capability/model discovery. Settings saves send observed edits only; a late initial read preserves drafts and newer successful saves. Failed settings reads can retry from Settings.</li>
 <li>Wheels bundle the UI; generated config and ACK audio stay in a writable user directory. Linux service units render checkout/interpreter paths instead of assuming a home layout.</li></ul>
 <h2>Remaining architecture work</h2>
 <p>The adapter seam is implemented, but an arbitrary external agent still needs a compatible adapter. Tool execution, durable tasks, project trust enforcement, and memory remain separate from the reporting loop. Live provider and hardware validation remains part of the <a href="Hackathon.html">rehearsal gate</a>.</p>
