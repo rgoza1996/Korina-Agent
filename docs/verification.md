@@ -4,6 +4,8 @@ Work is tracked in [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24) a
 
 ## Deterministic and browser checks
 
+Follow-up changes through `64d74c7` passed **636 Python tests**. Executable Node coverage reached **219 tests**; the full real Chromium suite passed **31 tests**, with another three native discovery component checks run separately. These cover bounded provider transport, strict SSE/binary playback, current-query discovery, scoped role credentials, one leased Whisper model selection, safe refresh, and stale connected agent/ACK cancellation. The complete clean Python matrix and current installed-wheel check will be repeated at the next integrated checkpoint.
+
 The capture checkpoint at `8d93cd9` passed **496 Python tests with 87% coverage on Python 3.12.3**. Clean Python 3.11.15 and 3.13.14 environments each passed 495 tests with one intentional skip: the optional real Whisper decoder is installed and exercised in the 3.12 environment. The earlier `dd7f990` checkpoint passed all 483 baseline tests on Python 3.10.20 as well. Real FFmpeg compressed-audio limits ran in every environment.
 
 The checkpoint also passed **131 executable Node tests (+17 label assertions) and 27 real Chromium tests**. Ruff's complete Pyflakes correctness rules, projectwide mypy over 55 modules, ESLint, source/wheel builds, and a fresh isolated wheel check passed. Installed JavaScript files matched the committed snapshot byte for byte; the wheel served every UI asset and exercised settings validation, writable configuration, and protocol discovery. The earlier speech wheel check also confirmed the PyAV compatibility bound in package metadata.
@@ -75,6 +77,8 @@ After the partial-queue refactor, the same fake-microphone WAV and actual speech
 
 The transcript retained the same known small-model recognition errors. Aborting the browser request does not establish that already running backend inference was cancelled.
 
+A repeat from an immutable archive of `64d74c7` exercised the bounded capture, strict SSE, shared HTTP transport, and leased Whisper cache together. Native playback reached its `ended` event **21.642 seconds** after Live was clicked. One partial request completed, the next was aborted, and final SSE handled 8.76 seconds of audio in 4.495 seconds. The local response fixture received the current user once; actual Kokoro returned 60,600 samples at 24 kHz, and the 2.525-second native buffer completed with nonzero RMS. The browser raised no page/console errors, and Stop released the microphone. This third timing is another single observation, not a controlled comparison.
+
 ## Agent and permission integration
 
 Seven integration scenarios passed using the real backend, adapter/worker/event state, HTTP transport, and Chromium modules. Model responses came from a deterministic local OpenAI-compatible fixture; speech used 240 silent PCM frames. This check did not perform speech recognition, external model inference, or tool execution.
@@ -87,6 +91,8 @@ Seven integration scenarios passed using the real backend, adapter/worker/event 
 - Agent model HTTP concurrency remained one, and the browser reported no runtime or console errors.
 
 The harness called exported browser delivery/poll functions for deterministic timing while ordinary intervals remained active with long delivery thresholds. Separate executable and Chromium regressions cover failed permission confirmation, retry coalescing, and preserving a newer pending question.
+
+Transport follow-up tests hold connected agent and ACK HTTP requests across reset, disable, cache clear, or shutdown. Ownership changes close stale I/O and let the same worker complete fresh work; generation checks prevent stale publication. This establishes client connection/worker recovery, not cancellation of provider-side model computation. The in-loop watcher checks ownership about every 50 ms; operating-system DNS resolver shutdown remains platform-dependent.
 
 ## Still requiring rehearsal
 

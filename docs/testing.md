@@ -24,6 +24,8 @@ To repeat the installed-wheel check, install the built wheel in a separate envir
 
 ## Current verification checkpoint
 
+Follow-up changes through `64d74c7` passed 636 Python tests. Node coverage reached 219 executable tests; the full real Chromium suite passed 31 tests, with three more native discovery component checks run separately. The clean Python matrix and latest installed-wheel check will be repeated at the next integrated checkpoint. The details below retain the earlier complete capture/package checkpoint for comparison.
+
 On 2026-10-22, capture checkpoint `8d93cd9` passed 496 Python tests with 87% coverage, 131 Node tests (+17 label assertions), 27 real Chromium tests, mypy, Ruff/ESLint, source/wheel builds, and an isolated wheel install. Clean Python 3.11 and 3.13 each passed 495 tests with only the optional Whisper decoder skipped; Python 3.12 exercised it. The earlier `dd7f990` baseline also passed all 483 tests on Python 3.10. GitHub Actions jobs did not start because GitHub reported an account payment/spending-limit problem. This is local evidence, not a passing hosted run. See [observed verification](verification.md) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) for precise boundaries and later results.
 
 ## HTTP smoke without changing state
