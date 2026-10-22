@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { createServer } from 'node:http';
 
 async function picker(page) {
   // Load production modules into a native DOM without app boot/polling, so
@@ -12,7 +13,7 @@ async function picker(page) {
     <select id="lmModel"><option>saved-response</option></select><select id="sttLlmModel"><option value=""></option></select>
     <input id="agentProvider" value="openai-compatible"><input id="agentBaseUrl" value="http://old-agent.example/v1">
     <input id="agentApiKey"><select id="agentModel"><option>saved-agent</option></select>
-    <p id="modelOptionsStatus"></p>`);
+    <p id="modelOptionsStatus"></p><p id="settingsActionStatus"></p><p id="sttStatus"></p>`);
   await page.evaluate(async () => {
     window.pickers = await import('/js/providers-ui.js');
     window.pickerState = (await import('/js/state.js')).state;
@@ -85,4 +86,74 @@ test('an HTTP model discovery failure stays visible and the next ordinary picker
   await page.evaluate(() => window.pickers.loadModelOptions());
   expect(calls).toBe(2);
   await expect(page.locator('#lmModel')).toHaveValue('recovered-response');
+});
+
+test('agent discovery uses the current form through the real backend while a settings save is pending', async ({ page, request }) => {
+  const upstream = [];
+  const provider = createServer((incoming, response) => {
+    upstream.push({ path: incoming.url, authorization: incoming.headers.authorization });
+    response.writeHead(200, { 'Content-Type': 'application/json' });
+    response.end(JSON.stringify({ data: [{ id: incoming.url === '/new/v1/models' ? 'new-model' : 'old-model' }] }));
+  });
+  await new Promise(resolve => provider.listen(0, '127.0.0.1', resolve));
+  const providerBase = `http://127.0.0.1:${provider.address().port}`;
+  const originalResponse = await request.get('/api/config');
+  expect(originalResponse.ok()).toBeTruthy();
+  const original = await originalResponse.json();
+  const savedValues = {
+    agent_provider: 'openai-compatible', agent_base_url: `${providerBase}/old/v1`,
+    agent_api_key: '', agent_model: 'saved-agent',
+  };
+  let pendingSave;
+  let releaseSave;
+  const saveBarrier = new Promise(resolve => { releaseSave = resolve; });
+  try {
+    expect((await request.post('/api/config', { data: savedValues })).ok()).toBeTruthy();
+    await picker(page);
+    await page.evaluate(async saved => {
+      window.pickerState.appConfig = saved;
+      window.settingsApi = await import('/js/api.js');
+    }, { ...original, ...savedValues });
+    await page.route('**/api/config', async route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      pendingSave = route.request();
+      await saveBarrier;
+      return route.fulfill({ status: 503, json: { detail: 'Held save was not persisted' } });
+    });
+    const discoveryRequests = [];
+    const activationRequests = [];
+    page.on('request', incoming => {
+      if (new URL(incoming.url()).pathname === '/api/agent/models') discoveryRequests.push(incoming);
+      if (new URL(incoming.url()).pathname === '/api/llm/provider/activate') activationRequests.push(incoming);
+    });
+    await page.evaluate(base => {
+      document.getElementById('agentBaseUrl').value = `${base}/new/v1`;
+      document.getElementById('agentApiKey').value = 'candidate-browser-key';
+      window.settingsApi.saveConfigSoon();
+    }, providerBase);
+    await expect.poll(() => Boolean(pendingSave)).toBeTruthy();
+    await page.evaluate(() => window.pickers.loadAgentModelOptions());
+
+    await expect(page.locator('#agentModel')).toHaveValue('saved-agent');
+    expect(await page.locator('#agentModel option').evaluateAll(options => options.map(option => option.value)))
+      .toEqual(['', 'new-model', 'saved-agent']);
+    expect(upstream).toEqual([{ path: '/new/v1/models', authorization: 'Bearer candidate-browser-key' }]);
+    expect(discoveryRequests).toHaveLength(1);
+    expect(new URL(discoveryRequests[0].url()).pathname + new URL(discoveryRequests[0].url()).search).toBe('/api/agent/models');
+    expect(discoveryRequests[0].method()).toBe('POST');
+    expect(discoveryRequests[0].postDataJSON()).toEqual({
+      agent_provider: 'openai-compatible', agent_base_url: `${providerBase}/new/v1`,
+      agent_api_key: 'candidate-browser-key', llm_base_url: 'http://old.example/v1', llm_api_key_env: '',
+    });
+    expect((await (await request.get('/api/config')).json()).agent_base_url).toBe(`${providerBase}/old/v1`);
+    expect(activationRequests).toHaveLength(0);
+  } finally {
+    releaseSave();
+    if (pendingSave) await expect(page.locator('#settingsActionStatus')).toContainText('Held save was not persisted');
+    await request.post('/api/config', {
+      data: Object.fromEntries(Object.keys(savedValues).map(key => [key, original[key]])),
+    });
+    provider.closeAllConnections();
+    await new Promise(resolve => provider.close(resolve));
+  }
 });

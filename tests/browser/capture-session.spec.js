@@ -18,7 +18,7 @@ async function loadCapturePage(page, healthOverrides = {}) {
     }
     if (endpoint === '/api/acks') return route.fulfill({ json: { acks: [] } });
     if (endpoint === '/api/agent/reset') return route.fulfill({ json: { ok: true } });
-    if (request.method() === 'GET') return route.continue();
+    if (request.method() === 'GET' || endpoint === '/api/agent/models' && request.method() === 'POST') return route.continue();
     return route.fulfill({ status: 409, json: { detail: 'Unexpected mutation during capture check' } });
   });
   await page.goto('/');

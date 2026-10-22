@@ -127,9 +127,14 @@ export function modelDiscoveryQuery(){
   }).toString();
 }
 
-function agentDiscoveryQuery(){
-  return JSON.stringify(['agentProvider', 'agentBaseUrl', 'agentApiKey', 'llmBaseUrl', 'llmApiKeyEnv']
-    .map(id => String($(id)?.value || '').trim()));
+function agentDiscoverySettings(){
+  return {
+    agent_provider: String($("agentProvider")?.value || '').trim(),
+    agent_base_url: String($("agentBaseUrl")?.value || '').trim(),
+    agent_api_key: String($("agentApiKey")?.value || '').trim(),
+    llm_base_url: String($("llmBaseUrl")?.value || '').trim(),
+    llm_api_key_env: String($("llmApiKeyEnv")?.value || '').trim(),
+  };
 }
 
 export async function loadModelOptions(force=false){
@@ -314,10 +319,12 @@ export async function loadModelOptions(force=false){
 export async function loadAgentModelOptions(){
   const request = ++agentModelsRequest;
   const statusRequest = ++modelStatusRequest;
-  const query = agentDiscoveryQuery();
-  const isCurrent = () => request === agentModelsRequest && query === agentDiscoveryQuery();
+  const query = JSON.stringify(agentDiscoverySettings());
+  const isCurrent = () => request === agentModelsRequest && query === JSON.stringify(agentDiscoverySettings());
   try{
-    const r=await fetch("/api/agent/models");
+    const r=await fetch("/api/agent/models", {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: query,
+    });
     if(!r.ok) throw new Error(`HTTP ${r.status} from /api/agent/models`);
     const j=await r.json();
     if(!isCurrent()) return;

@@ -299,3 +299,30 @@ def test_cleared_ack_connection_yields_to_fresh_generation_on_the_same_worker(mo
         finally:
             stalled.release.set()
             wait_until(lambda: not ack_service.state.ack.worker_running, timeout=3)
+
+
+def test_persisted_disable_cancels_old_agent_http_before_reenable_and_fresh_work(config_module, monkeypatch):
+    agent_service.shutdown_agent_worker()
+    fresh = json.dumps({'choices': [{'message': {'content': 'Priority: normal\nFresh after enable.'}}]}).encode()
+    stalled = StalledFirstResponse('body', fresh)
+    with provider_server(stalled) as base:
+        config_module.update_config_values({'agent_enabled': 'on', 'agent_base_url': base, 'agent_model': 'fixture'})
+        monkeypatch.setattr(agent_service, 'load_config', config_module.load_config)
+        try:
+            agent_service.submit_agent_transcript(AgentTranscriptRequest(transcript=[{'role': 'user', 'content': 'before disable'}]))
+            assert stalled.started.wait(2)
+            config_module.update_config_values({'agent_enabled': 'off'})
+            config_module.update_config_values({'agent_enabled': 'on'})
+            agent_service.submit_agent_transcript(AgentTranscriptRequest(transcript=[{'role': 'user', 'content': 'fresh after enable'}]))
+            assert wait_until(lambda: agent_service.agent_snapshot()['last_report'].endswith('Fresh after enable.'))
+            assert stalled.disconnected.wait(.3)
+            assert wait_until(lambda: not agent_service._worker_running)
+            with agent_state.lock:
+                reports = [event for event in agent_state.events if event['type'] == 'state_report']
+                assert len(reports) == 1
+                assert reports[0]['agent_input']['transcript'][0]['content'] == 'fresh after enable'
+                assert not any(event['type'] == 'agent_error' for event in agent_state.events)
+        finally:
+            stalled.release.set()
+            wait_until(lambda: not agent_service._worker_running, timeout=3)
+            agent_service.shutdown_agent_worker()

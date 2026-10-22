@@ -68,6 +68,16 @@ class AgentPermissionAnswer(BaseModel):
     answer: str = Field("", max_length=512)
     transcript: Conversation = Field(default_factory=list)
 
+
+class AgentModelDiscoveryRequest(BaseModel):
+    """Unsaved settings; omitted direct keys stay scoped to the saved API URL."""
+    model_config = ConfigDict(strict=True, extra='forbid')
+    agent_provider: str = Field('', max_length=64)
+    agent_base_url: str = Field('', max_length=8192)
+    agent_api_key: str = Field('', max_length=8192, repr=False)
+    llm_base_url: str = Field('', max_length=8192)
+    llm_api_key_env: str = Field('', max_length=512)
+
 # Phase 1 (Converse/Agent adapter separation) -- wire protocol between
 # Converse and any agent adapter. Existing AgentStateRequest,
 # AgentTranscriptRequest, AgentPermissionAnswer remain for backward compat

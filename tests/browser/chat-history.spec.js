@@ -6,12 +6,14 @@ test('a browser chat sends prior history separately from the current interrupted
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/**', async route => {
     const request = route.request();
-    if (new URL(request.url()).pathname === '/api/chat') {
+    const endpoint = new URL(request.url()).pathname;
+    if (endpoint === '/api/chat') {
       chats.push(request.postDataJSON());
       // This contract check deliberately avoids model inference and playback.
       return route.fulfill({ json: { reply: '' } });
     }
-    if (request.method() === 'GET') return route.continue();
+    if (endpoint === '/api/agent/events') return route.fulfill({ json: { events: [], last_event_id: 0 } });
+    if (request.method() === 'GET' || endpoint === '/api/agent/models' && request.method() === 'POST') return route.continue();
     return route.fulfill({ status: 409, json: { detail: 'Unexpected mutation in chat-history check' } });
   });
   await page.goto('/');
@@ -19,7 +21,10 @@ test('a browser chat sends prior history separately from the current interrupted
   const history = await page.evaluate(async () => {
     const { state } = await import('/js/state.js');
     const { askAndSpeak } = await import('/js/agent-ui.js');
-    document.getElementById('agentEnabled').checked = false;
+    document.getElementById('agentEnabled').checked = true;
+    state.agentFirstDelivered = true;
+    state.agentLastDeliveredTurn = Number.MAX_SAFE_INTEGER;
+    state.agentLastDeliveryAt = performance.now();
     state.history = [
       { role: 'user', content: 'The earlier question.' },
       { role: 'assistant', content: 'The earlier spoken answer.' },

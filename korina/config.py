@@ -189,7 +189,13 @@ def update_config_values(payload: dict) -> dict:
             **updates['converse'],
         }
     current = {**previous, **updates}
-    return save_config(synchronize_llm_dependents(current, previous))
+    saved = save_config(synchronize_llm_dependents(current, previous))
+    if previous.get('agent_enabled') != 'off' and saved.get('agent_enabled') == 'off':
+        # Only Korina's transient built-in work/context is retired here. A
+        # custom adapter's reset may affect durable memory, so never call it.
+        from korina.services.agent_service import reset_agent_state
+        reset_agent_state()
+    return saved
 
 
 @_config_transaction

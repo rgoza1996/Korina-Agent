@@ -33,6 +33,7 @@ export async function activateSelectedProvider(provider, model = '') {
 
 // Load saved settings into the UI.
 export async function loadConfig() {
+  const controlVersion = agentControlVersion;
   try {
     const response = await fetch('/api/config');
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -40,6 +41,7 @@ export async function loadConfig() {
     if (!c || typeof c !== 'object' || Array.isArray(c) || c.ok === false || Object.hasOwn(c, 'detail')) {
       throw new Error('The server returned invalid settings.');
     }
+    if (controlVersion !== agentControlVersion || state.agentControlPending) delete c.agent_enabled;
     applyConfig(c);
     syncConverseSettingsUI();
     $('settingsInfo').textContent = 'Loaded saved config.json settings.';
@@ -52,18 +54,22 @@ export async function loadConfig() {
 
 let saveInFlight = null;
 let queuedConfig = null;
+const agentControlQueue = [];
+let agentControlVersion = 0;
 
 // Serialize saves and coalesce rapid edits into the latest form snapshot.
-export function saveConfigNow() {
-  clearTimeout(state.saveConfigTimer);
-  state.saveConfigTimer = null;
-  queuedConfig = collectConfig();
+function flushConfigSaves() {
   if (!saveInFlight) {
+    let completed = false;
     saveInFlight = (async () => {
-      while (queuedConfig) {
-        const config = queuedConfig;
-        queuedConfig = null;
-        if (!Object.keys(config).some(key => JSON.stringify(config[key]) !== JSON.stringify(state.appConfig[key]))) continue;
+      while (agentControlQueue.length || queuedConfig) {
+        const control = agentControlQueue[0];
+        const config = control || queuedConfig;
+        if (!control) queuedConfig = null;
+        if (!Object.keys(config).some(key => JSON.stringify(config[key]) !== JSON.stringify(state.appConfig[key]))) {
+          if (control) agentControlQueue.shift();
+          continue;
+        }
         const response = await fetch('/api/config', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(config),
@@ -75,14 +81,34 @@ export function saveConfigNow() {
           throw new Error('The server returned an invalid settings response.');
         }
         state.appConfig = { ...state.appConfig, ...saved };
+        if (control) agentControlQueue.shift();
       }
       return state.appConfig;
-    })().finally(() => {
+    })().then(result => {
+      completed = true;
+      return result;
+    }).finally(() => {
       saveInFlight = null;
-      if (queuedConfig) return saveConfigNow();
+      if (completed && (agentControlQueue.length || queuedConfig)) return flushConfigSaves();
     });
   }
   return saveInFlight;
+}
+
+export function saveConfigNow() {
+  clearTimeout(state.saveConfigTimer);
+  state.saveConfigTimer = null;
+  const { agent_enabled: _enabled, ...config } = collectConfig();
+  queuedConfig = config;
+  return flushConfigSaves();
+}
+
+// Explicit enable transitions are never coalesced: an off/on burst must
+// persist the off transition that cancels old work before enabling again.
+export function saveAgentEnabled(enabled) {
+  agentControlVersion++;
+  agentControlQueue.push({ agent_enabled: enabled ? 'on' : 'off' });
+  return flushConfigSaves();
 }
 
 export function saveConfigSoon() {

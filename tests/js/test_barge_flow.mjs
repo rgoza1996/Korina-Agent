@@ -243,6 +243,7 @@ test('a second interruption invalidates the first reply cleanup and keeps its ow
 });
 
 test('cleared agent interrupt speech cannot clear a newer interrupt owner or set its cooldown', async () => {
+  element('agentEnabled').checked = true;
   state.live = false;
   globalThis.fetch = async () => new Response(new Blob(['fixture audio']));
   interruptConverse('Old permission request.', true);

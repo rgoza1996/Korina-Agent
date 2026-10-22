@@ -26,7 +26,7 @@ async function loadBufferedPage(page, body, mode = 'buf') {
       return route.fulfill({ json: { ...config, mode, ack_enabled: 'off', agent_enabled: 'off', tts_provider: 'kokoro', tts_base_url: 'http://speech.fixture' } });
     }
     if (endpoint === '/api/acks') return route.fulfill({ json: { acks: [] } });
-    if (request.method() === 'GET') return route.continue();
+    if (request.method() === 'GET' || endpoint === '/api/agent/models' && request.method() === 'POST') return route.continue();
     return route.fulfill({ status: 409, json: { detail: 'Unexpected mutation during playback test' } });
   });
   await page.route('http://speech.fixture/v1/audio/speech', route => route.fulfill({ status: 200, contentType: 'audio/wav', body }));

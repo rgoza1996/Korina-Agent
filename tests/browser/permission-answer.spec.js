@@ -23,7 +23,7 @@ test('failed permission confirmation retains the question for retry and accepted
   await page.goto('/');
   await expect(page.locator('#pageHealth')).not.toHaveText('');
   await page.evaluate(() => {
-    document.getElementById('agentEnabled').checked = false;
+    document.getElementById('agentEnabled').checked = true;
     window.state.awaitingAgentPermission = { id: 71, report: 'Permission request: continue?' };
     window.state.history = [];
     window.state.agentTurnCount = 0;

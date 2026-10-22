@@ -5,16 +5,85 @@ import { $, status, log } from "./dom.js";
 import { stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry } from "./history.js";
 import { agentEnabled, lmModel, llmReasoningEnabled } from "./settings-ui.js";
 import { speakText, stopTtsNow } from "./speech.js";
+import { saveAgentEnabled } from "./api.js";
 
 // Priority lookup table.
 // Keep this ceiling aligned with ChatRequest.message on the backend.
 const MAX_CHAT_MESSAGE_CHARS = 8192;
 const MAX_MODEL_HISTORY_TURNS = 12;
 const priorityRank = { low: 0, normal: 1, important: 2, critical: 3 };
-let deliveryInFlight = false;
-let eventPollInFlight = false;
+let deliveryInFlight = null;
+let eventPollInFlight = null;
 let activeInterruptSpeech = null;
 let permissionAnswerInFlight = null;
+const ownedRequests = new Set();
+
+function agentActive() {
+  return agentEnabled() === 'on' && !state.agentResetBlocked && !state.agentActivityBlocked;
+}
+
+function agentOwnership(isCurrent = () => true) {
+  const session = state.agentSession;
+  const epoch = state.agentActivityEpoch;
+  return () => agentActive() && session === state.agentSession && epoch === state.agentActivityEpoch && isCurrent();
+}
+
+function beginAgentRequest() {
+  const controller = new AbortController();
+  ownedRequests.add(controller);
+  return controller;
+}
+
+function retireAgentActivity() {
+  state.agentActivityEpoch++;
+  for (const controller of ownedRequests) controller.abort();
+  ownedRequests.clear();
+  deliveryInFlight = eventPollInFlight = permissionAnswerInFlight = null;
+  if (activeInterruptSpeech && activeInterruptSpeech.controller === state.controller) stopTtsNow();
+  activeInterruptSpeech = null;
+  state.agentInterruptInProgress = false;
+  state.agentStateReport = state.pendingAgentStateReport = state.pendingImportantAgentMessage = '';
+  state.pendingAgentReportVersion++;
+  state.awaitingAgentPermission = state.deferredAgentInterrupt = null;
+  state.agentInterruptCooldownUntil = 0;
+  state.agentFirstDelivered = false;
+  state.agentLastDeliveredTurn = 0;
+  state.agentLastDeliveryAt = 0;
+  state.agentStartedAt = performance.now();
+}
+
+export async function setAgentEnabledFromUi() {
+  const enabled = agentEnabled() === 'on';
+  retireAgentActivity();
+  const epoch = state.agentActivityEpoch;
+  const session = state.agentSession;
+  state.agentControlPending = state.agentActivityBlocked = true;
+  try {
+    await saveAgentEnabled(enabled);
+    if (epoch !== state.agentActivityEpoch) return false;
+    if (enabled && session === state.agentSession) {
+      const controller = beginAgentRequest();
+      try {
+        const response = await fetch('/api/agent/events?after=0', { signal: controller.signal });
+        const result = await response.json();
+        if (epoch !== state.agentActivityEpoch) return false;
+        if (!response.ok || !Number.isSafeInteger(result?.last_event_id) || result.last_event_id < 0) {
+          throw new Error('Agent event cursor was not confirmed');
+        }
+        // Custom adapters keep their memory; skip their pre-enable event backlog.
+        if (session === state.agentSession) state.agentEventCursor = result.last_event_id;
+      } finally { ownedRequests.delete(controller); }
+    }
+    if (epoch !== state.agentActivityEpoch) return false;
+    state.agentControlPending = state.agentActivityBlocked = false;
+    $('settingsActionStatus').textContent = enabled ? 'Korina Agent enabled with fresh delivery context.' : 'Korina Agent disabled. Conversation can continue.';
+    return true;
+  } catch (error) {
+    if (epoch !== state.agentActivityEpoch) return false;
+    $('settingsActionStatus').textContent = `Agent setting failed: ${error.message}. Toggle again to retry; agent delivery remains paused.`;
+    return false;
+  }
+}
 
 function queueAgentReport(report) {
   state.pendingAgentStateReport = report;
@@ -65,7 +134,7 @@ export function deferAgentInterrupt(message, ev) {
 }
 
 export function maybeReleaseDeferredAgentInterrupt() {
-  if (!state.deferredAgentInterrupt || !agentInterruptAllowed() || state.ttsSpeaking) return;
+  if (!agentActive() || !state.deferredAgentInterrupt || !agentInterruptAllowed() || state.ttsSpeaking) return;
   const item = state.deferredAgentInterrupt;
   state.deferredAgentInterrupt = null;
   interruptConverse(item.message, false);
@@ -78,40 +147,44 @@ export function agentTranscriptSlice() {
 }
 
 export async function deliverTranscriptToAgent(reason = 'turn') {
-  if (agentEnabled() !== 'on' || state.agentResetBlocked || deliveryInFlight) return false;
-  deliveryInFlight = true;
-  const session = state.agentSession;
+  if (!agentActive() || deliveryInFlight) return false;
+  const current = agentOwnership();
+  const controller = beginAgentRequest();
+  deliveryInFlight = controller;
   try {
-    const statusResp = await fetch('/api/agent/status')
+    const statusResp = await fetch('/api/agent/status', { signal: controller.signal })
       .then(r => r.ok ? r.json() : { busy: false }).catch(() => ({ busy: false }));
-    if (session !== state.agentSession || state.agentResetBlocked || agentEnabled() !== 'on') return false;
+    if (!current()) return false;
     const mode = statusResp.busy ? ($('agentBusyDeliveryMode')?.value || 'injection') : ($('agentIdleDeliveryMode')?.value || 'prompt');
     const payload = { transcript: agentTranscriptSlice(), delivery_mode: mode, reason, turn_count: state.agentTurnCount };
     agentDebug(`Transcript delivery (${mode})`, payload);
     const response = await fetch('/api/agent/transcript', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
     const result = await response.json();
     if (!response.ok || result?.ok === false || result?.accepted !== true) {
       throw new Error(result?.detail || result?.error || `Agent did not accept transcript (HTTP ${response.status}).`);
     }
-    if (session !== state.agentSession || state.agentResetBlocked) return false;
+    if (!current()) return false;
     state.agentLastDeliveredTurn = payload.turn_count;
     state.agentLastDeliveryAt = performance.now();
     state.agentFirstDelivered = true;
     return true;
   } catch (error) {
+    if (!current()) return false;
     agentDebug('Transcript delivery failed; will retry', error.message || String(error));
     console.warn('agent transcript delivery failed', error);
     return false;
   } finally {
-    deliveryInFlight = false;
+    ownedRequests.delete(controller);
+    if (deliveryInFlight === controller) deliveryInFlight = null;
   }
 }
 
 export function maybeDeliverTranscriptToAgent(reason = 'timer') {
-  if (agentEnabled() !== 'on' || state.agentResetBlocked || !state.history.length) return;
+  if (!agentActive() || !state.history.length) return;
   const now = performance.now();
   const firstMode = $('agentFirstDeliveryMode')?.value || 'first_turn_or_timer';
   const firstSeconds = (parseInt($('agentFirstDeliverySeconds')?.value || '20', 10) || 20) * 1000;
@@ -146,14 +219,15 @@ function clearPreviousAgentSession() {
 }
 
 export async function pollAgentEvents() {
-  if (agentEnabled() !== 'on' || state.agentResetBlocked || eventPollInFlight) return;
-  eventPollInFlight = true;
-  const session = state.agentSession;
+  if (!agentActive() || eventPollInFlight) return;
+  const current = agentOwnership();
+  const controller = beginAgentRequest();
+  eventPollInFlight = controller;
   try {
-    const response = await fetch(`/api/agent/events?after=${state.agentEventCursor}`);
+    const response = await fetch(`/api/agent/events?after=${state.agentEventCursor}`, { signal: controller.signal });
     if (!response.ok) throw new Error(`Agent events HTTP ${response.status}`);
     const result = await response.json();
-    if (session !== state.agentSession || state.agentResetBlocked || agentEnabled() !== 'on') return;
+    if (!current()) return;
     const cursor = result.last_event_id;
     const hasCursor = Number.isSafeInteger(cursor) && cursor >= 0;
     if (hasCursor && cursor < state.agentEventCursor) clearPreviousAgentSession();
@@ -164,9 +238,10 @@ export async function pollAgentEvents() {
     }
     if (hasCursor) state.agentEventCursor = cursor;
   } catch (error) {
-    if (session === state.agentSession) console.warn('agent event poll failed', error);
+    if (current()) console.warn('agent event poll failed', error);
   } finally {
-    eventPollInFlight = false;
+    ownedRequests.delete(controller);
+    if (eventPollInFlight === controller) eventPollInFlight = null;
   }
 }
 
@@ -178,7 +253,7 @@ export function conciseAgentMessage(ev) {
 
 // Event dispatcher
 export function handleAgentEvent(ev) {
-  if (state.agentResetBlocked) return;
+  if (!agentActive()) return;
   if (ev.type === 'agent_status') return;
   if (ev.type === 'agent_error') { queueAgentReport(`Korina Agent error: ${ev.message}`); return; }
   if (ev.type === 'permission_request') {
@@ -206,16 +281,20 @@ export function handleAgentEvent(ev) {
 }
 
 // Interrupt TTS and inject important message
-async function speakAgentInterrupt(message, isCurrent = () => true) {
+async function speakAgentInterrupt(message, isCurrent = () => true, cooldown = true) {
+  const current = agentOwnership(isCurrent);
+  if (!current()) return;
   const session = state.agentSession;
   const speech = {};
   activeInterruptSpeech = speech;
   state.agentInterruptInProgress = true;
   try {
-    await speakText(message, true);
-    if (activeInterruptSpeech === speech && session === state.agentSession && isCurrent()) setAgentInterruptCooldown();
+    const playing = speakText(message, true);
+    speech.controller = state.controller;
+    await playing;
+    if (activeInterruptSpeech === speech && current() && cooldown) setAgentInterruptCooldown();
   } catch (error) {
-    if (session === state.agentSession && isCurrent()) throw error;
+    if (current()) throw error;
   } finally {
     if (activeInterruptSpeech === speech) {
       activeInterruptSpeech = null;
@@ -225,6 +304,7 @@ async function speakAgentInterrupt(message, isCurrent = () => true) {
 }
 
 export function interruptConverse(text, hard = false) {
+  if (!agentActive()) return;
   state.pendingImportantAgentMessage = text;
   state.suppressAckUntil = performance.now() + 12000;
   if (state.ackSource) { try { state.ackSource.stop(); } catch {} state.ackSource = null; state.ackPlayingUntil = 0; }
@@ -239,7 +319,7 @@ export function interruptConverse(text, hard = false) {
 // Permission answer detection
 export async function handlePermissionAnswerIfAny(message, { isCurrent = () => true } = {}) {
   const session = state.agentSession;
-  const current = () => session === state.agentSession && isCurrent();
+  const current = agentOwnership(isCurrent);
   if (!current()) return false;
   if (!state.awaitingAgentPermission) return false;
   const m = message.trim().toLowerCase();
@@ -249,7 +329,8 @@ export async function handlePermissionAnswerIfAny(message, { isCurrent = () => t
   if (permissionAnswerInFlight?.session === session) return true;
   const answer = yes ? 'yes' : 'no';
   const req = state.awaitingAgentPermission;
-  const delivery = { session, request: req };
+  const controller = beginAgentRequest();
+  const delivery = { session, request: req, controller };
   permissionAnswerInFlight = delivery;
   const turnCount = state.agentTurnCount + 1;
   const answerTurn = { role: 'user', content: `Permission answer to Korina Agent: ${answer}` };
@@ -260,7 +341,8 @@ export async function handlePermissionAnswerIfAny(message, { isCurrent = () => t
     const response = await fetch('/api/agent/permission-answer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ request_id: String(req.id ?? ''), answer, transcript })
+      body: JSON.stringify({ request_id: String(req.id ?? ''), answer, transcript }),
+      signal: controller.signal,
     });
     if (!current()) return true;
     let result;
@@ -280,6 +362,7 @@ export async function handlePermissionAnswerIfAny(message, { isCurrent = () => t
     status($('sttStatus'), message, 'bad');
     throw new Error(message);
   } finally {
+    ownedRequests.delete(controller);
     if (permissionAnswerInFlight === delivery) permissionAnswerInFlight = null;
   }
   if (!current()) return true;
@@ -301,7 +384,7 @@ export async function handlePermissionAnswerIfAny(message, { isCurrent = () => t
   status($('sttStatus'), 'Korina Agent accepted the permission answer.', 'good');
   const reply = answer === 'yes' ? 'Okay. I told Korina Agent it has permission.' : 'Okay. I told Korina Agent not to proceed.';
   $('text').value = reply; log('Korina', reply); state.history.push({ role: 'assistant', content: reply });
-  await speakText(reply, true);
+  await speakAgentInterrupt(reply, current, false);
   return true;
 }
 
@@ -311,7 +394,8 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
   const session = state.agentSession;
   const current = () => session === state.agentSession && isCurrent();
   if (!current()) return null;
-  const report = state.pendingAgentStateReport;
+  const report = agentActive() ? state.pendingAgentStateReport : '';
+  const activityEpoch = state.agentActivityEpoch;
   const reportVersion = state.pendingAgentReportVersion;
   const userMessage = stripTranscriptLabels(message);
   const userLength = [...userMessage].length;
@@ -337,6 +421,10 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
     if (!current()) return null;
     const j = await r.json();
     if (!current()) return null;
+    if (includedReport && (!agentActive() || activityEpoch !== state.agentActivityEpoch)) {
+      status($('sttStatus'), 'Agent context changed. Ask again for a fresh reply.', 'warn');
+      return null;
+    }
     if (!r.ok) throw new Error(j?.detail || JSON.stringify(j));
     if (typeof j?.reply !== 'string') throw new Error('The response LLM returned an invalid reply.');
     if (j.reply.trim() && includedReport && state.pendingAgentReportVersion === reportVersion && state.pendingAgentStateReport === report) {
@@ -373,7 +461,7 @@ export async function askAndSpeak(message, context = '', { isCurrent = () => tru
   status($('sttStatus'), `LLM replied ${reply ? 'ok' : 'empty'}; speaking…`, 'good');
   await speakText(reply, true);
   if (!current()) return null;
-  if (state.pendingImportantAgentMessage && !state.ttsSpeaking) {
+  if (agentActive() && state.pendingImportantAgentMessage && !state.ttsSpeaking) {
     const msg = state.pendingImportantAgentMessage; state.pendingImportantAgentMessage = '';
     addTranscriptEntry('Korina Agent Interrupt', msg, { includeInHistory: false });
     await speakAgentInterrupt(msg, current).catch(() => {});

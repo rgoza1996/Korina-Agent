@@ -109,6 +109,10 @@ export function collectConfig() {
 // applyConfig
 
 export function applyConfig(c = {}) {
+  if (state.agentControlPending) {
+    c = { ...c };
+    delete c.agent_enabled;
+  }
   state.appConfig = { ...state.appConfig, ...c };
   if (c.voice && $('voice')) $('voice').value = c.voice;
   if (c.speed && $('speed')) { $('speed').value = c.speed; $('speedDisplay').textContent = parseFloat(c.speed).toFixed(1) + '×'; }

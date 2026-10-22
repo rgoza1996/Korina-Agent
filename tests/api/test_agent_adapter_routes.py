@@ -201,3 +201,42 @@ def test_discovery_reports_unsupported_core_permission_operation(adapter, client
     adapter.capabilities = AgentCapabilities(adapter_id='fake', supports_permission_flow=False)
     discovery = client.get('/api/agent/capabilities').json()
     assert discovery['http_operations']['permission_answer'] is False
+
+
+def test_disable_preserves_custom_adapter_memory_and_refuses_permission_dispatch(adapter, client):
+    adapter.events = [{'id': 1, 'type': 'state_report', 'report': 'Durable custom context'}]
+    disabled = client.post('/api/config', json={'agent_enabled': 'off'})
+    assert disabled.status_code == 200
+    assert adapter.resets == 0
+    assert adapter.events[0]['report'] == 'Durable custom context'
+    result = client.post('/api/agent/permission-answer', json={'answer': 'yes'})
+    assert result.status_code == 200
+    assert result.json()['disabled'] is True
+    assert result.json()['accepted'] is False
+    assert adapter.answers == []
+    assert adapter.turns == []
+
+
+def test_disabled_legacy_adapter_permission_is_rejected_before_extension_dispatch(adapter, client):
+    from korina.agents import register_adapter
+
+    class LegacyAdapter(CoreAdapter):
+        def snapshot(self):
+            return {'busy': False, 'status': 'idle'}
+
+        def submit_transcript_legacy(self, request):
+            pytest.fail('disabled legacy submission dispatched')
+
+        def answer_permission_legacy(self, request):
+            pytest.fail('disabled legacy permission dispatched')
+
+    custom = LegacyAdapter()
+    register_adapter(custom)
+    client.post('/api/config', json={'agent_enabled': 'off'})
+    assert custom.resets == 0
+    result = client.post('/api/agent/permission-answer', json={'answer': 'yes'})
+    assert result.json()['accepted'] is False
+    assert result.json()['disabled'] is True
+    transcript = client.post('/api/agent/transcript', json={'transcript': [{'role': 'user', 'content': 'Disabled'}]})
+    assert transcript.json()['accepted'] is False
+    assert transcript.json()['disabled'] is True

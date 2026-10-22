@@ -92,6 +92,27 @@ test('late agent discovery cannot replace newer options or restore an old select
   assert.match(element('modelOptionsStatus').textContent, /new-agent/);
 });
 
+test('agent discovery posts the captured unsaved form without putting its key in a URL or saving settings', async () => {
+  element('agentProvider').value = 'anthropic';
+  element('agentBaseUrl').value = 'https://candidate.example/v1/messages';
+  element('agentApiKey').value = 'candidate-secret';
+  element('llmBaseUrl').value = 'https://response.example/v1';
+  element('llmApiKeyEnv').value = 'RESPONSE_ENV';
+  const loading = loadAgentModelOptions(); await waitRequests(1);
+  assert.equal(pending[0].url, '/api/agent/models');
+  assert.equal(pending[0].options.method, 'POST');
+  assert.deepEqual(JSON.parse(pending[0].options.body), {
+    agent_provider: 'anthropic', agent_base_url: 'https://candidate.example/v1/messages',
+    agent_api_key: 'candidate-secret', llm_base_url: 'https://response.example/v1',
+    llm_api_key_env: 'RESPONSE_ENV',
+  });
+  element('agentApiKey').value = 'new-secret';
+  pending[0].resolve(response({ ok: true, models: ['old-secret-model'], provider: 'anthropic' }));
+  await loading;
+  assert.equal(pending.length, 1, 'discovery performs no settings save or provider activation');
+  assert.deepEqual(element('agentModel').options, [], 'changing a field invalidates the captured response');
+});
+
 test('changing endpoint without starting another discovery still invalidates its pending result', async () => {
   element('lmModel').value = 'saved';
   const old = loadModelOptions(); await waitRequests(1);

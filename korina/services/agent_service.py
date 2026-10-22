@@ -151,6 +151,8 @@ def _queue_injection(req: AgentTranscriptRequest) -> None:
 
 
 def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
+    if str(load_config().get('agent_enabled') or 'on') == 'off':
+        return
     with agent_state.lock:
         if generation != agent_state.generation:
             return
@@ -179,8 +181,9 @@ def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
             'model': state_req.model,
         }
         def is_current() -> bool:
+            enabled = str(load_config().get('agent_enabled') or 'on') != 'off'
             with agent_state.lock:
-                return generation == agent_state.generation
+                return enabled and generation == agent_state.generation
 
         report = sanitize_agent_report(generate_agent_state_report(state_req, is_current=is_current))
         if not report:
@@ -213,6 +216,8 @@ def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
             }, generation=generation)
         else:
             push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'agent_input': agent_input}, generation=generation)
+    except RequestCancelledError:
+        return
     except Exception as exc:
         with agent_state.lock:
             if generation != agent_state.generation:
@@ -273,10 +278,14 @@ def shutdown_agent_worker() -> None:
 
 def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
     global _executor, _worker_running, _queued_prompt
+    with agent_state.lock:
+        admission_generation = agent_state.generation
     config = load_config()
     if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
     with agent_state.lock:
+        if admission_generation != agent_state.generation:
+            return {'ok': True, 'accepted': False, 'stale': True, 'status': agent_snapshot()}
         if req.delivery_mode == 'injection':
             _queue_injection(req)
             push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
@@ -314,8 +323,8 @@ def parse_model_ids(body: dict) -> list:
     return models
 
 
-def agent_model_choices() -> list:
+def agent_model_choices(config: dict | None = None) -> list:
     from korina.config import agent_models_url, agent_auth_headers, load_config
-    config = load_config()
+    config = config if config is not None else load_config()
     body = request_json(agent_models_url(config), headers=agent_auth_headers(config), timeout=20)
     return parse_model_ids(body)

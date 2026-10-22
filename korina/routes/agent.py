@@ -15,11 +15,15 @@ state operations. Phase 4 will internalize them into the adapter when
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 
 from korina.agents import AgentHttpBridge, LegacyAgentHttpAdapter, UnsupportedAgentOperation, agent_gateway
-from korina.config import agent_provider, load_config
+from korina.config import agent_models_url, agent_provider, load_config
 from korina.schemas import (
     AgentPermissionAnswer,
+    AgentModelDiscoveryRequest,
     AgentProtocolInfo,
     AgentStateRequest,
     AgentTranscriptRequest,
@@ -29,17 +33,15 @@ from korina.services.agent_service import (
     generate_agent_state_report,
 )
 from korina.util.paths import LMSTUDIO_MODEL
+from korina.runtime.json_http import HTTPStatusError
 
 router = APIRouter()
 
 
-def _default_model() -> str:
+def _default_model(config: dict | None = None) -> str:
     """Resolve the configured model name, matching the legacy fallback chain."""
-    return str(
-        load_config().get('agent_model')
-        or load_config().get('lm_model')
-        or LMSTUDIO_MODEL
-    )
+    config = config if config is not None else load_config()
+    return str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL)
 
 
 @router.get('/api/agent/capabilities', response_model=AgentProtocolInfo)
@@ -109,24 +111,51 @@ def agent_reset():
 
 @router.get('/api/agent/models')
 def agent_models():
-    """Service-function call; not state-coupled. No gateway change yet."""
+    """Discover the saved endpoint, preserving the existing GET contract."""
+    return _discover_agent_models(load_config())
+
+
+def _discover_agent_models(config: dict, *, candidate: bool = False):
+    result = {'provider': agent_provider(config), 'default': _default_model(config)}
     try:
-        models = agent_model_choices()
-        return {
-            'ok': True,
-            'models': models,
-            'provider': agent_provider(),
-            'default': _default_model(),
-            'error': None,
-        }
+        return {'ok': True, 'models': agent_model_choices(config), **result, 'error': None}
     except Exception as e:
-        return {
-            'ok': False,
-            'models': [],
-            'provider': agent_provider(),
-            'default': _default_model(),
-            'error': str(e),
-        }
+        # Candidate keys travel only in the request body. Do not reflect an
+        # upstream diagnostic that could contain those credentials.
+        error = str(e)
+        if candidate:
+            error = f'Agent model discovery HTTP {e.status_code}' if isinstance(e, HTTPStatusError) else f'Agent model discovery failed ({type(e).__name__})'
+        return {'ok': False, 'models': [], **result, 'error': error}
+
+
+class _CandidateModelsRoute(APIRoute):
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+
+        async def validated(request):
+            try:
+                return await handler(request)
+            except RequestValidationError as exc:
+                # Pydantic's default response echoes inputs, including keys.
+                detail = [{key: error[key] for key in ('type', 'loc', 'msg')}
+                          for error in exc.errors()]
+                return JSONResponse({'detail': detail}, status_code=422)
+
+        return validated
+
+
+def agent_candidate_models(req: AgentModelDiscoveryRequest):
+    """Discover without saving; omitted keys inherit only for the saved API URL."""
+    saved = load_config()
+    updates = req.model_dump(exclude_unset=True)
+    config = {**saved, **updates}
+    if 'agent_api_key' not in updates and agent_models_url(config) != agent_models_url(saved):
+        config['agent_api_key'] = ''
+    return _discover_agent_models(config, candidate=True)
+
+
+router.add_api_route('/api/agent/models', agent_candidate_models, methods=['POST'],
+                     route_class_override=_CandidateModelsRoute)
 
 
 @router.post('/api/agent/state-report')

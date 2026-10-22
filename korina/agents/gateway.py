@@ -80,11 +80,18 @@ class AgentHttpBridge:
 
     def submit_transcript(self, req: AgentTranscriptRequest) -> dict:
         from korina.config import load_config
+        from korina.agents.state import agent_state
 
-        if isinstance(self.adapter, LegacyAgentHttpAdapter):
-            return self.adapter.submit_transcript_legacy(req)
+        with agent_state.lock:
+            admission_generation = agent_state.generation
         if str(load_config().get('agent_enabled') or 'on') == 'off':
             return {'ok': True, 'accepted': False, 'disabled': True, 'status': self.snapshot()}
+        with agent_state.lock:
+            stale = admission_generation != agent_state.generation
+        if stale:
+            return {'ok': True, 'accepted': False, 'stale': True, 'status': self.snapshot()}
+        if isinstance(self.adapter, LegacyAgentHttpAdapter):
+            return self.adapter.submit_transcript_legacy(req)
         if req.delivery_mode != 'prompt':
             raise UnsupportedAgentOperation(
                 f'Adapter {self.adapter.id!r} does not support legacy transcript injections'
@@ -96,6 +103,17 @@ class AgentHttpBridge:
         return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': self.snapshot()}
 
     def answer_permission(self, req: AgentPermissionAnswer) -> dict:
+        from korina.config import load_config
+        from korina.agents.state import agent_state
+
+        with agent_state.lock:
+            admission_generation = agent_state.generation
+        if str(load_config().get('agent_enabled') or 'on') == 'off':
+            return {'ok': True, 'accepted': False, 'disabled': True, 'status': self.snapshot()}
+        with agent_state.lock:
+            stale = admission_generation != agent_state.generation
+        if stale:
+            return {'ok': True, 'accepted': False, 'stale': True, 'status': self.snapshot()}
         if isinstance(self.adapter, LegacyAgentHttpAdapter):
             return self.adapter.answer_permission_legacy(req)
         if not self.adapter.capabilities.supports_permission_flow:

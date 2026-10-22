@@ -109,7 +109,10 @@ test('a current chat turn is sent once while visible history keeps it and remain
 });
 
 test('interruption context and agent injection do not duplicate or replace the raw user history', async () => {
-  element('agentEnabled').checked = false;
+  element('agentEnabled').checked = true;
+  state.agentFirstDelivered = true;
+  state.agentLastDeliveredTurn = 100;
+  state.agentLastDeliveryAt = performance.now();
   const prior = [{ role: 'assistant', content: 'An earlier spoken reply.' }];
   state.history = [...prior];
   state.pendingAgentStateReport = 'The background task is ready.';

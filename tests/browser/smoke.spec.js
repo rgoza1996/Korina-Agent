@@ -89,7 +89,8 @@ test('real backend boots, lists channels, and closes settings without runtime er
   const blocked = [];
   page.on('pageerror', error => errors.push(error.message));
   await page.route('**/api/**', async route => {
-    if (route.request().method() === 'GET') return route.continue();
+    const request = route.request();
+    if (request.method() === 'GET' || new URL(request.url()).pathname === '/api/agent/models' && request.method() === 'POST') return route.continue();
     blocked.push(route.request().url());
     return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'Mutation blocked during real-backend smoke' }) });
   });

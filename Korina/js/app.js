@@ -47,6 +47,7 @@ import { wireLocalModelsUi, loadLocalModelRoots } from "./local-models.js";
 import {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
   interruptConverse, askAndSpeak, askLM, agentDebug,
+  setAgentEnabledFromUi,
 } from "./agent-ui.js";
 import { openEndpoints, closeEndpoints, populateEndpoints } from "./endpoints.js";
 
@@ -129,7 +130,9 @@ async function _closeSettingsImpl() {
           status($('sttStatus'), `Applying settings: activating ${response.llm_provider}…`, 'warn');
           const result = await activateSelectedProvider(response.llm_provider, response.lm_model);
           const activation = result.activation;
-          $('settingsActionStatus').textContent = `Activated ${activation.provider}. Started ${(activation.started || []).join(', ') || 'nothing'}; stopped ${(activation.stopped || []).join(', ') || 'nothing'}.`;
+          const retained = (activation.retained || []).map(item => `${llmProviderLabel(item.provider)} for ${(item.roles || []).join(', ')}`).join('; ');
+          const warnings = (activation.warnings || []).join(' ');
+          $('settingsActionStatus').textContent = `Activated ${activation.provider}. Started ${(activation.started || []).join(', ') || 'nothing'}; stopped ${(activation.stopped || []).join(', ') || 'nothing'}.${retained ? ` Kept ${retained}.` : ''}${warnings ? ` ${warnings}` : ''}`;
           state.appConfigSnapshot = { ...snap, ...response };
         } catch (e) {
           throw new Error('Provider activation failed: ' + e.message);
@@ -390,7 +393,7 @@ function wireSettingsInputs() {
   if (ttsDeviceEl) ttsDeviceEl.onchange = () => { status($('ttsStatus'), `TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
   [
     'ttsProvider','ttsPort','ttsBaseUrl','ttsHealthUrl','ttsModel','llmBaseUrl','llmApiKeyEnv',
-    'sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider',
+    'sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentProvider',
     'agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens',
     'agentFirstDeliveryMode',
     'agentFirstDeliverySeconds','agentPeriodicDeliveryTurns','agentPeriodicDeliverySeconds',
@@ -407,6 +410,7 @@ function wireSettingsInputs() {
       saveConfigSoon();
     };
   });
+  if ($('agentEnabled')) $('agentEnabled').onchange = () => { void setAgentEnabledFromUi(); };
   const voice = $('voice');
   if (voice) voice.onchange = async () => {
     cancelAckPlayback();
@@ -447,7 +451,7 @@ function wireUiHandlers() {
   bindClick('endpointsBtn', openEndpoints);
   bindClick('closeEndpointsBtn', closeEndpoints);
   bindClick('refreshEndpointsBtn', () => populateEndpoints().catch(e => console.warn('populateEndpoints failed:', e)));
-  bindClick('refreshAgentModelsBtn', () => saveConfigNow().then(() => loadAgentModelOptions()).catch(error => { $('settingsActionStatus').textContent = `Settings save failed: ${error.message}`; }));
+  bindClick('refreshAgentModelsBtn', () => loadAgentModelOptions());
   bindClick('clearSessionBtn', () => clearSession());
   bindClick('recBtn', () => startRecording());
   bindClick('stopRecBtn', stopRecording);
