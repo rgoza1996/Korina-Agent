@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from types import SimpleNamespace
 
 import pytest
 
@@ -142,22 +143,35 @@ def test_caller_cancelled_error_blocks_reuse_and_discards_late_blocking_poll(mon
         release.set()
 
 
-def test_cancelling_a_queued_send_before_admission_does_not_poison_active_or_next_send():
+def test_cancelling_a_queued_send_before_admission_does_not_poison_active_or_next_send(monkeypatch):
     adapter = Adapter()
     ch = channel(adapter)
+    # This case exercises queue cancellation, not the timeout policy. Keep
+    # only the channel deadline clock still so scheduler load cannot retire
+    # the active request before the queued caller starts waiting.
+    monkeypatch.setattr(korina_channel, 'time', SimpleNamespace(monotonic=lambda: 0.0))
 
     async def exercise():
         first = asyncio.create_task(ch.send(request('first')))
         assert await asyncio.to_thread(adapter.submitted_event.wait, 1)
-        queued = asyncio.create_task(ch.send(request('queued')))
-        await asyncio.sleep(0)
-        queued.cancel()
+        queued_started = asyncio.Event()
+
+        async def send_queued():
+            queued_started.set()
+            return await ch.send(request('queued'))
+
+        queued = asyncio.create_task(send_queued())
+        await asyncio.wait_for(queued_started.wait(), 2)
+        assert not first.done()
+        assert not queued.done()
+        assert adapter.submitted == ['first']
+        assert queued.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await queued
+            await asyncio.wait_for(queued, 2)
         adapter.publish('Fresh: first')
-        assert (await first).text == 'Fresh: first'
+        assert (await asyncio.wait_for(first, 2)).text == 'Fresh: first'
         adapter.emit = True
-        assert (await ch.send(request('third'))).text == 'Fresh: third'
+        assert (await asyncio.wait_for(ch.send(request('third')), 2)).text == 'Fresh: third'
         assert adapter.submitted == ['first', 'third']
         assert adapter.reset_count == 0
 
