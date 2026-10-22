@@ -25,8 +25,8 @@ Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>
 These changes are not yet merged into <code>alpha</code> or the release branch.
 <a href="Hackathon.html">Setup and rehearsal guide</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Progress and verification evidence</a> · <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">Review PR #24</a>.</div>
 <p>Korina Converse owns the human-facing voice loop. Korina Agent receives transcript deliveries and produces reports, injections, and permission events through an adapter boundary.</p>
-<img class="chart-img" width="900" height="563" loading="lazy" src="arch_diagram.png" alt="Historical overview of the Korina voice and agent components">
-<p>The diagram is an overview from an earlier revision. Use the source and running <code>/docs</code> for current route details.</p>
+<img class="chart-img" width="1120" height="750" loading="lazy" src="architecture.svg" alt="Current browser, API, model and speech boundaries">
+<p>The browser orchestrates voice turns and calls compatible TTS directly. The API handles transcription, response-model requests, and agent delivery; the agent returns reports and permissions through cursor-based events.</p>
 <h2>Current boundaries</h2>
 <table><thead><tr><th>Area</th><th>Responsibility</th></tr></thead><tbody>
 <tr><td><code>korina/app_factory.py</code>, <code>korina/routes/</code></td><td>App composition, middleware, static assets, and HTTP contracts.</td></tr>

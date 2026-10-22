@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="750" viewBox="0 0 1120 750" role="img" aria-labelledby="title desc">
+  <title id="title">Korina voice and background-agent architecture</title>
+  <desc id="desc">The browser orchestrates capture, conversation state and native playback. It calls Korina's transcription, response chat and agent APIs. The agent runs a bounded background worker and returns reports or permissions for later conversation. Configured model endpoints serve response, agent and optional audio-model requests. Browser speech goes directly to a compatible TTS service. Optional acknowledgements use that service from the API.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#806c50"/></marker>
+    <style>
+      text{font-family:system-ui,-apple-system,sans-serif;fill:#2b2620}
+      .title{font-size:27px;font-weight:750}.section{font-size:18px;font-weight:750}
+      .label{font-size:16px;font-weight:700}.detail{font-size:14px;fill:#665c50}
+      .wire{stroke:#806c50;stroke-width:2;fill:none;marker-start:url(#arrow);marker-end:url(#arrow)}
+      .panel{fill:#fffaf1;stroke:#d9cbb6;stroke-width:1.5}.box{fill:white;stroke:#b7a58a;stroke-width:1.5}
+    </style>
+  </defs>
+  <rect width="1120" height="750" rx="20" fill="#f4efe6"/>
+  <text x="40" y="45" class="title">Voice conversation with a bounded background agent</text>
+  <rect x="40" y="75" width="1040" height="155" rx="16" class="panel"/>
+  <text x="60" y="104" class="section">Browser · Korina Converse</text>
+  <rect x="65" y="125" width="250" height="80" rx="10" class="box"/>
+  <text x="85" y="154" class="label">Microphone + VAD</text>
+  <text x="85" y="179" class="detail">Complete bounded recordings</text>
+  <path d="M325 165H360" class="wire"/>
+  <rect x="375" y="125" width="350" height="80" rx="10" class="box"/>
+  <text x="395" y="154" class="label">Conversation + session ownership</text>
+  <text x="395" y="179" class="detail">History, settings, reports and requests</text>
+  <path d="M735 165H770" class="wire"/>
+  <rect x="785" y="125" width="270" height="80" rx="10" class="box"/>
+  <text x="805" y="154" class="label">Native audio playback</text>
+  <text x="805" y="179" class="detail">Stop, interruption and resume</text>
+  <path d="M190 230V285" class="wire"/>
+  <text x="202" y="269" class="detail">audio / transcript</text>
+  <path d="M405 230V285" class="wire"/>
+  <text x="417" y="269" class="detail">chat / reply</text>
+  <path d="M655 230V285" class="wire"/>
+  <text x="667" y="257" class="detail">transcript /</text>
+  <text x="667" y="276" class="detail">events</text>
+  <path d="M920 230V335" class="wire"/>
+  <text x="932" y="269" class="detail">speech / audio</text>
+  <rect x="40" y="295" width="760" height="245" rx="16" class="panel"/>
+  <text x="60" y="325" class="section">Korina API · FastAPI</text>
+  <rect x="65" y="345" width="220" height="135" rx="10" class="box"/>
+  <text x="85" y="375" class="label">Transcription</text>
+  <text x="85" y="401" class="detail">FFmpeg conversion</text>
+  <text x="85" y="423" class="detail">Whisper or audio model</text>
+  <text x="85" y="445" class="detail">Buffered / partial / SSE</text>
+  <rect x="310" y="345" width="205" height="135" rx="10" class="box"/>
+  <text x="330" y="375" class="label">Response chat</text>
+  <text x="330" y="401" class="detail">Validated context</text>
+  <text x="330" y="423" class="detail">Bounded provider HTTP</text>
+  <text x="330" y="445" class="detail">Owned cancellation</text>
+  <rect x="540" y="345" width="235" height="135" rx="10" class="box"/>
+  <text x="560" y="375" class="label">Agent reporting</text>
+  <text x="560" y="401" class="detail">Adapter + one worker</text>
+  <text x="560" y="423" class="detail">Bounded reports + context</text>
+  <text x="560" y="445" class="detail">Permissions + cursor events</text>
+  <text x="65" y="514" class="detail">Shared limits · atomic settings · provider lifecycle · health / readiness</text>
+  <rect x="840" y="345" width="240" height="135" rx="10" class="box"/>
+  <text x="860" y="375" class="label">Compatible TTS service</text>
+  <text x="860" y="401" class="detail">Kokoro or custom service</text>
+  <text x="860" y="423" class="detail">PCM SSE / buffered WAV</text>
+  <text x="860" y="445" class="detail">Browser-accessible endpoint</text>
+  <path d="M800 505H960V490" stroke="#806c50" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arrow)"/>
+  <text x="844" y="528" class="detail">optional ACK generation</text>
+  <path d="M175 550V575H335V595" class="wire"/>
+  <text x="69" y="605" class="detail">optional audio model</text>
+  <path d="M415 550V595" class="wire"/>
+  <path d="M655 550V595" class="wire"/>
+  <rect x="310" y="610" width="465" height="87" rx="12" class="box"/>
+  <text x="332" y="640" class="label">Configured local or remote model endpoints</text>
+  <text x="332" y="667" class="detail">Response LLM · agent model · optional audio model</text>
+  <text x="40" y="730" class="detail">Current reporting loop: external tool execution and durable agent tasks remain future work.</text>
+</svg>
