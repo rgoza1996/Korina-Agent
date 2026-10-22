@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from korina.config import (
     config_llm_chat_url,
@@ -9,7 +10,7 @@ from korina.config import (
 )
 
 from korina.runtime.http import auth_headers_from_env
-from korina.runtime.json_http import HTTPStatusError, request_json
+from korina.runtime.json_http import HTTPStatusError, RequestCancelledError, request_json
 from korina.runtime.completion import completion_text, openai_text_completion
 
 from korina.schemas import ChatRequest
@@ -32,7 +33,7 @@ def format_voice_reply(text: str) -> str:
         lines.extend(p.strip() for p in parts if p.strip())
     return '\n'.join(lines)
 
-def response_llm_chat(req: ChatRequest) -> str:
+def response_llm_chat(req: ChatRequest, *, is_current: Callable[[], bool] | None = None) -> str:
     system = req.system or (
         'You are Korina, a concise real-time voice conversation assistant.\n'
         'Speak in short, natural sentences that are suitable for being heard aloud.\n'
@@ -63,7 +64,9 @@ def response_llm_chat(req: ChatRequest) -> str:
     }
     headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
     try:
-        body = request_json(config_llm_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90)
+        body = request_json(config_llm_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90, is_current=is_current)
+    except RequestCancelledError:
+        raise
     except HTTPStatusError as e:
         raise RuntimeError(f'Response LLM HTTP {e.status_code}: {e.detail}') from e
     except Exception as e:
