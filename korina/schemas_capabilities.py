@@ -17,6 +17,7 @@ ModelSource = Literal["endpoint_loaded", "local_gguf", "catalog"]
 class ProviderCapabilities(BaseModel):
     label: str
     default_base_url: str = ""
+    default_api_key_env: str = ""
     editable_base_url: bool
     manageable: bool
     model_sources: list[ModelSource] = Field(default_factory=list)

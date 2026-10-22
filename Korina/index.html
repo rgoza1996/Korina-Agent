@@ -58,7 +58,7 @@
           <div class="settingsGroupBody">
             <p class="sectionLead">Standard response model settings for Korina Converse.</p>
             <p class="small mono" id="llmReasoningHint">Reasoning: off.</p>
-            <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
+            <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option><option value="meta">Meta Model API</option></select></div>
             <div><label for="lmModel">Model</label><select id="lmModel"><option value="">Select a response model</option></select></div>
             <div><label for="llmBaseUrl">Base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:8080/v1"></div>
             <div><label for="llmApiKeyEnv">API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
@@ -116,9 +116,9 @@
       </div>
       <div id="settingsAgent" class="grid settingsPanel">
         <div class="secretNote"><label>Korina Agent</label><div class="toggleLine"><input id="agentEnabled" type="checkbox" checked><span>Enable hidden state reports and injection</span></div></div>
-        <div><label for="agentProvider">Agent endpoint type</label><select id="agentProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="anthropic">Anthropic-compatible</option></select></div>
+        <div><label for="agentProvider">Agent endpoint type</label><select id="agentProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="anthropic">Anthropic-compatible</option><option value="meta">Meta Model API</option></select></div>
         <div><label for="agentBaseUrl">Agent API base URL</label><input id="agentBaseUrl" type="text" value="http://127.0.0.1:1234/v1" placeholder="OpenAI: .../v1 · Anthropic: .../v1"></div>
-        <div><label for="agentApiKey">Agent API key</label><input id="agentApiKey" type="password" autocomplete="off" placeholder="Optional; saved locally in config.json" title="Blank inherits response credentials only when both use the same API base URL."></div>
+        <div><label for="agentApiKey">Agent API key</label><input id="agentApiKey" type="password" autocomplete="off" placeholder="Optional; saved locally in config.json" title="Blank inherits response credentials only for the same API base URL; the explicit Meta profile otherwise uses server environment MODEL_API_KEY."></div>
         <div><label for="agentModel">Korina Agent model</label><select id="agentModel"><option value="">Use Korina Converse model</option></select></div>
         <div><label>&nbsp;</label><button id="refreshAgentModelsBtn" class="secondary" type="button">Refresh Agent models</button></div>
         <div><label for="agentMaxTurns">Transcript turns sent to agent</label><input id="agentMaxTurns" type="number" min="2" max="40" value="16"></div>

@@ -17,6 +17,7 @@ from korina.config import (
     agent_provider,
     agent_auth_headers,
     config_llm_base_url,
+    config_llm_api_env,
     config_llm_chat_url,
     config_llm_models_url,
     config_min_speech_ms,
@@ -304,7 +305,7 @@ async def health(request: Request):
         'response_llm_load': (
             str(config.get('llm_provider') or 'llama.cpp'), config_llm_base_url(config),
             config_llm_models_url(config), str(config.get('lm_model') or LMSTUDIO_MODEL),
-            auth_headers_from_env(str(config.get('llm_api_key_env') or '')),
+            auth_headers_from_env(config_llm_api_env(config)),
         ),
         'multimodal_stt_load': (
             config_stt_llm_provider(config), config_stt_llm_base_url(config),

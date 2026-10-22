@@ -17,6 +17,14 @@ export function ttsProvider() { return $('ttsProvider')?.value || 'kokoro' }
 export function ttsModel() { return $('ttsModel')?.value || 'kokoro' }
 export function llmProvider() { return $('llmProvider')?.value || 'llama.cpp' }
 export function llmBaseUrl() { return $('llmBaseUrl')?.value || 'http://127.0.0.1:8080/v1' }
+const apiBase = value => String(value).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+export function effectiveLlmApiKeyEnv() {
+  const explicit = String($('llmApiKeyEnv')?.value || '').trim();
+  if (explicit) return explicit;
+  const profile = state._capabilitiesCache?.providers?.[llmProvider()];
+  return profile?.default_base_url && apiBase(llmBaseUrl()) === apiBase(profile.default_base_url)
+    ? String(profile.default_api_key_env || '') : '';
+}
 export function sttModel() { return $('sttModel')?.value || 'base.en' }
 export function sttBackend() { return $('sttBackend')?.value || 'whisper' }
 export function lmModel() { return $('lmModel')?.value || '' }
@@ -30,9 +38,7 @@ export function effectiveSttLlmProvider() { return sttLlmProvider() || llmProvid
 export function effectiveSttLlmBaseUrl() { return sttLlmBaseUrl() || llmBaseUrl() }
 export function effectiveSttLlmApiKeyEnv() {
   if (sttLlmApiKeyEnv()) return sttLlmApiKeyEnv();
-  const base = value => String(value).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
-  return base(effectiveSttLlmBaseUrl()) === base(llmBaseUrl())
-    ? String($('llmApiKeyEnv')?.value || '').trim() : '';
+  return apiBase(effectiveSttLlmBaseUrl()) === apiBase(llmBaseUrl()) ? effectiveLlmApiKeyEnv() : '';
 }
 export function effectiveSttLlmModel() {
   const explicit = sttLlmModel();
@@ -233,7 +239,9 @@ export { populateChannelTab, saveChannelSelection } from './channel-ui.js';
 // Reasoning/converse sync helpers
 
 export function syncReasoningHints() {
-  if ($('llmReasoningHint')) $('llmReasoningHint').textContent = `Reasoning: ${llmReasoningEnabled() === 'on' ? 'on' : 'off'}.`;
+  if ($('llmReasoningHint')) $('llmReasoningHint').textContent = llmProvider() === 'meta'
+    ? 'Reasoning: Meta provider default (local toggle is not sent).'
+    : `Reasoning: ${llmReasoningEnabled() === 'on' ? 'on' : 'off'}.`;
   if ($('sttReasoningHint')) $('sttReasoningHint').textContent = sttBackend() === 'llm'
     ? `Reasoning: ${sttLlmReasoningEnabled() === 'on' ? 'on' : 'off'} for multimodal STT.`
     : 'Reasoning: built-in Whisper does not use this toggle.';

@@ -14,6 +14,7 @@ from korina.model_ids import MAX_CATALOG_IDS, MAX_CATALOG_ID_BYTES, limit_model_
 from korina.config import (
     config_audio_unsupported,
     config_llm_base_url,
+    config_llm_api_env,
     config_stt_llm_api_env,
     config_stt_llm_base_url,
     config_stt_llm_model,
@@ -138,7 +139,7 @@ def models(
     saved_llm_base = config_llm_base_url(config)
     saved_stt_base = config_stt_llm_base_url(config)
     llm_base = str(llm_base_url or saved_llm_base).strip().rstrip('/')
-    llm_api_env_name = _discovery_auth(llm_base, saved_llm_base, str(config.get('llm_api_key_env') or ''), llm_api_key_env)
+    llm_api_env_name = _discovery_auth(llm_base, saved_llm_base, config_llm_api_env(config), llm_api_key_env)
     stt_base = str(stt_llm_base_url or saved_stt_base).strip().rstrip('/')
     stt_api_env_name = _discovery_auth(stt_base, saved_stt_base, config_stt_llm_api_env(config), stt_llm_api_key_env)
     llm_provider_id = str(llm_provider or config.get('llm_provider') or 'llama.cpp').strip()

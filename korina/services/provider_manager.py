@@ -683,7 +683,7 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
       - lmstudio + GGUF path: NOT supported
       - ollama: always allow (model list is server-side, only
         verifiable after server start)
-      - openai-compatible: always allow (user-provided endpoint)
+      - openai-compatible / meta: allow (remote endpoint checked by discovery)
       - anthropic: always allow (user-provided endpoint)
     """
     from korina.services.model_catalog import (
@@ -693,7 +693,7 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
     pid = str(provider or "").strip()
     mid = str(model or "").strip()
 
-    if pid in ("openai-compatible", "anthropic"):
+    if pid in ("openai-compatible", "anthropic", "meta"):
         return (True, "user_provided_endpoint")
 
     if pid == "ollama":

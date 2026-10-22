@@ -404,7 +404,7 @@ function wireSettingsInputs() {
   if (ttsDeviceEl) ttsDeviceEl.onchange = () => { status($('ttsStatus'), `TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
   [
     'ttsProvider','ttsPort','ttsBaseUrl','ttsHealthUrl','ttsModel','llmBaseUrl','llmApiKeyEnv',
-    'sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentProvider',
+    'sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv',
     'agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens',
     'agentFirstDeliveryMode',
     'agentFirstDeliverySeconds','agentPeriodicDeliveryTurns','agentPeriodicDeliverySeconds',
@@ -422,6 +422,14 @@ function wireSettingsInputs() {
       saveConfigSoon();
     };
   });
+  if ($('agentProvider')) $('agentProvider').onchange = async () => {
+    if (!await refreshProviderCapabilities()) return;
+    maybeApplyProviderPreset('agentProvider', 'agentBaseUrl');
+    syncConverseSettingsUI();
+    health();
+    saveConfigSoon();
+    await loadAgentModelOptions(true);
+  };
   if ($('agentEnabled')) $('agentEnabled').onchange = () => { void setAgentEnabledFromUi(); };
   const voice = $('voice');
   if (voice) voice.onchange = () => {

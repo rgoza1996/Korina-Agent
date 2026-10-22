@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from korina.config import (
     config_llm_chat_url,
+    config_llm_api_env,
     config_llm_reasoning,
     load_config,
 )
@@ -60,9 +61,12 @@ def response_llm_chat(req: ChatRequest, *, is_current: Callable[[], bool] | None
         'temperature': req.temperature,
         'max_tokens': req.max_tokens,
         'stream': False,
-        'reasoning': (str(req.reasoning).strip().lower() if req.reasoning else config_llm_reasoning(config)),
     }
-    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
+    # Meta's Chat Completions API reasons by default. Its documented control
+    # is reasoning_effort; the local/generic on/off extension is not sent.
+    if str(config.get('llm_provider') or '').strip().lower() != 'meta':
+        payload['reasoning'] = str(req.reasoning).strip().lower() if req.reasoning else config_llm_reasoning(config)
+    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(config_llm_api_env(config))
     try:
         body = request_json(config_llm_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90, is_current=is_current)
     except RequestCancelledError:

@@ -15,7 +15,7 @@ from korina.util.paths import (
     APP_DIR, CONFIG_PATH, ACK_DEFAULT_VOICE, LMSTUDIO_MODEL,
 )
 
-from korina.util.presets import provider_preset_base_url
+from korina.util.presets import provider_default_api_key_env, provider_preset_base_url
 from korina.runtime.http import api_key_from_config
 from korina.model_roots import MAX_MODEL_ROOTS, MAX_MODEL_ROOT_PATH_CHARS
 
@@ -396,7 +396,9 @@ def synchronize_llm_dependents(config: dict, previous: Optional[dict] = None) ->
             config['stt_llm_model'] = current_model
 
     agent_provider_value = str(config.get('agent_provider') or 'openai-compatible').strip().lower()
-    if agent_provider_value != 'anthropic':
+    if agent_provider_value == 'meta':
+        config['agent_base_url'] = provider_preset_base_url('meta')
+    elif agent_provider_value != 'anthropic':
         previous_base = normalize_api_base_url(previous.get('agent_base_url') or '')
         follows_base = previous_base in ('', normalize_api_base_url(previous.get('llm_base_url') or ''), normalize_api_base_url(prev_preset))
         unchanged_base = config.get('agent_base_url') == previous.get('agent_base_url')
@@ -448,7 +450,16 @@ def config_tts_provider(config: Optional[dict] = None) -> str:
 
 def config_llm_base_url(config: Optional[dict] = None) -> str:
     config = config or load_config()
+    if str(config.get('llm_provider') or '').strip().lower() == 'meta':
+        return provider_preset_base_url('meta')
     return str(config.get('llm_base_url') or 'http://127.0.0.1:8080/v1').strip().rstrip('/')
+
+
+def config_llm_api_env(config: Optional[dict] = None) -> str:
+    config = config or load_config()
+    return str(config.get('llm_api_key_env') or '').strip() or provider_default_api_key_env(
+        str(config.get('llm_provider') or ''), config_llm_base_url(config),
+    )
 
 
 def config_llm_chat_url(config: Optional[dict] = None) -> str:
@@ -494,7 +505,7 @@ def config_stt_llm_api_env(config: Optional[dict] = None) -> str:
     if explicit:
         return explicit
     if normalize_api_base_url(config_stt_llm_base_url(config)) == normalize_api_base_url(config_llm_base_url(config)):
-        return str(config.get('llm_api_key_env') or '').strip()
+        return config_llm_api_env(config)
     return ''
 
 
@@ -548,6 +559,8 @@ def agent_provider(config: Optional[dict] = None) -> str:
 
 def agent_base_url(config: Optional[dict] = None) -> str:
     config = config or load_config()
+    if agent_provider(config) == 'meta':
+        return provider_preset_base_url('meta')
     return str(config.get('agent_base_url') or config.get('llm_base_url') or 'http://127.0.0.1:8080/v1').strip().rstrip('/')
 
 
@@ -573,9 +586,10 @@ def agent_auth_headers(config: dict) -> dict:
     # to an independently configured endpoint.
     agent_base, _ = _agent_api_endpoint(config)
     response_base = normalize_api_base_url(config_llm_base_url(config))
-    inherited_env = (config.get('llm_api_key_env') or '') if agent_base == response_base else ''
-    key = api_key_from_config(config, config.get('agent_api_key') or '', inherited_env)
     provider = agent_provider(config)
+    inherited_env = config_llm_api_env(config) if agent_base == response_base else ''
+    env_name = inherited_env or provider_default_api_key_env(provider, agent_base)
+    key = api_key_from_config(config, config.get('agent_api_key') or '', env_name)
     if not key:
         return {}
     if provider == 'anthropic':

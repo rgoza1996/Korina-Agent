@@ -7,6 +7,7 @@ import { readResponseBlob, responseError } from './response-body.js';
 import { boundedModelIds, boundedModelPayload, catalogNotice, normalizeModelId, MAX_MODEL_RESPONSE_BYTES } from './model-catalog.js';
 import {
   llmBaseUrl,
+  effectiveLlmApiKeyEnv,
   effectiveSttLlmProvider,
   effectiveSttLlmBaseUrl,
   effectiveSttLlmApiKeyEnv,
@@ -98,6 +99,11 @@ export async function setBaseUrlEditability(){
   const llmCaps = getResponseLlmProviderCaps(llmId);
   const llmEditable = llmCaps?.editable_base_url === true;
   if($("llmBaseUrl")) $("llmBaseUrl").disabled = !llmEditable;
+  if($("llmApiKeyEnv")) $("llmApiKeyEnv").placeholder = llmCaps?.default_api_key_env || 'Optional environment variable name';
+  if($("llmReasoningEnabled")) {
+    $("llmReasoningEnabled").disabled = llmId === 'meta';
+    $("llmReasoningEnabled").title = llmId === 'meta' ? 'Meta Model API uses its provider-default reasoning.' : '';
+  }
   const sttId = String($("sttLlmProvider")?.value || "").trim();
   const sttCaps = getResponseLlmProviderCaps(sttId);
   const sttEditable = sttCaps?.editable_base_url === true;
@@ -106,6 +112,8 @@ export async function setBaseUrlEditability(){
   const agentCaps = getAgentProviderCaps(agentId);
   const agentEditable = agentCaps?.editable_base_url === true;
   if($("agentBaseUrl")) $("agentBaseUrl").disabled = !agentEditable;
+  if($("agentApiKey")) $("agentApiKey").placeholder = agentCaps?.default_api_key_env
+    ? `Blank uses server environment ${agentCaps.default_api_key_env}` : 'Optional; saved locally in config.json';
 }
 
 let modelsRequest = 0;
@@ -156,7 +164,7 @@ function localModelPool(payload) {
 export function modelDiscoveryQuery(){
   return new URLSearchParams({
     llm_base_url: llmBaseUrl(),
-    llm_api_key_env: String($("llmApiKeyEnv")?.value||"").trim(),
+    llm_api_key_env: effectiveLlmApiKeyEnv(),
     stt_llm_base_url: effectiveSttLlmBaseUrl(),
     stt_llm_api_key_env: effectiveSttLlmApiKeyEnv(),
     llm_provider: String($("llmProvider")?.value||"").trim(),
