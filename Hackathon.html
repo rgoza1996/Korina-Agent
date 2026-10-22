@@ -59,6 +59,7 @@ python -m pip install dist/*.whl
 korina</code></pre>
 <p>The wheel includes the browser UI, configuration example, and acknowledgement manifest. It keeps generated config and ACK audio under <code>${XDG_DATA_HOME:-~/.local/share}/korina</code>. A source/editable install keeps that state beside <code>Korina/</code>. <code>KORINA_APP_DIR</code> selects a complete alternate runtime tree.</p>
 <p>Speech engines are optional dependencies. The built wheel’s <code>korina-tts</code> command starts Kokoro after its TTS extra is installed. Building/installing the base package alone does not install a response LLM or preload speech models. See the <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/README.md">README</a> for the current install contract.</p>
+<p>When installing a wheel for local voice, include its Whisper and TTS extras and start <code>korina-tts</code> beside <code>korina</code>. User services need their own API-key/model environment; shell exports are not copied by the installer. See the <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/README.md">wheel and service environment instructions</a>.</p>
 <h2>Before the demo</h2>
 <ol>
 <li>Choose the intended response model and confirm its endpoint is running. Keep agent reporting off until basic voice round trips work.</li>
