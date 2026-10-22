@@ -1,7 +1,4 @@
-"""GET /api/health — reports service status, loaded models, config snapshot.
-
-Phase 1.9: inlined from the monolith's _route_health helper.
-"""
+"""Read-only voice-stack liveness, component status, and readiness."""
 
 from __future__ import annotations
 
@@ -182,13 +179,6 @@ def _probe_llm_models(base_url, expected, timeout=1.5, headers=None, *, models_u
     block['models_info'] = model_list_info(listed)
     block["loaded"] = block["loaded_model"] is not None
     block["ok"] = True
-    return block
-
-
-def _aggregate_provider_load(provider, base_url, expected):
-    """Build a load block for a single LLM-facing role."""
-    block = _probe_llm_models(base_url, expected)
-    block["provider"] = str(provider or "")
     return block
 
 

@@ -1,15 +1,8 @@
-"""Agent endpoints -- status, events, transcript, permission answer, reset, models, state-report.
+"""Agent discovery, delivery, diagnostics, and compatibility utilities.
 
-Phase 1.9: inlined from the monolith's _route_agent* helpers.
-
-Phase 3 (Converse/Agent adapter separation): handlers delegate to
-``agent_gateway()`` instead of touching ``state.agent`` directly. The gateway
-is the single seam between the route layer and any agent implementation.
-
-Service functions that don't mutate ``AgentState`` (model choices, state
-reports) keep their direct imports for now -- they are pure functions, not
-state operations. Phase 4 will internalize them into the adapter when
-``AgentState`` itself moves out of ``korina/runtime/state.py``.
+State operations use the selected adapter through AgentHttpBridge. Model
+discovery and synchronous state reports are built-in service utilities and
+remain independent of adapter registration.
 """
 
 from __future__ import annotations

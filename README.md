@@ -59,6 +59,8 @@ python scripts/check_stack.py
 
 Health also publishes read-only `audio_limits` with the effective decoded duration and upload budget. Invalid audio-limit environment settings appear as `audio_limits_error` and fail readiness while liveness remains available.
 
+Acknowledgements are optional. A malformed phrase manifest leaves startup and voice readiness available, reports an actionable ACK error with unknown clip counts, and rejects rebuilds before deleting audio. See [ACK recovery](docs/acknowledgements.md) for catalog limits and repair.
+
 ```bash
 python -m pip install -e '.[dev]'
 python -m pytest -q

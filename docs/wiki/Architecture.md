@@ -14,9 +14,9 @@ FastAPI routes → small service functions → configured model endpoints
 ## Boundaries
 
 - `app_factory.create_app()` composes routes, static assets, CORS, request limits, and lifecycle cleanup.
-- `routes/stt.py` prepares audio and selects streaming/fallback paths; shared Whisper helpers produce consistent buffered/partial/SSE results. Blocking model work runs outside the event loop.
+- `routes/stt.py` prepares audio and selects streaming/fallback paths; shared Whisper helpers produce consistent buffered/partial/SSE results. `services/stt_resolution.py` applies one capability-cache and fallback policy to all three paths, avoiding repeated calls to a model already known to reject audio. Blocking model work runs outside the event loop.
 - Whisper retains one selected model/device/compute combination. Lazy iterators pin those weights until exhaustion, error, or close; concurrent requests for the same selection share them. A different selection receives a retryable busy response while inference is active, then replaces the idle cached model.
-- `services/agent_service.py` owns one worker, one coalesced follow-up prompt, at most five pending injections, a 100-event ring, and reset generation tokens. Session reset invalidates stale in-flight results.
+- `services/agent_service.py` owns one worker, one coalesced follow-up prompt, at most five pending injections, and reset generation tokens. Pure context preparation keeps diagnostics identical to the model input. The event ring holds at most 100 whole events and 4 MiB; complete HTTP diagnostics also fit 4 MiB. Admission rechecks the original generation, and failed worker startup permits retry.
 - `agents/` defines adapters. `converse/` defines channel registration and cursor-based response delivery. Hermes remains a stub.
 - `services/provider_manager.py` plans local activation against the actual endpoints used by response, STT, and agent roles. It preserves needed services, validates prerequisites before teardown, rejects protected conflicts, and reports confirmed actions separately from unconfirmed stop requests. Path discovery and executable/socket ownership checks replace personal host assumptions and broad process patterns.
 - `runtime/limits.py` resolves shared audio budgets and rejects oversized bodies before request parsing: 2 MiB JSON/control requests and 50 MiB transcription uploads. Schemas also bound fields and conversation turns.
@@ -24,6 +24,8 @@ FastAPI routes → small service functions → configured model endpoints
 - `Korina/js/state.js` holds active UI state. `agent-ui.js` is the agent delivery path; a dormant duplicate EventBus was removed.
 - `Korina/js/bounded-recorder.js` owns duration/byte limits for complete manual, live, and interruption recordings. Native chunks remain one decodable file. Silent recordings rotate; confirmed speech becomes a complete turn; an oversized or late capture is discarded whole with recovery text.
 - `Korina/js/sse.js` shares bounded UTF-8/event framing across STT and speech, including CRLF and truncated-stream rejection. `response-body.js` bounds downloaded audio and errors; speech playback validates cumulative PCM duration and native buffered metadata before accepting a long reply.
+- `Korina/js/channel-ui.js` owns channel discovery and explicit selection. A rendering generation rejects stale reads; selection disables the control until its save is confirmed. `settings-ui.js` retains re-exports for existing consumers.
+- Optional ACK catalogs are validated once per operation before cache changes. Invalid catalogs leave startup and voice readiness available, with explicit degraded health and unknown clip counts. Voice rebuilds follow successful settings saves; browser ACK status is separate from transcription status.
 
 ## Provider transport
 
