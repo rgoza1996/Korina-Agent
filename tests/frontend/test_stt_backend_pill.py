@@ -1,28 +1,8 @@
-"""Contracts for the per-utterance STT backend pill.
+"""Markup, backend-label, and fetch-rejection wiring for the STT backend pill.
 
-The pill (#sttBackendHealth + #sttBackendDot) is updated by api.js's
-`recordSttBackend(payload, errorMsg)` helper, which is invoked from
-recorder.js at every code path that completes or fails an STT
-request. This test enforces:
-
-1. The pill exists in index.html.
-2. api.js exports `recordSttBackend` and reads the #sttBackendHealth /
-   #sttBackendDot elements.
-3. recorder.js calls `recordSttBackend` on:
-   - SSE 'done' (success)
-   - SSE 'error' (failure)
-   - HTTP fetch rejection (network error)
-   - HTTP !r.ok (4xx/5xx)
-   - /api/transcribe/partial success
-   - /api/transcribe/partial !r.ok (4xx/5xx)
-   - /api/transcribe/partial fetch rejection
-4. The pill labels the four expected backend values.
+Executable SSE success/failure behavior lives in tests/js/test_transport.mjs.
 """
 from pathlib import Path
-import shutil
-import subprocess
-
-import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 INDEX = REPO / "Korina" / "index.html"
@@ -60,18 +40,6 @@ def test_api_js_labels_four_backends():
     for backend in ('multimodal-stt', 'faster-whisper', 'whisper-fallback', 'whisper-llm'):
         assert f"'{backend}'" in src, \
             f"recordSttBackend must handle backend={backend!r}"
-
-
-def test_recorder_updates_the_backend_pill_for_sse_success_and_failure():
-    node = shutil.which('node')
-    if node is None:
-        pytest.skip('Node is required for the executable STT transport regression')
-    result = subprocess.run(
-        [node, '--test', '--test-name-pattern=full STT (accepts|surfaces)',
-         str(REPO / 'tests/js/test_transport.mjs')],
-        cwd=REPO, capture_output=True, text=True, timeout=30,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_recorder_wires_fetch_rejection_stream():

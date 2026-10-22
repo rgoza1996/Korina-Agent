@@ -7,7 +7,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[dev]'
 python -m pytest --cov=korina --cov-report=term-missing -q
-ruff check korina
+ruff check korina tests scripts build_support.py kokoro-streaming-server.py
 npm ci --ignore-scripts
 npm run lint
 npm test
@@ -48,6 +48,6 @@ The manually dispatched **Live voice-stack smoke** workflow uses a self-hosted r
 
 Follow [the hackathon guide](hackathon.md). Verify the selected LLM, Whisper/audio model, Kokoro voice, microphone permission, first-turn model loading, a second conversational turn, interruption, permission answer, provider failure, and recovery. Record model IDs, devices, endpoints, and observed timing in issue #23.
 
-`tests/regression_smoke.py` is the historical integration suite. It includes **mutating** checks: session reset, ACK rebuild, provider activation, and a temporary configuration round trip, even with `--no-chat --no-transcribe`. Run it only against a disposable or deliberately selected local stack. The new read-only smoke gate is the default for monitoring and CI.
+`tests/regression_smoke.py` is retired. Its compatibility entrypoint prints replacement commands and exits 2, including with the old `--no-chat --no-transcribe` flags; `--help` exits 0. It performs no requests or runtime operations. Use `scripts/check_stack.py` for read-only monitoring, the deterministic suites above for regression checks, and the hackathon guide for an actual model and hardware rehearsal. Historical plans describe the old mutating suite and do not prescribe current commands.
 
 Passing mocked tests does not establish model quality, microphone behavior, GPU compatibility, or end-to-end latency. Those require the rehearsal above.

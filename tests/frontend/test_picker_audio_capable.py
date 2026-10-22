@@ -20,43 +20,23 @@ capability-filter.js) but was being silently bypassed because:
      annotate the label with '(no audio)' — so the user had no
      at-a-glance signal.
 
-These tests cover all four gaps.
+These checks retain the markup/source contracts. Executable filter behavior
+is covered by tests/js/test_capability_filter.mjs.
 """
 
-import json
 import re
-import subprocess
 from pathlib import Path
-
-
-def test_picker_explains_that_capability_hints_are_estimates():
-    html = (Path(__file__).resolve().parents[2] / 'Korina' / 'index.html').read_text()
-    assert 'estimated to accept audio' in html
-    assert 'These hints do not prove audio support' in html
-    assert 'warnings are shown in red' in html
-
-import pytest
-
-import shutil  # noqa: E402  -- inserted by /tmp/fix_tests.py
-
-NODE_BIN = shutil.which("node") or "node"  # CI runners have node on PATH
-
-_HAS_NODE = shutil.which("node") is not None
-
-
-def _node_bin():
-    """Return the node executable, or skip the test if node is unavailable."""
-    if not _HAS_NODE:
-        import pytest
-        pytest.skip("node not in PATH (test shells out to node to render JS)")
-    return NODE_BIN
-
-
 
 REPO = Path(__file__).resolve().parents[2]
 JS_DIR = REPO / 'Korina/js'
 INDEX_HTML = REPO / 'Korina/index.html'
 
+
+def test_picker_explains_that_capability_hints_are_estimates():
+    html = INDEX_HTML.read_text()
+    assert 'estimated to accept audio' in html
+    assert 'These hints do not prove audio support' in html
+    assert 'warnings are shown in red' in html
 
 # ---------- state.js default ----------
 
@@ -199,152 +179,3 @@ def test_applyModelOptionStatus_appends_no_audio_suffix():
         'applyModelOptionStatus must annotate non-capable models with '
         "'(no audio)' so the user sees audio-capability at a glance."
     )
-
-
-# ---------- capability-filter.js behaviour ----------
-
-
-# ---------- Node integration test: full chain ----------
-
-
-def _run_node_module(js_path, fetch_stub_js, extra_modules=()):
-    """Run a JS file under node with a DOM shim and a fetch stub.
-    Returns CompletedProcess."""
-    src = js_path.read_text()
-    cjs_src = re.sub(r'^import .*?$', '// import stripped', src, flags=re.M)
-    cjs_src = re.sub(
-        r'^export async function (\w+)',
-        r'exports.\1 = async function \1',
-        cjs_src, flags=re.M,
-    )
-    cjs_src = re.sub(
-        r'^export function (\w+)',
-        r'exports.\1 = function \1',
-        cjs_src, flags=re.M,
-    )
-    tmp_module = Path('/tmp/_capability_test_cjs.js')
-    tmp_module.write_text(cjs_src)
-    driver = Path('/tmp/_capability_test_driver.js')
-    driver.write_text(
-        f"""
-const mod = require({json.dumps(str(tmp_module))});
-{fetch_stub_js}
-(async () => {{
-  try {{
-    await mod.runTest();
-    console.log('TEST_OK');
-    process.exit(0);
-  }} catch (e) {{
-    console.error('THREW ' + (e && e.message || e));
-    process.exit(1);
-  }}
-}})();
-"""
-    )
-    return subprocess.run(
-        [_node_bin(), str(driver)],
-        capture_output=True, text=True, timeout=15,
-    )
-
-
-def test_capability_filter_drops_gemma_4_e4b_when_override_off():
-    """End-to-end: with capabilityFilterOverride=false, the multimodal
-    STT picker must NOT include google/gemma-4-e4b in the rendered list."""
-    js = (JS_DIR / 'capability-filter.js').read_text()
-    # Strip ESM import lines and convert exports to CJS
-    cjs = re.sub(r"^import .*?$", "", js, flags=re.M)
-    cjs = re.sub(
-        r"^export\s+(async\s+)?function\s+(\w+)",
-        r"exports.\2 = \1function \2",
-        cjs, flags=re.M,
-    )
-    cjs_path = Path('/tmp/_capability_filter_cjs.js')
-    cjs_path.write_text(cjs)
-    driver = (
-        "const f = require(" + json.dumps(str(cjs_path)) + ");\n"
-        "const models = [\n"
-        "  'google/gemma-4-e4b',\n"
-        "  'google/gemma-4-e2b-it-mmproj',\n"
-        "  'ultravox-v0_5-llama-3_1-8b',\n"
-        "  'qwen2.5-1.5b-instruct',\n"
-        "];\n"
-        "const caps = {\n"
-        "  'google/gemma-4-e4b': { supports_audio_input: false },\n"
-        "  'google/gemma-4-e2b-it-mmproj': { supports_audio_input: true },\n"
-        "  'ultravox-v0_5-llama-3_1-8b': { supports_audio_input: true },\n"
-        "  'qwen2.5-1.5b-instruct': { supports_audio_input: false },\n"
-        "};\n"
-        "const out = f.filterModelsByCapability(models, caps, { kind: 'audio_input' });\n"
-        "if (out.includes('google/gemma-4-e4b')) {\n"
-        "  console.error('FAIL: gemma-4-e4b should be filtered out, got ' + JSON.stringify(out));\n"
-        "  process.exit(1);\n"
-        "}\n"
-        "if (out.includes('qwen2.5-1.5b-instruct')) {\n"
-        "  console.error('FAIL: qwen2.5 should be filtered out');\n"
-        "  process.exit(1);\n"
-        "}\n"
-        "if (!out.includes('google/gemma-4-e2b-it-mmproj')) {\n"
-        "  console.error('FAIL: gemma-4-e2b-it-mmproj should be kept');\n"
-        "  process.exit(1);\n"
-        "}\n"
-        "if (!out.includes('ultravox-v0_5-llama-3_1-8b')) {\n"
-        "  console.error('FAIL: ultravox should be kept');\n"
-        "  process.exit(1);\n"
-        "}\n"
-        "console.log('FILTER_OUT ' + JSON.stringify(out));\n"
-    )
-    driver_path = Path('/tmp/_capability_filter_driver.js')
-    driver_path.write_text(driver)
-    result = subprocess.run(
-        [_node_bin(), str(driver_path)],
-        capture_output=True, text=True, timeout=15,
-    )
-    if result.returncode != 0:
-        pytest.fail(
-            f"capability-filter smoke test failed: rc={result.returncode}\n"
-            f"stdout={result.stdout}\nstderr={result.stderr}"
-        )
-    out_line = result.stdout.split('FILTER_OUT ')[-1].strip() if 'FILTER_OUT ' in result.stdout else ''
-    assert 'gemma-4-e2b-it-mmproj' in out_line
-    assert 'ultravox' in out_line
-    assert 'gemma-4-e4b' not in out_line
-    assert 'qwen2.5-1.5b-instruct' not in out_line
-
-
-def test_capability_filter_keeps_everything_when_override_on():
-    """When the override is on (requirement kind 'any'), every model passes."""
-    js = (JS_DIR / 'capability-filter.js').read_text()
-    cjs = re.sub(r"^import .*?$", "", js, flags=re.M)
-    cjs = re.sub(
-        r"^export\s+(async\s+)?function\s+(\w+)",
-        r"exports.\2 = \1function \2",
-        cjs, flags=re.M,
-    )
-    cjs_path = Path('/tmp/_capability_filter_cjs_any.js')
-    cjs_path.write_text(cjs)
-    driver = (
-        "const f = require(" + json.dumps(str(cjs_path)) + ");\n"
-        "const models = ['google/gemma-4-e4b', 'qwen2.5-1.5b-instruct'];\n"
-        "const caps = {\n"
-        "  'google/gemma-4-e4b': { supports_audio_input: false },\n"
-        "  'qwen2.5-1.5b-instruct': { supports_audio_input: false },\n"
-        "};\n"
-        "const out = f.filterModelsByCapability(models, caps, { kind: 'any' });\n"
-        "if (out.length !== 2) {\n"
-        "  console.error('FAIL: kind=any should keep all, got ' + JSON.stringify(out));\n"
-        "  process.exit(1);\n"
-        "}\n"
-        "console.log('FILTER_KEEP_ALL');\n"
-    )
-    driver_path = Path('/tmp/_capability_filter_driver_any.js')
-    driver_path.write_text(driver)
-    result = subprocess.run(
-        [_node_bin(), str(driver_path)],
-        capture_output=True, text=True, timeout=15,
-    )
-    if result.returncode != 0:
-        pytest.fail(
-            f"capability-filter kind=any test failed: rc={result.returncode}\n"
-            f"stdout={result.stdout}\nstderr={result.stderr}"
-        )
-    assert 'FILTER_KEEP_ALL' in result.stdout
