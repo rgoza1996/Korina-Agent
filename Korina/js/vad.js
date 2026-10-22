@@ -14,18 +14,20 @@ export function drawWave() {
   const data = new Uint8Array(state.analyser.frequencyBinCount);
   state.analyser.getByteTimeDomainData(data);
   const wave = $('wave');
-  wave.innerHTML = '';
   const styles = getComputedStyle(wave);
   const inner = Math.max(80, wave.clientWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight));
   const barW = 3, gap = 2;
   const count = Math.max(24, Math.floor(inner / (barW + gap)));
+  while (wave.children.length > count) wave.lastElementChild.remove();
+  while (wave.children.length < count) {
+    const bar = document.createElement('div');
+    bar.className = 'bar';
+    wave.appendChild(bar);
+  }
   for (let i = 0; i < count; i++) {
     const idx = Math.min(data.length - 1, Math.floor(i * data.length / count));
     const v = Math.abs(data[idx] - 128) / 128;
-    const b = document.createElement('div');
-    b.className = 'bar';
-    b.style.height = (4 + v * 44) + 'px';
-    wave.appendChild(b);
+    wave.children[i].style.height = (4 + v * 44) + 'px';
   }
   state.raf = requestAnimationFrame(drawWave);
 }

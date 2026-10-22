@@ -13,7 +13,15 @@ function element(id) {
     elements.set(id, {
       value: '', textContent: '', className: '', disabled: false, style: {}, clientWidth: 200,
       classList: { add: name => classes.add(name), remove: name => classes.delete(name), contains: name => classes.has(name) },
-      appendChild() {},
+      children: [],
+      get lastElementChild() { return this.children.at(-1) || null; },
+      appendChild(child) {
+        this.children.push(child);
+        child.remove = () => {
+          const index = this.children.indexOf(child);
+          if (index >= 0) this.children.splice(index, 1);
+        };
+      },
     });
   }
   return elements.get(id);
