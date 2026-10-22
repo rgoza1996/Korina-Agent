@@ -34,6 +34,7 @@ from korina.config import (
     config_tts_provider,
 )
 from korina.runtime import state
+from korina.model_ids import limit_model_ids, model_list_info, normalize_model_id
 from korina.runtime.limits import AudioLimits, MAX_AUDIO_UPLOAD_BYTES, resolve_audio_limits
 from korina.runtime.http import auth_headers_from_env
 from korina.runtime.json_http import HTTPStatusError, request_json
@@ -92,10 +93,9 @@ def _probe_llm_models(base_url, expected, timeout=1.5, headers=None, *, models_u
     - LM Studio returning bare catalog ids (e.g. publisher/model-id)
     - Ollama returning name:tag strings (e.g. llama3.2:3b)
 
-    Match strategy: case-insensitive substring match. llama.cpp absolute
-    paths will match both the bare model filename (suffix) and any parent
-    directory component; LM Studio bare ids match themselves; Ollama
-    name:tag strings are compared both with and without the tag suffix.
+    IDs match case-insensitively, with a bare GGUF filename alias and Ollama's
+    untagged name alias. Two explicit GGUF paths must identify the same path;
+    a matching basename alone cannot establish that the selected file loaded.
 
     Returns a dict with keys:
         provider, base_url, expected_model, ok, loaded, loaded_model,
@@ -155,29 +155,30 @@ def _probe_llm_models(base_url, expected, timeout=1.5, headers=None, *, models_u
             return []
         ids = []
         for k in ("id", "name", "model"):
-            v = item.get(k)
-            if isinstance(v, str) and v.strip():
-                ids.append(v.strip())
+            if k in item:
+                ids.append(item[k])
         return ids
 
-    raw_ids = []
-    seen = set()
-    for it in items:
-        for mid in _candidate_ids(it):
-            if mid not in seen:
-                seen.add(mid)
-                raw_ids.append(mid)
-    block["loaded_models"] = raw_ids
+    raw_ids = [mid for item in items for mid in _candidate_ids(item)]
 
     expected_lc = expected_clean.lower()
     if expected_lc:
-        for mid in raw_ids:
+        for raw in raw_ids:
+            mid = normalize_model_id(raw)
+            if mid is None:
+                continue
             ml = mid.lower()
-            same_file = ml.endswith('.gguf') and expected_lc.endswith('.gguf') and ml.rsplit('/', 1)[-1] == expected_lc.rsplit('/', 1)[-1]
+            gguf = ml.endswith('.gguf') and expected_lc.endswith('.gguf')
+            explicit_paths = gguf and '/' in mid and '/' in expected_clean
+            same_file = gguf and not explicit_paths and ml.rsplit('/', 1)[-1] == expected_lc.rsplit('/', 1)[-1]
             untagged_alias = ':' not in expected_lc and ml.split(':', 1)[0] == expected_lc
-            if ml == expected_lc or same_file or untagged_alias:
+            exact = mid == expected_clean if explicit_paths else ml == expected_lc
+            if exact or same_file or (untagged_alias and not explicit_paths):
                 block["loaded_model"] = mid
                 break
+    listed = limit_model_ids(raw_ids, pinned=[block['loaded_model']])
+    block['loaded_models'] = listed
+    block['models_info'] = model_list_info(listed)
     block["loaded"] = block["loaded_model"] is not None
     block["ok"] = True
     return block
@@ -204,9 +205,15 @@ def _aggregate_tts(config):
         }
     kwargs = {'health_url': health_url} if health_url else {}
     ok, body, error = _probe_tts_backend(base_url, timeout=2.0, **kwargs)
-    if ok and (body.get('ok') is False or body.get('runtime_available') is False or body.get('status') in {'error', 'failed', 'degraded'}):
-        ok = False
-        error = body.get('error') or 'TTS backend reports unavailable'
+    if ok:
+        try:
+            body = _validated_tts_health(body)
+        except ValueError as exc:
+            ok, error = False, str(exc)
+        else:
+            if body.get('ok') is False or body.get('runtime_available') is False or body.get('status') in {'error', 'failed', 'degraded', 'unavailable'}:
+                ok = False
+                error = body.get('error') or 'TTS backend reports unavailable'
     if not ok:
         return {
             'ok': False,
@@ -229,6 +236,33 @@ def _aggregate_tts(config):
         'base_url': base_url,
         'error': None,
     }
+
+
+def _validated_tts_health(body: object) -> dict:
+    """Reject malformed readiness flags without taking down Korina liveness."""
+    if not isinstance(body, dict):
+        raise ValueError('Invalid TTS health response: expected an object')
+    result = {}
+    for key in ('ok', 'runtime_available', 'loaded', 'cuda_available'):
+        if key in body:
+            if not isinstance(body[key], bool):
+                raise ValueError(f'Invalid TTS health response: {key} must be boolean')
+            result[key] = body[key]
+    for key, maximum in (('status', 64), ('device', 128), ('error', 1024)):
+        value = body.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f'Invalid TTS health response: {key} must be text')
+        try:
+            value.encode('utf-8', errors='strict')
+        except UnicodeError as exc:
+            raise ValueError(f'Invalid TTS health response: {key} contains invalid Unicode') from exc
+        result[key] = value.strip()[:maximum]
+    statuses = {'ok', 'healthy', 'ready', 'starting', 'loading', 'initializing', 'error', 'failed', 'degraded', 'unavailable'}
+    if not any(key in result for key in ('ok', 'runtime_available', 'loaded')) and result.get('status') not in statuses:
+        raise ValueError('Invalid TTS health response: no recognized readiness signal')
+    return result
 
 
 @router.get('/api/health')
