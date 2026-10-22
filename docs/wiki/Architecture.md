@@ -31,7 +31,7 @@ FastAPI routes → small service functions → configured model endpoints
 
 `runtime/json_http.py` shares HTTPX/AnyIO transport across model discovery, health, response/agent generation, multimodal transcription, provider status, and ACK downloads. Synchronous callers run in workers; connected I/O is asynchronous under a total network deadline. Successful JSON is capped at 2 MiB, error details at 16 KiB, and ACK WAVs at 2 MiB. Raw identity responses avoid unbounded decompression. Redirects share the deadline and discard unread bodies; credentials and cookies cannot cross origins. Operating-system DNS resolver shutdown remains platform-dependent.
 
-Background agent and ACK requests also carry ownership predicates. A small in-loop watcher closes their connected I/O when reset, shutdown, cache clear, or disable invalidates that owner, freeing the existing worker for fresh work. Chat adds an async disconnect watcher: browser disconnect or ASGI task cancellation retires its provider connection while using the existing pool worker. These watchers add no request thread and do not establish remote model-compute cancellation.
+Background agent and ACK requests also carry ownership predicates. A small in-loop watcher closes their connected I/O when reset, shutdown, cache clear, or disable invalidates that owner, freeing the existing worker for fresh work. `runtime/request_owner.py` shares async disconnect ownership across chat and buffered, partial, and SSE transcription, including STT model discovery. Browser disconnect or ASGI cancellation retires connected provider I/O while using the existing pool workers. A retired transcription cannot enter fallback, write an unsupported-model result, start FFmpeg, or advance another native Whisper step. SSE cleanup waits behind an active step before closing its iterator and temporary files. These watchers add no request thread; active decoder/native steps finish under their existing bounds, and connection closure does not establish remote model-compute cancellation.
 
 Blank role credentials inherit response credentials only at the same normalized API base URL. Explicit independent endpoints require explicit credentials. Model refresh merges only its owned settings under shared activation admission, preserving unrelated edits and probe-cache changes.
 
@@ -42,6 +42,8 @@ Blank role credentials inherit response credentials only at the same normalized 
 `GET /api/ready` returns a check map for frontend assets, response LLM, selected STT dependencies, TTS, and enabled agent. It returns 503 when a required check fails. A reachable lazy Kokoro pipeline counts as available; rehearsal must warm actual models.
 
 Health advertises the effective upload and decoded duration budgets in read-only `audio_limits`. Browser captures leave encoding/multipart headroom and retain at most 24 MiB. Invalid server limit settings remain visible through `audio_limits_error`, fail readiness, and prevent new recordings. Stop, Clear Session, replacement, and recorder errors release capture timers and owned audio buffers.
+
+Browser health results belong to their poll generation, current provider settings, activation state, and session. A retired success or failure cannot replace current readiness, pending provider status, capture limits, or the current ACK result. Only current failures advance the ordinary three-miss unreachable threshold.
 
 ## Assets and state
 
