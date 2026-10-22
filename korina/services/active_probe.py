@@ -187,35 +187,3 @@ def probe_audio_support(
                 tmp_path.unlink()
             except Exception:
                 pass
-
-
-def probe_many(
-    provider: str,
-    base_url: str,
-    models: list[str],
-    *,
-    timeout: float = 15.0,
-    api_env: str | None = None,
-    transcribe_fn=None,
-) -> list[ProbeResult]:
-    """Sequentially probe a list of models. Sequential (not parallel) so we
-    do not flood the active STT endpoint with N simultaneous multimodal
-    requests; most user-facing hosts have a single loaded model at a time
-    anyway.
-    """
-    results: list[ProbeResult] = []
-    for model in models:
-        mid = str(model or "").strip()
-        if not mid:
-            continue
-        results.append(
-            probe_audio_support(
-                provider,
-                base_url,
-                mid,
-                timeout=timeout,
-                api_env=api_env,
-                transcribe_fn=transcribe_fn,
-            )
-        )
-    return results

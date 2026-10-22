@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Optional
 
 from korina.config import (
-    config_llm_base_url,
     config_stt_llm_api_env,
     config_stt_llm_base_url,
     config_stt_llm_chat_url,
@@ -58,11 +57,6 @@ def transient_whisper_fallback_reason(detail: str) -> str | None:
         if pat.search(detail):
             return reason
     return None
-
-
-def lmstudio_models() -> list[str]:
-    config = load_config()
-    return llm_models_for(config_llm_base_url(config), str(config.get('llm_api_key_env') or ''))
 
 
 def resolve_stt_api_env(config: dict, base_url: str, api_env: str | None) -> str:

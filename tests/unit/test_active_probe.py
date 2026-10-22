@@ -137,22 +137,6 @@ def test_probe_audio_support_does_not_cache_empty_200(monkeypatch, isolated_kori
     assert triple not in load_config()["audio_unsupported"]
 
 
-def test_probe_many_returns_results_in_order(monkeypatch, isolated_korina_app_dir):
-    from korina.services import active_probe
-
-    def ok(wav, *, model, base_url, api_env):
-        return {"text": "ok"}
-
-    results = active_probe.probe_many(
-        "lmstudio",
-        "http://127.0.0.1:1234/v1",
-        ["a", "b", "c"],
-        transcribe_fn=ok,
-    )
-    assert [r.model for r in results] == ["a", "b", "c"]
-    assert all(r.supported for r in results)
-
-
 def test_probe_audio_support_synthetic_wav_is_valid():
     """Sanity: the probe's synthetic WAV should round-trip via stdlib wave."""
     from korina.services.active_probe import _build_synthetic_wav
@@ -209,7 +193,8 @@ def test_probe_auth_and_full_endpoint_normalization_preserve_legacy_callback(con
 
     active_probe.probe_audio_support('openai-compatible', 'https://configured.test/v1/chat/completions/', 'a', transcribe_fn=legacy_callback)
     active_probe.probe_audio_support('openai-compatible', 'https://configured.test/v1', 'a', api_env='', transcribe_fn=legacy_callback)
-    active_probe.probe_many('openai-compatible', 'https://candidate.test/v1', ['a', 'b'], api_env='CANDIDATE_ENV', transcribe_fn=legacy_callback)
+    active_probe.probe_audio_support('openai-compatible', 'https://candidate.test/v1', 'a', api_env='CANDIDATE_ENV', transcribe_fn=legacy_callback)
+    active_probe.probe_audio_support('openai-compatible', 'https://candidate.test/v1', 'b', api_env='CANDIDATE_ENV', transcribe_fn=legacy_callback)
     assert calls == [
         ('https://configured.test/v1/chat/completions', 'CONFIGURED_ENV'),
         ('https://configured.test/v1/chat/completions', ''),
