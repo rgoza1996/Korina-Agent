@@ -20,14 +20,17 @@ python -m korina.app
 
 Open `http://localhost:8001`. The first launch creates `Korina/config.json` from the tracked example. In Settings, set the response provider URL and select a model exposed by that endpoint. The default URLs are `http://127.0.0.1:8080/v1` for the LLM and `http://127.0.0.1:8880` for TTS. Model weights and external LLM servers are installed separately; Korina does not download an LLM for you.
 
-For the bundled Kokoro server, in a second terminal with the same environment:
+For a CPU-only Linux demo, install CPU Torch explicitly before the Kokoro extra. Also install the system `espeak-ng` package for phonemizer fallback. In a second terminal with the same environment:
 
 ```bash
+python -m pip install 'torch>=2.4,<3' --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -e '.[tts]'
-python kokoro-streaming-server.py
+OMP_NUM_THREADS=4 python kokoro-streaming-server.py
 ```
 
-Kokoro loads its pipeline on first speech. Its dependencies may download model weights at that point; warm them before presenting. Use `stt_backend=whisper`, a CPU Whisper model such as `base.en`, and a working response model for the most reproducible first rehearsal. Multimodal STT requires a provider and model that accept audio; text-only models fall back to Whisper when available.
+For GPU or other platform builds, choose the appropriate Torch distribution from the [official install selector](https://pytorch.org/get-started/locally/) before installing `.[tts]`. Generic PyPI Torch can pull CUDA packages even for a CPU demo.
+
+Kokoro loads its pipeline on first speech. Its dependencies may download model weights at that point; warm them before presenting. Use `stt_backend=whisper`, a CPU Whisper model such as `base.en`, and a working response model for the most reproducible first rehearsal. Multimodal STT requires a provider and model that accept audio; text-only models fall back to Whisper when available. The Whisper extra constrains PyAV below 19 because faster-whisper 1.2.1 still uses a decoder argument removed upstream; see [the compatibility issue](https://github.com/SYSTRAN/faster-whisper/issues/1589).
 
 Browser microphone access needs localhost or a secure context. For a remote demo, serve the UI over HTTPS and configure the browser-visible TTS URL and allowed origins. The local control API assumes a trusted environment; provider activation can manage local processes. Do not expose it directly to the public internet.
 
@@ -59,7 +62,7 @@ npm run lint
 npm test
 ```
 
-See [testing](docs/testing.md) for CI, coverage, wheel checks, and live rehearsal limits.
+See [observed verification](docs/verification.md) and [testing](docs/testing.md) for CI, coverage, wheel checks, and live rehearsal limits.
 
 ## Configuration and portable paths
 
@@ -108,3 +111,5 @@ The installer renders units with the checkout and interpreter paths. `systemd --
 - `docs/wiki/`: current repository pages; `docs/refactor/` and `docs/plans/` preserve historical implementation notes.
 
 Korina Agent currently reports and requests permission; it does not execute arbitrary tools. Saved future execution settings are not proof of an implemented execution engine. Hermes is a stub adapter. See [third-party notices](THIRD_PARTY_NOTICES.md) and [MIT license](LICENSE).
+
+The settings UI exposes implemented report, delivery, and interruption controls. Historical retry, transport, compaction, and tool settings remain readable in existing configuration files; they are no longer offered as working controls.

@@ -22,7 +22,7 @@ CI runs Python 3.10–3.13, coverage artifacts, JavaScript lint/tests on Node 22
 
 ## Current verification checkpoint
 
-On 2026-10-22, the core refactor at `22b401c` passed 347 Python tests with 85% coverage, 38 Node tests, 10 real Chromium smoke tests, mypy, Ruff/ESLint, source/wheel builds, and an isolated wheel install. GitHub Actions jobs did not start because GitHub reported an account payment/spending-limit problem. This is local evidence, not a passing hosted run. Exact current results are tracked in [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23).
+On 2026-10-22, the integrated speech/protocol checkpoint passed 388 Python tests with 86% coverage, 44 Node tests (+17 label assertions), 13 real Chromium tests, mypy, Ruff/ESLint, source/wheel builds, and an isolated wheel install. The earlier 347-test core checkpoint also passed in clean Python 3.10–3.13 environments. GitHub Actions jobs did not start because GitHub reported an account payment/spending-limit problem. This is local evidence, not a passing hosted run. See [observed verification](verification.md) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) for precise boundaries and later results.
 
 ## HTTP smoke without changing state
 
@@ -35,6 +35,10 @@ python scripts/check_stack.py --base http://127.0.0.1:8001
 This reads the UI, stylesheet, JS entrypoint, capabilities, health, and readiness. It never changes configuration, resets sessions, switches providers, or sends prompts/audio. Exit 0 means every check passed. `--allow-degraded` accepts unavailable model dependencies while checking the app/asset layer; it is not a successful voice rehearsal.
 
 The manually dispatched **Live voice-stack smoke** workflow uses a self-hosted runner labelled `korina-demo` and publishes its JSON report. Configure that runner where it can reach the demo stack; ordinary CI does not assume one exists.
+
+## Actual speech-runtime evidence
+
+[Observed verification](verification.md) records real CPU Whisper buffered/partial/SSE inference and real Kokoro buffered/SSE synthesis, exact package/model versions, timings, and limits. The Whisper runtime job also decodes a real WAV without downloading model weights, catching dependency API breaks such as PyAV 19.
 
 ## Rehearse with actual services
 

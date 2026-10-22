@@ -30,10 +30,12 @@ Korina separates a responsive voice conversation from a background agent. The pr
 | Restart the provider | One successful poll restores accurate readiness |
 | Speak again | Model, audio, and agent flow recover without a page reload |
 
-Record actual model IDs, device, first-turn and warm-turn timings, browser, and any unresolved failures in issue #23. Unit tests and mock providers cannot supply that evidence.
+Record actual model IDs, device, first-turn and warm-turn timings, browser, and any unresolved failures in issue #23. The local CPU and browser smoke results are recorded in [verification](verification.md); the presentation hardware still needs this rehearsal.
 
 ## Current verification boundary
 
 The refactor adds portable checkout/wheel assets, shared STT payloads and SSE handling, bounded background agent work, request validation/body caps, accurate health/readiness, executable frontend checks, and portable service templates. The optional Kokoro implementation removes shared temporary WAV files and unbounded request threads.
 
-Real microphone capture, real model synthesis/transcription, GPU behavior, remote HTTPS deployment, and event-specific requirements remain separate validation steps. Do not describe Hermes stub support or saved execution settings as working tool execution.
+Real CPU Whisper transcription and Kokoro synthesis passed local API smoke checks. A real Chromium live turn also completed native MediaRecorder/VAD capture, Whisper partial/final transcription, a deterministic local response fixture, Kokoro SSE, and native WebAudio playback without JavaScript errors. Its generated fake microphone input and stub response model leave physical microphone/speaker behavior, a selected real response/agent model, and human interruption timing for rehearsal. Recognition errors and CPU latency are recorded in [verification](verification.md).
+
+GPU behavior, remote HTTPS deployment, and event-specific requirements also remain unverified. Do not describe Hermes stub support or saved execution settings as working tool execution.

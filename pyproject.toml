@@ -27,7 +27,9 @@ test = [
   "pytest-cov>=5,<8",
 ]
 dev = ["korina-agent[test]", "ruff>=0.14,<1", "build>=1,<2", "mypy>=1.14,<2"]
-whisper = ["faster-whisper>=1.1,<2"]
+# faster-whisper 1.2.1 passes metadata_errors, removed by PyAV 19.
+# https://github.com/SYSTRAN/faster-whisper/issues/1589
+whisper = ["faster-whisper>=1.1,<2", "av>=11,<19"]
 tts = ["kokoro>=0.9,<1", "torch>=2.4,<3"]
 
 [project.scripts]
@@ -45,4 +47,4 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.ruff.lint]
-select = ["E9", "F63", "F7", "F82"]
+select = ["E9", "F"]
