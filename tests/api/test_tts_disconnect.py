@@ -5,13 +5,11 @@ import json
 import asyncio
 import socket
 import threading
-import time
 
 import anyio
 import httpx
 import numpy as np
 import pytest
-import uvicorn
 from starlette.responses import JSONResponse
 
 from korina.tts import server as tts
@@ -27,7 +25,7 @@ CASES += [(endpoint, stage, 'task_cancel')
 
 
 @pytest.mark.parametrize('endpoint,stage,retirement', CASES)
-def test_retired_synthesis_finishes_active_work_then_frees_same_slot(monkeypatch, stage, retirement, endpoint):
+def test_retired_synthesis_finishes_active_work_then_frees_same_slot(monkeypatch, stage, retirement, endpoint, asgi_server):
     entered, release, retired, closed, finished = (threading.Event() for _ in range(5))
     steps = []
     loads = []
@@ -125,52 +123,38 @@ def test_retired_synthesis_finishes_active_work_then_frees_same_slot(monkeypatch
         finally:
             finished.set()
 
-    listener = socket.socket()
-    listener.bind(('127.0.0.1', 0))
-    listener.listen()
-    port = listener.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(observed_app, log_level='error', ws='none'))
-    serving = threading.Thread(target=server.run, kwargs={'sockets': [listener]}, daemon=True)
     browser = None
-    try:
-        serving.start()
-        deadline = time.monotonic() + 5
-        while not server.started and time.monotonic() < deadline:
-            time.sleep(.01)
-        assert server.started
-        browser = socket.create_connection(('127.0.0.1', port), timeout=2)
-        payload = json.dumps({'input': 'old', 'device': 'cpu'}).encode()
-        browser.sendall(f'POST {endpoint}?old=1 HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '.encode()
-                        + str(len(payload)).encode() + b'\r\n\r\n' + payload)
-        assert entered.wait(3), 'loading or a native step must already be active'
-        if retirement == 'disconnect':
-            browser.close()
-            browser = None
-        else:
-            assert httpx.post(f'http://127.0.0.1:{port}/cancel-inflight', timeout=2).status_code == 200
-        assert retired.wait(1), 'HTTP disconnect or outer cancellation must retire the request owner'
-        assert not release.is_set()
-        assert not closed.is_set()
-        assert not finished.is_set(), 'active native work must drain before response cleanup finishes'
-        busy = httpx.post(f'http://127.0.0.1:{port}/v1/audio/speech', json={'input': 'fresh', 'device': 'cpu'}, timeout=2)
-        assert busy.status_code == 503
-        assert busy.headers['retry-after'] == '1'
-        release.set()
-        assert finished.wait(2), 'retired synthesis must close without admitting another native step'
-        assert max_receives == 1, 'body parsing and ownership must never race another disconnect receiver'
-        assert steps == {'load': [], 'prime': ['first'], 'later_step': ['first', 'second']}[stage]
-        assert closed.is_set() is (stage != 'load')
-        fresh = httpx.post(f'http://127.0.0.1:{port}/v1/audio/speech', json={'input': 'fresh', 'device': 'cpu'}, timeout=2)
-        assert fresh.status_code == 200
-        assert fresh.headers['content-type'] == 'audio/wav'
-        assert len(fresh.content) == 46
-        assert steps[-1] == 'fresh'
-        assert loads == ['cpu'], 'a cancelled model load may finish, but remains safely reusable'
-    finally:
-        if browser is not None:
-            browser.close()
-        release.set()
-        server.should_exit = True
-        serving.join(5)
-        listener.close()
-        assert not serving.is_alive()
+    with asgi_server(observed_app) as port:
+        try:
+            browser = socket.create_connection(('127.0.0.1', port), timeout=2)
+            payload = json.dumps({'input': 'old', 'device': 'cpu'}).encode()
+            browser.sendall(f'POST {endpoint}?old=1 HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '.encode()
+                            + str(len(payload)).encode() + b'\r\n\r\n' + payload)
+            assert entered.wait(3), 'loading or a native step must already be active'
+            if retirement == 'disconnect':
+                browser.close()
+                browser = None
+            else:
+                assert httpx.post(f'http://127.0.0.1:{port}/cancel-inflight', timeout=2).status_code == 200
+            assert retired.wait(1), 'HTTP disconnect or outer cancellation must retire the request owner'
+            assert not release.is_set()
+            assert not closed.is_set()
+            assert not finished.is_set(), 'active native work must drain before response cleanup finishes'
+            busy = httpx.post(f'http://127.0.0.1:{port}/v1/audio/speech', json={'input': 'fresh', 'device': 'cpu'}, timeout=2)
+            assert busy.status_code == 503
+            assert busy.headers['retry-after'] == '1'
+            release.set()
+            assert finished.wait(2), 'retired synthesis must close without admitting another native step'
+            assert max_receives == 1, 'body parsing and ownership must never race another disconnect receiver'
+            assert steps == {'load': [], 'prime': ['first'], 'later_step': ['first', 'second']}[stage]
+            assert closed.is_set() is (stage != 'load')
+            fresh = httpx.post(f'http://127.0.0.1:{port}/v1/audio/speech', json={'input': 'fresh', 'device': 'cpu'}, timeout=2)
+            assert fresh.status_code == 200
+            assert fresh.headers['content-type'] == 'audio/wav'
+            assert len(fresh.content) == 46
+            assert steps[-1] == 'fresh'
+            assert loads == ['cpu'], 'a cancelled model load may finish, but remains safely reusable'
+        finally:
+            if browser is not None:
+                browser.close()
+            release.set()

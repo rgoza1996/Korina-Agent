@@ -13,7 +13,6 @@ from contextlib import asynccontextmanager
 import anyio
 import httpx
 import pytest
-import uvicorn
 from fastapi import FastAPI
 from starlette.responses import JSONResponse
 
@@ -33,7 +32,7 @@ CASES += [('/api/transcribe/partial', '2.0', 'body', 'scope', False),
 
 @pytest.mark.parametrize('endpoint,spec_version,phase,cancellation,discover', CASES)
 def test_abandoned_http_stt_closes_provider_without_fallback_and_recovers(
-    monkeypatch, tmp_path, config_module, endpoint, spec_version, phase, cancellation, discover,
+    monkeypatch, tmp_path, config_module, endpoint, spec_version, phase, cancellation, discover, asgi_server,
 ):
     entered, peer_closed, release, old_finished = (threading.Event() for _ in range(4))
     calls, workers, fallback = [], [], []
@@ -180,52 +179,40 @@ def test_abandoned_http_stt_closes_provider_without_fallback_and_recovers(
         finally:
             old_finished.set()
 
-    listener = socket.socket()
-    listener.bind(('127.0.0.1', 0))
-    listener.listen()
-    port = listener.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(observed_app, log_level='error', ws='none'))
-    app_thread = threading.Thread(target=server.run, kwargs={'sockets': [listener]}, daemon=True)
     browser = None
     try:
-        app_thread.start()
-        deadline = time.monotonic() + 5
-        while not server.started and time.monotonic() < deadline:
-            time.sleep(.01)
-        assert server.started
-        browser = socket.create_connection(('127.0.0.1', port), timeout=2)
-        body = (b'--audit\r\nContent-Disposition: form-data; name="audio"; filename="old.wav"\r\n'
-                b'Content-Type: audio/wav\r\n\r\nfixture\r\n--audit--\r\n')
-        browser.sendall(f'POST {endpoint}?backend=llm&old=1 HTTP/1.1\r\nHost: localhost\r\nContent-Type: multipart/form-data; boundary=audit\r\nContent-Length: {len(body)}\r\n\r\n'.encode() + body)
-        assert entered.wait(3), 'provider must be connected before retiring its browser owner'
-        started = time.monotonic()
-        if cancellation == 'disconnect':
-            browser.close()
-            browser = None
-        else:
-            assert httpx.post(f'http://127.0.0.1:{port}/cancel-inflight', timeout=2).status_code == 200
-        assert peer_closed.wait(1), 'abandoned STT must close its established provider connection'
-        assert time.monotonic() - started < 1
-        assert old_finished.wait(1), 'retired response must finish serialized generator cleanup'
-        assert not list(captures.iterdir()), 'abandoned uploads must be removed before accepting fresh work'
-        response = httpx.post(f'http://127.0.0.1:{port}{endpoint}?backend=llm',
-                              files={'audio': ('fresh.wav', b'fixture', 'audio/wav')}, timeout=3)
-        assert response.status_code == 200, response.text
-        assert 'Fresh transcript.' in response.text
-        assert fallback == []
-        assert config_module.config_audio_unsupported() == {}
-        if cancellation != 'task':
-            assert len(set(workers)) == 1, 'normal disconnect/scope cancellation recovers the same single pool worker'
-        assert calls == ([b'GET', b'GET', b'POST'] if discover else [b'POST', b'POST'])
-        assert not list(captures.iterdir())
+        with asgi_server(observed_app) as port:
+            try:
+                browser = socket.create_connection(('127.0.0.1', port), timeout=2)
+                body = (b'--audit\r\nContent-Disposition: form-data; name="audio"; filename="old.wav"\r\n'
+                        b'Content-Type: audio/wav\r\n\r\nfixture\r\n--audit--\r\n')
+                browser.sendall(f'POST {endpoint}?backend=llm&old=1 HTTP/1.1\r\nHost: localhost\r\nContent-Type: multipart/form-data; boundary=audit\r\nContent-Length: {len(body)}\r\n\r\n'.encode() + body)
+                assert entered.wait(3), 'provider must be connected before retiring its browser owner'
+                started = time.monotonic()
+                if cancellation == 'disconnect':
+                    browser.close()
+                    browser = None
+                else:
+                    assert httpx.post(f'http://127.0.0.1:{port}/cancel-inflight', timeout=2).status_code == 200
+                assert peer_closed.wait(1), 'abandoned STT must close its established provider connection'
+                assert time.monotonic() - started < 1
+                assert old_finished.wait(1), 'retired response must finish serialized generator cleanup'
+                assert not list(captures.iterdir()), 'abandoned uploads must be removed before accepting fresh work'
+                response = httpx.post(f'http://127.0.0.1:{port}{endpoint}?backend=llm',
+                                      files={'audio': ('fresh.wav', b'fixture', 'audio/wav')}, timeout=3)
+                assert response.status_code == 200, response.text
+                assert 'Fresh transcript.' in response.text
+                assert fallback == []
+                assert config_module.config_audio_unsupported() == {}
+                if cancellation != 'task':
+                    assert len(set(workers)) == 1, 'normal disconnect/scope cancellation recovers the same single pool worker'
+                assert calls == ([b'GET', b'GET', b'POST'] if discover else [b'POST', b'POST'])
+                assert not list(captures.iterdir())
+            finally:
+                if browser is not None:
+                    browser.close()
+                release.set()
     finally:
-        if browser is not None:
-            browser.close()
-        release.set()
-        server.should_exit = True
-        app_thread.join(timeout=5)
-        listener.close()
         provider.shutdown()
         provider.server_close()
         provider_thread.join(timeout=1)
-        assert not app_thread.is_alive()

@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 import anyio
 import httpx
 import pytest
-import uvicorn
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.responses import JSONResponse
@@ -23,7 +22,7 @@ from korina.services import response_llm
 
 
 @pytest.mark.parametrize('phase', ['headers', 'body', 'outer-cancel'])
-def test_browser_disconnect_closes_provider_and_same_pool_worker_recovers(monkeypatch, phase):
+def test_browser_disconnect_closes_provider_and_same_pool_worker_recovers(monkeypatch, phase, asgi_server):
     entered, peer_closed, release = threading.Event(), threading.Event(), threading.Event()
 
     class Provider(socketserver.BaseRequestHandler):
@@ -119,49 +118,37 @@ def test_browser_disconnect_closes_provider_and_same_pool_worker_recovers(monkey
             elif not finished:
                 await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
 
-    listener = socket.socket()
-    listener.bind(('127.0.0.1', 0))
-    listener.listen()
-    app_port = listener.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(cancellable_app, log_level='error', ws='none'))
-    app_thread = threading.Thread(target=server.run, kwargs={'sockets': [listener]}, daemon=True)
     browser = None
     try:
-        app_thread.start()
-        deadline = time.monotonic() + 5
-        while not server.started and time.monotonic() < deadline:
-            time.sleep(.01)
-        assert server.started
-        browser = socket.create_connection(('127.0.0.1', app_port), timeout=2)
-        body = b'{"message":"cancel old turn"}'
-        browser.sendall(b'POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '
-                        + str(len(body)).encode() + b'\r\n\r\n' + body)
-        assert entered.wait(3), 'provider must be connected before closing the browser'
-        started = time.monotonic()
-        if phase == 'outer-cancel':
-            cancelled = httpx.post(f'http://127.0.0.1:{app_port}/cancel-inflight', timeout=2)
-            assert cancelled.status_code == 200
-        else:
-            browser.close()
-            browser = None
-        assert peer_closed.wait(1), 'abandoned chat must close its connected provider socket'
-        assert time.monotonic() - started < 1
-        response = httpx.post(f'http://127.0.0.1:{app_port}/api/chat', json={'message': 'fresh turn'}, timeout=3)
-        assert response.status_code == 200
-        assert response.json()['reply'] == 'Recovered.\nReady.'
-        assert response.json()['model'] == 'fixture-model'
-        assert workers == [workers[0], workers[0]], 'fresh chat must recover the existing single pool worker'
+        with asgi_server(cancellable_app) as app_port:
+            try:
+                browser = socket.create_connection(('127.0.0.1', app_port), timeout=2)
+                body = b'{"message":"cancel old turn"}'
+                browser.sendall(b'POST /api/chat HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '
+                                + str(len(body)).encode() + b'\r\n\r\n' + body)
+                assert entered.wait(3), 'provider must be connected before closing the browser'
+                started = time.monotonic()
+                if phase == 'outer-cancel':
+                    cancelled = httpx.post(f'http://127.0.0.1:{app_port}/cancel-inflight', timeout=2)
+                    assert cancelled.status_code == 200
+                else:
+                    browser.close()
+                    browser = None
+                assert peer_closed.wait(1), 'abandoned chat must close its connected provider socket'
+                assert time.monotonic() - started < 1
+                response = httpx.post(f'http://127.0.0.1:{app_port}/api/chat', json={'message': 'fresh turn'}, timeout=3)
+                assert response.status_code == 200
+                assert response.json()['reply'] == 'Recovered.\nReady.'
+                assert response.json()['model'] == 'fixture-model'
+                assert workers == [workers[0], workers[0]], 'fresh chat must recover the existing single pool worker'
+            finally:
+                if browser is not None:
+                    browser.close()
+                release.set()
     finally:
-        if browser is not None:
-            browser.close()
-        release.set()
-        server.should_exit = True
-        app_thread.join(timeout=5)
-        listener.close()
         provider.shutdown()
         provider.server_close()
         provider_thread.join(timeout=1)
-        assert not app_thread.is_alive()
 
 
 def test_chat_validation_and_provider_error_envelopes_are_preserved(monkeypatch):

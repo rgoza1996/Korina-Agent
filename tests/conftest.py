@@ -5,12 +5,45 @@ import importlib
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
+import threading
+import time
+from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture
+def asgi_server():
+    """Serve an ASGI app on an ephemeral loopback port and join it on exit."""
+    import uvicorn
+
+    @contextmanager
+    def serve(app):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error', ws='none'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [listener]}, daemon=True)
+            try:
+                thread.start()
+                deadline = time.monotonic() + 5
+                while not server.started and time.monotonic() < deadline:
+                    time.sleep(.01)
+                assert server.started
+                yield listener.getsockname()[1]
+            finally:
+                server.should_exit = True
+                if thread.ident is not None:
+                    thread.join(5)
+                listener.close()
+                assert not thread.is_alive()
+
+    return serve
 
 
 @pytest.fixture
