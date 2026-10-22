@@ -72,7 +72,7 @@ Acknowledgements are optional. A malformed phrase manifest leaves startup and vo
 ```bash
 python -m pip install -e '.[dev]'
 python -m pytest -q
-ruff check korina
+ruff check korina tests scripts build_support.py kokoro-streaming-server.py
 npm ci --ignore-scripts
 npm run lint
 npm test
