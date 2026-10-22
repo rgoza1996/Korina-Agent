@@ -9,6 +9,35 @@ import { startBargeInCapture } from "./barge-in.js";
 let bufferedPlayback = null;
 let speechVersion = 0;
 
+function playbackAborted() {
+  return new DOMException('Speech playback interrupted.', 'AbortError');
+}
+
+function assertPlaybackCurrent(playback) {
+  playback.controller.signal.throwIfAborted();
+  if (state.controller !== playback.controller) throw playbackAborted();
+}
+
+function stopPlayback(playback) {
+  playback.controller.abort();
+  if (bufferedPlayback?.signal === playback.controller.signal) bufferedPlayback.cancel();
+  for (const source of playback.sources) { try { source.stop(); } catch {} }
+  state.activeSources = state.activeSources.filter(source => !playback.sources.has(source));
+  playback.sources.clear();
+  if (state.controller === playback.controller) state.controller = null;
+}
+
+function beginPlayback() {
+  const version = ++speechVersion;
+  const ackUntil = state.ackPlayingUntil;
+  stopTtsNow();
+  // A newly started reply still waits for an already playing acknowledgement.
+  state.ackPlayingUntil = ackUntil;
+  const playback = { version, controller: new AbortController(), sources: new Set() };
+  state.controller = playback.controller;
+  return playback;
+}
+
 // Audio context lifecycle
 export function ensureAudio() {
   if (!state.audioCtx) {
@@ -43,7 +72,8 @@ export function interruptedSpeechContext() {
 }
 
 // PCM chunk scheduling
-export async function schedulePcm(b64, sr = 24000) {
+export async function schedulePcm(b64, sr = 24000, playback = null) {
+  if (playback) assertPlaybackCurrent(playback);
   ensureAudio();
   const bin = atob(b64);
   const u8 = new Uint8Array(bin.length);
@@ -60,49 +90,65 @@ export async function schedulePcm(b64, sr = 24000) {
   const when = Math.max(state.audioCtx.currentTime, state.nextPlayTime, state.ackPlayingUntil);
   src.start(when);
   state.activeSources.push(src);
-  src.onended = () => { state.activeSources = state.activeSources.filter(x => x !== src); };
+  playback?.sources.add(src);
+  src.onended = () => {
+    state.activeSources = state.activeSources.filter(x => x !== src);
+    playback?.sources.delete(src);
+  };
   state.nextPlayTime = when + f32.length / sr;
   state.currentTtsEstimatedEnd = Math.max(state.currentTtsEstimatedEnd, state.nextPlayTime);
   return f32.length;
 }
 
 // Streaming SSE speak
-export async function speakSSE(text) {
-  state.controller = new AbortController();
+export async function speakSSE(text, playback = beginPlayback()) {
   state.nextPlayTime = 0;
   let chunks = 0, samples = 0, start = performance.now(), buf = '';
-  status($('ttsStatus'), 'Streaming Kokoro chunks…', 'warn');
-  $('progress').style.width = '5%';
-  const r = await fetch(`${ttsBaseUrl()}/stream/speech`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: text, voice: $('voice').value, speed: parseFloat($('speed').value), device: ttsDevice(), model: ttsModel(), provider: ttsProvider() }),
-    signal: state.controller.signal
-  });
-  if (!r.ok) throw new Error(await r.text());
-  const reader = r.body.getReader(), dec = new TextDecoder();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const lines = buf.split('\n');
-    buf = lines.pop();
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const ev = JSON.parse(line.slice(6));
-      if (typeof ev.audio !== 'string') throw new Error('TTS stream chunk is missing PCM audio.');
-      const frames = await schedulePcm(ev.audio, ev.sample_rate || 24000);
-      if (!frames) continue;
-      chunks++;
-      samples += frames;
-      const elapsed = (performance.now() - start) / 1000;
-      $('progress').style.width = Math.min(99, 10 + chunks * 12) + '%';
-      $('chunkInfo').textContent = `${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`;
+  let reader;
+  try {
+    status($('ttsStatus'), 'Streaming Kokoro chunks…', 'warn');
+    $('progress').style.width = '5%';
+    const r = await fetch(`${ttsBaseUrl()}/stream/speech`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: text, voice: $('voice').value, speed: parseFloat($('speed').value), device: ttsDevice(), model: ttsModel(), provider: ttsProvider() }),
+      signal: playback.controller.signal
+    });
+    assertPlaybackCurrent(playback);
+    if (!r.ok) throw new Error(await r.text());
+    reader = r.body.getReader();
+    const dec = new TextDecoder();
+    while (true) {
+      const { done, value } = await reader.read();
+      assertPlaybackCurrent(playback);
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const ev = JSON.parse(line.slice(6));
+        if (typeof ev.audio !== 'string') throw new Error('TTS stream chunk is missing PCM audio.');
+        const frames = await schedulePcm(ev.audio, ev.sample_rate || 24000, playback);
+        assertPlaybackCurrent(playback);
+        if (!frames) continue;
+        chunks++;
+        samples += frames;
+        const elapsed = (performance.now() - start) / 1000;
+        $('progress').style.width = Math.min(99, 10 + chunks * 12) + '%';
+        $('chunkInfo').textContent = `${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`;
+      }
     }
+    if (!samples) throw new Error('TTS stream returned no audio samples.');
+    await waitForScheduledAudio(playback.controller.signal);
+    assertPlaybackCurrent(playback);
+    $('progress').style.width = '100%';
+    status($('ttsStatus'), `Done · ${chunks} chunks`, 'good');
+  } catch (error) {
+    stopPlayback(playback);
+    if (reader) { try { await reader.cancel(); } catch {} }
+    throw error;
   }
-  if (!samples) throw new Error('TTS stream returned no audio samples.');
-  $('progress').style.width = '100%';
-  status($('ttsStatus'), `Done · ${chunks} chunks`, 'good');
 }
 
 // Buffered WAV speak
@@ -139,7 +185,7 @@ function playBufferedAudio(blob, signal) {
         state.currentTtsEstimatedEnd = state.currentTtsStartedAt + audio.duration;
       }
     };
-    bufferedPlayback = { url, cancel: aborted };
+    bufferedPlayback = { url, signal, cancel: aborted };
     audio.addEventListener('ended', ended);
     audio.addEventListener('error', failed);
     audio.addEventListener('playing', playing);
@@ -153,48 +199,55 @@ function playBufferedAudio(blob, signal) {
   });
 }
 
-export async function speakBuffered(text) {
-  bufferedPlayback?.cancel();
-  const controller = new AbortController();
-  state.controller = controller;
-  status($('ttsStatus'), 'Synthesizing full WAV…', 'warn');
-  $('progress').style.width = '10%';
-  const r = await fetch(`${ttsBaseUrl()}/v1/audio/speech`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ input: text, voice: $('voice').value, speed: parseFloat($('speed').value), device: ttsDevice(), model: ttsModel(), provider: ttsProvider() }),
-    signal: controller.signal
-  });
-  if (!r.ok) throw new Error(await r.text());
-  const blob = await r.blob();
-  controller.signal.throwIfAborted();
-  status($('ttsStatus'), 'Playing buffered WAV…', 'warn');
-  await playBufferedAudio(blob, controller.signal);
-  $('progress').style.width = '100%';
-  status($('ttsStatus'), 'Done · buffered playback complete', 'good');
+export async function speakBuffered(text, playback = beginPlayback()) {
+  const { controller } = playback;
+  try {
+    status($('ttsStatus'), 'Synthesizing full WAV…', 'warn');
+    $('progress').style.width = '10%';
+    const r = await fetch(`${ttsBaseUrl()}/v1/audio/speech`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ input: text, voice: $('voice').value, speed: parseFloat($('speed').value), device: ttsDevice(), model: ttsModel(), provider: ttsProvider() }),
+      signal: controller.signal
+    });
+    assertPlaybackCurrent(playback);
+    if (!r.ok) throw new Error(await r.text());
+    const blob = await r.blob();
+    assertPlaybackCurrent(playback);
+    status($('ttsStatus'), 'Playing buffered WAV…', 'warn');
+    await playBufferedAudio(blob, controller.signal);
+    assertPlaybackCurrent(playback);
+    $('progress').style.width = '100%';
+    status($('ttsStatus'), 'Done · buffered playback complete', 'good');
+  } catch (error) {
+    stopPlayback(playback);
+    throw error;
+  }
 }
 
-// Speak entrypoint
-export async function speakText(text, wait = false) {
+// The promise covers actual playback; callers may choose not to await it.
+// The legacy wait argument remains accepted for existing integrations.
+export async function speakText(text, _wait = false) {
   text = stripTranscriptLabels(text);
   if (!text.trim()) return;
-  const version = ++speechVersion;
-  markActivity('korina-speech-start');
-  $('playBtn').disabled = true;
-  $('stopBtn').disabled = false;
-  $('chunkInfo').textContent = '';
-  ensureAudio();
-  state.currentKorinaText = text;
-  state.currentTtsStartedAt = state.audioCtx.currentTime;
-  state.currentTtsEstimatedEnd = state.currentTtsStartedAt;
-  state.activeSources = [];
-  state.ttsSpeaking = true;
-  if (state.live) startBargeInCapture();
+  const playback = beginPlayback();
+  const { version } = playback;
   try {
-    if (state.mode === 'sse') await speakSSE(text);
-    else await speakBuffered(text);
-    if (wait && state.mode === 'sse') await waitForScheduledAudio();
+    markActivity('korina-speech-start');
+    $('playBtn').disabled = true;
+    $('stopBtn').disabled = false;
+    $('chunkInfo').textContent = '';
+    ensureAudio();
+    state.currentKorinaText = text;
+    state.currentTtsStartedAt = state.audioCtx.currentTime;
+    state.currentTtsEstimatedEnd = state.currentTtsStartedAt;
+    state.activeSources = [];
+    state.ttsSpeaking = true;
+    if (state.live) startBargeInCapture();
+    if (state.mode === 'sse') await speakSSE(text, playback);
+    else await speakBuffered(text, playback);
   } catch (e) {
+    stopPlayback(playback);
     if (e.name === 'AbortError') {
       if (version === speechVersion) status($('ttsStatus'), 'Interrupted');
       return;
@@ -213,14 +266,25 @@ export async function speakText(text, wait = false) {
       markActivity('korina-speech-end');
       $('playBtn').disabled = false;
       $('stopBtn').disabled = true;
-      state.controller = null;
+      if (state.controller === playback.controller) state.controller = null;
     }
   }
 }
 
 // Wait for scheduled audio to finish
-export async function waitForScheduledAudio() {
+export async function waitForScheduledAudio(signal) {
+  signal?.throwIfAborted();
   if (!state.audioCtx) return;
   const ms = Math.max(0, (state.nextPlayTime - state.audioCtx.currentTime) * 1000) + 150;
-  if (ms > 0) await new Promise(r => setTimeout(r, ms));
+  if (ms > 0) await new Promise((resolve, reject) => {
+    const finish = error => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', aborted);
+      if (error) reject(error);
+      else resolve();
+    };
+    const aborted = () => finish(playbackAborted());
+    const timer = setTimeout(() => finish(), ms);
+    signal?.addEventListener('abort', aborted, { once: true });
+  });
 }

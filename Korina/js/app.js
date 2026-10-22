@@ -24,7 +24,7 @@ import {
   loadModelOptions, loadAgentModelOptions,
 } from "./providers-ui.js";
 import { setCapabilityFilterOverride } from "./capability-filter.js";
-import { loadAcks, preloadAckBuffers, playRandomAck } from "./acks.js";
+import { loadAcks, preloadAckBuffers, playRandomAck, cancelAckPlayback } from "./acks.js";
 import { drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad } from "./vad.js";
 import { setupMic, releaseMic, makeRecorder, transcribeBlob, transcribePartialBlob } from "./recorder.js";
 import {
@@ -35,7 +35,7 @@ import {
   ensureAudio, stopTtsNow, schedulePcm, speakSSE, speakBuffered, speakText,
 } from "./speech.js";
 import {
-  startBargeInCapture, monitorBargeIn, handleBargeRecording,
+  startBargeInCapture, monitorBargeIn, handleBargeRecording, cancelBargeIn,
 } from "./barge-in.js";
 import {
   startLive, stopLive, liveMonitor, handleLiveTurn, startLiveRecorder,
@@ -155,33 +155,56 @@ function saveSettings() {
   closeSettings();
 }
 
+let manualRecordingGeneration = 0;
+let manualTranscriptionController = null;
+
+function cancelManualRecording() {
+  manualRecordingGeneration++;
+  manualTranscriptionController?.abort();
+  manualTranscriptionController = null;
+  if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') state.mediaRecorder.stop();
+  releaseMic();
+  $('recBtn').disabled = false;
+  $('stopRecBtn').disabled = true;
+}
+
 async function startRecording() {
   if (state.live || $('recBtn').disabled) return;
+  const generation = ++manualRecordingGeneration;
+  const isCurrent = () => generation === manualRecordingGeneration && !state.live;
   $('recBtn').disabled = true;
   $('stopRecBtn').disabled = false;
   try {
-    if (!await setupMic()) return;
+    if (!await setupMic() || !isCurrent()) return;
     makeRecorder(async () => {
+      if (!isCurrent()) return;
+      const controller = new AbortController();
+      manualTranscriptionController = controller;
       try {
         releaseMic();
         status($('sttStatus'), 'Uploading to faster-whisper streaming STT…', 'warn');
         const blob = new Blob(state.recChunks, { type: state.recChunks[0]?.type || 'audio/webm' });
-        const j = await transcribeBlob(blob);
+        const j = await transcribeBlob(blob, { signal: controller.signal, isCurrent });
+        if (!isCurrent()) return;
         $('transcript').value = j.text || '';
         const seconds = Number.isFinite(j.seconds) ? j.seconds.toFixed(2) : '0.00';
         status($('sttStatus'), `Transcribed in ${seconds}s · ${j.model || 'STT model'}`, 'good');
         $('transcriptInfo').textContent = 'Manual recording transcribed.';
       } catch (e) {
-        status($('sttStatus'), 'Transcribe error: ' + e.message, 'bad');
+        if (isCurrent() && e.name !== 'AbortError') status($('sttStatus'), 'Transcribe error: ' + e.message, 'bad');
       } finally {
-        $('recBtn').disabled = false;
-        $('stopRecBtn').disabled = true;
+        if (manualTranscriptionController === controller) manualTranscriptionController = null;
+        if (isCurrent()) {
+          $('recBtn').disabled = false;
+          $('stopRecBtn').disabled = true;
+        }
       }
     });
     $('recBtn').disabled = true;
     $('stopRecBtn').disabled = false;
     status($('sttStatus'), 'Recording…', 'warn');
   } catch (e) {
+    if (!isCurrent()) return;
     releaseMic();
     $('recBtn').disabled = false;
     $('stopRecBtn').disabled = true;
@@ -193,9 +216,7 @@ function stopRecording() {
   if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
     state.mediaRecorder.stop();
   } else {
-    releaseMic();
-    $('recBtn').disabled = false;
-    $('stopRecBtn').disabled = true;
+    cancelManualRecording();
     status($('sttStatus'), 'Recording cancelled.');
   }
 }
@@ -205,12 +226,14 @@ function toggleLive() {
     stopLive();
     return;
   }
+  cancelManualRecording();
   startLive().catch(e => {
     status($('sttStatus'), 'Live mode error: ' + e.message, 'bad');
   });
 }
 
 function stopPlayback() {
+  cancelAckPlayback();
   stopTtsNow();
   if (state.bargeLoopId) cancelAnimationFrame(state.bargeLoopId);
   state.bargeLoopId = null;
@@ -231,6 +254,12 @@ function stopPlayback() {
 
 async function clearSession() {
   state.agentResetBlocked = true;
+  const resumeLive = state.live;
+  if (resumeLive) stopLive();
+  cancelBargeIn();
+  cancelAckPlayback();
+  cancelManualRecording();
+  stopPartialTranscriptionLoop(true);
   const clearButton = $('clearSessionBtn');
   clearButton.disabled = true;
   clearButton.textContent = 'Clearing session…';
@@ -264,6 +293,11 @@ async function clearSession() {
   $('transcriptInfo').textContent = 'Session cleared. Korina writes the transcript here. This box is read-only; queued live chunks append while you speak.';
   $('chunkInfo').textContent = '';
   status($('sttStatus'), 'Clearing session. Agent deliveries are paused until reset completes.', 'warn');
+  if (resumeLive) {
+    void startLive().catch(error => {
+      if (session === state.agentSession) status($('sttStatus'), 'Microphone restart failed: ' + error.message, 'bad');
+    });
+  }
   try {
     const response = await fetch('/api/agent/reset', { method: 'POST' });
     const result = await response.json();
@@ -291,7 +325,10 @@ function wireSettingsInputs() {
   const speed = $('speed');
   if (speed) speed.oninput = () => { $('speedDisplay').textContent = parseFloat(speed.value).toFixed(1) + '×'; saveConfigSoon(); };
   const ackEnabled = $('ackEnabled');
-  if (ackEnabled) ackEnabled.onchange = () => saveConfigSoon();
+  if (ackEnabled) ackEnabled.onchange = () => {
+    if (ackEnabled.value !== 'on') cancelAckPlayback();
+    saveConfigSoon();
+  };
   const silenceMs = $('silenceMs');
   if (silenceMs) silenceMs.oninput = () => { state.endSilenceMs = parseInt(silenceMs.value, 10); $('silenceDisplay').textContent = state.endSilenceMs + 'ms'; saveConfigSoon(); };
   const endpoint = $('endpointMode');
@@ -367,6 +404,7 @@ function wireSettingsInputs() {
   });
   const voice = $('voice');
   if (voice) voice.onchange = async () => {
+    cancelAckPlayback();
     state.ackFiles = [];
     state.ackBuffers = [];
     state.ackBuffersByTag = {};

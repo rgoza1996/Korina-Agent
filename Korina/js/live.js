@@ -4,10 +4,11 @@ import { state } from "./state.js";
 import { askAndSpeak } from "./agent-ui.js";
 import { $, status } from "./dom.js";
 import { markActivity, nextIdleDelayMs, minSpeechMs, finalSttMode, endpointMode } from "./settings-ui.js";
-import { preloadAckBuffers, playRandomAck } from "./acks.js";
+import { cancelAckPlayback, preloadAckBuffers, playRandomAck } from "./acks.js";
 import { setupMic, releaseMic, makeRecorder, transcribeBlob } from "./recorder.js";
 import { startPartialTranscriptionLoop, stopPartialTranscriptionLoop, waitForPartialQueueIdle } from "./partial-queue.js";
 import { stopTtsNow } from "./speech.js";
+import { cancelBargeIn } from "./barge-in.js";
 import { rmsLevel, updateAdaptiveVad } from "./vad.js";
 
 // VAD frame thresholds.
@@ -62,6 +63,9 @@ export async function startLive() {
 export function stopLive() {
   state.liveSession++;
   state.live = false; state.liveBusy = false;
+  cancelBargeIn();
+  state.liveTranscriptionController?.abort();
+  state.liveTranscriptionController = null;
   stopPartialTranscriptionLoop(true);
   $('liveBtn').classList.remove('on');
   $('liveBtn').textContent = 'Live Conversation';
@@ -75,8 +79,7 @@ export function stopLive() {
   if (state.bargeRecorder && state.bargeRecorder.state !== 'inactive') state.bargeRecorder.stop();
   releaseMic();
   stopTtsNow();
-  if (state.ackSource) { try { state.ackSource.stop(); } catch {} state.ackSource = null; }
-  state.ackPlayingUntil = 0;
+  cancelAckPlayback();
   state.handlingBarge = false;
   status($('sttStatus'), 'Live mode stopped.');
 }
@@ -147,8 +150,9 @@ export function liveMonitor() {
     const silenceMs = now - state.liveSilenceStart;
     if (speechMs > minSpeechMs() && silenceMs > state.endSilenceMs) {
       state.liveBusy = true;
-      status($('sttStatus'), `End of speech after ${Math.round(silenceMs)}ms silence (${endpointMode()}) with ${(speechMs / 1000).toFixed(1)}s continuous speech. noise ${state.vadNoiseFloor.toFixed(3)} · draining STT queue…`, 'warn');
-      stopPartialTranscriptionLoop(false);
+      const fullPass = finalSttMode() !== 'chunks' || state.partialNeedsFullPass;
+      status($('sttStatus'), `End of speech after ${Math.round(silenceMs)}ms silence (${endpointMode()}) with ${(speechMs / 1000).toFixed(1)}s continuous speech. noise ${state.vadNoiseFloor.toFixed(3)} · ${fullPass ? 'starting full-turn STT' : 'draining STT queue'}…`, 'warn');
+      stopPartialTranscriptionLoop(fullPass);
       playRandomAck();
       if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') state.mediaRecorder.stop();
       return;
@@ -159,8 +163,13 @@ export function liveMonitor() {
 
 // Per-turn STT→LM→TTS handoff
 export async function handleLiveTurn(session = state.liveSession) {
+  if (!state.live || session !== state.liveSession) return;
+  const agentSession = state.agentSession;
+  const isCurrent = () => state.live && session === state.liveSession && agentSession === state.agentSession;
   let preserveStatus = false;
-  stopPartialTranscriptionLoop(false);
+  const fullPass = finalSttMode() !== 'chunks' || state.partialNeedsFullPass;
+  const recorderStopped = stopPartialTranscriptionLoop(fullPass);
+  const partialSeq = state.partialSeq;
   try {
     const blob = new Blob(state.recChunks, { type: state.recChunks[0]?.type || 'audio/webm' });
     if (blob.size < 2500) {
@@ -168,16 +177,28 @@ export async function handleLiveTurn(session = state.liveSession) {
       preserveStatus = true;
       return;
     }
-    await waitForPartialQueueIdle();
-    if (!state.live || session !== state.liveSession) return;
+    if (!fullPass) {
+      await recorderStopped;
+      if (!isCurrent()) return;
+      await waitForPartialQueueIdle(partialSeq);
+    }
+    if (!isCurrent()) return;
     let text = '';
-    if (finalSttMode() === 'chunks' && state.latestPartialText.trim()) {
+    if (!fullPass && !state.partialNeedsFullPass && state.latestPartialText.trim()) {
       text = state.latestPartialText.trim();
       $('transcriptInfo').textContent = 'Using queued live chunks after draining queue; skipped full paragraph retranscription.';
       status($('sttStatus'), `Using queued live chunk transcript (${text.length} chars); no full-utterance STT pass.`, 'good');
     } else {
-      const j = await transcribeBlob(blob);
-      if (!state.live || session !== state.liveSession) return;
+      state.liveTranscriptionController?.abort();
+      const controller = new AbortController();
+      state.liveTranscriptionController = controller;
+      let j;
+      try {
+        j = await transcribeBlob(blob, { signal: controller.signal, isCurrent });
+      } finally {
+        if (state.liveTranscriptionController === controller) state.liveTranscriptionController = null;
+      }
+      if (!isCurrent()) return;
       text = (j.text || '').trim();
       if (text) {
         const existing = String($('transcript').value).trim();
@@ -185,8 +206,10 @@ export async function handleLiveTurn(session = state.liveSession) {
           $('transcript').value += (existing ? '\n' : '') + text;
         }
         $('transcript').scrollTop = $('transcript').scrollHeight;
-        status($('sttStatus'), `Final full-turn transcript ready (${text.length} chars); displayed partial chunks remain above.`, 'good');
-        $('transcriptInfo').textContent = 'Final full-turn transcript is used for LM; live chunk history is preserved above.';
+        status($('sttStatus'), `Final full-turn transcript ready (${text.length} chars).`, 'good');
+        $('transcriptInfo').textContent = state.partialNeedsFullPass
+          ? `${state.partialFallbackReason} The complete recording supplied the final transcript.`
+          : 'The complete recording supplied the final transcript; queued partials were discarded.';
       }
     }
     if (!text) {
@@ -195,7 +218,7 @@ export async function handleLiveTurn(session = state.liveSession) {
       return;
     }
     const pre = await responseLlmPreflight();
-    if (!state.live || session !== state.liveSession) return;
+    if (!isCurrent()) return;
     if (!pre.ok) {
       status($('sttStatus'), `Live mode: ${pre.reason} Check the response LLM in Settings, then try speaking again.`, 'bad');
       // Don't break the live loop — keep listening so the user can talk again.
@@ -203,7 +226,8 @@ export async function handleLiveTurn(session = state.liveSession) {
       return;
     }
     try {
-      const replyText = await askAndSpeak(text);
+      const replyText = await askAndSpeak(text, '', { isCurrent });
+      if (!isCurrent()) return;
       if (replyText === null) { preserveStatus = true; return; }
       // askAndSpeak() routes through speakText() which already clears
       // ttsSpeaking in its `finally` block. An empty string here usually means
@@ -214,10 +238,12 @@ export async function handleLiveTurn(session = state.liveSession) {
         status($('sttStatus'), 'Live mode: response LLM returned an empty reply. The model may need a longer context or different prompt.', 'bad');
       }
     } catch (e) {
+      if (!isCurrent()) return;
       preserveStatus = true;
       status($('sttStatus'), `Live mode: askAndSpeak failed: ${e && e.message ? e.message : e}`, 'bad');
     }
   } catch (e) {
+    if (!isCurrent()) return;
     preserveStatus = true;
     status($('sttStatus'), 'Live loop error: ' + e.message, 'bad');
   } finally {

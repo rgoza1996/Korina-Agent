@@ -13,6 +13,8 @@ const MAX_MODEL_HISTORY_TURNS = 12;
 const priorityRank = { low: 0, normal: 1, important: 2, critical: 3 };
 let deliveryInFlight = false;
 let eventPollInFlight = false;
+let activeInterruptSpeech = null;
+let permissionAnswerInFlight = null;
 
 function queueAgentReport(report) {
   state.pendingAgentStateReport = report;
@@ -204,6 +206,24 @@ export function handleAgentEvent(ev) {
 }
 
 // Interrupt TTS and inject important message
+async function speakAgentInterrupt(message, isCurrent = () => true) {
+  const session = state.agentSession;
+  const speech = {};
+  activeInterruptSpeech = speech;
+  state.agentInterruptInProgress = true;
+  try {
+    await speakText(message, true);
+    if (activeInterruptSpeech === speech && session === state.agentSession && isCurrent()) setAgentInterruptCooldown();
+  } catch (error) {
+    if (session === state.agentSession && isCurrent()) throw error;
+  } finally {
+    if (activeInterruptSpeech === speech) {
+      activeInterruptSpeech = null;
+      if (session === state.agentSession) state.agentInterruptInProgress = false;
+    }
+  }
+}
+
 export function interruptConverse(text, hard = false) {
   state.pendingImportantAgentMessage = text;
   state.suppressAckUntil = performance.now() + 12000;
@@ -211,41 +231,86 @@ export function interruptConverse(text, hard = false) {
   if (hard && state.ttsSpeaking) stopTtsNow();
   if (!state.ttsSpeaking || hard) {
     const msg = state.pendingImportantAgentMessage; state.pendingImportantAgentMessage = '';
-    state.agentInterruptInProgress = true;
     addTranscriptEntry('Korina Agent Interrupt', msg, { includeInHistory: false });
-    speakText(msg, true).then(() => setAgentInterruptCooldown()).catch(e => console.warn('agent interrupt speech failed', e)).finally(() => { state.agentInterruptInProgress = false; });
+    speakAgentInterrupt(msg).catch(e => console.warn('agent interrupt speech failed', e));
   }
 }
 
 // Permission answer detection
-export async function handlePermissionAnswerIfAny(message) {
+export async function handlePermissionAnswerIfAny(message, { isCurrent = () => true } = {}) {
   const session = state.agentSession;
+  const current = () => session === state.agentSession && isCurrent();
+  if (!current()) return false;
   if (!state.awaitingAgentPermission) return false;
   const m = message.trim().toLowerCase();
   const yes = /^(yes|yeah|yep|approve|allow|go ahead|do it)\b/.test(m);
   const no = /^(no|nope|deny|stop|do not|don't)\b/.test(m);
   if (!yes && !no) return false;
+  if (permissionAnswerInFlight?.session === session) return true;
   const answer = yes ? 'yes' : 'no';
-  const req = state.awaitingAgentPermission; state.awaitingAgentPermission = null;
-  state.history.push({ role: 'user', content: `Permission answer to Korina Agent: ${answer}` });
-  await fetch('/api/agent/permission-answer', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ request_id: String(req.id || ''), answer, transcript: agentTranscriptSlice() })
-  }).catch(e => console.warn('permission answer failed', e));
-  if (session !== state.agentSession) return true;
+  const req = state.awaitingAgentPermission;
+  const delivery = { session, request: req };
+  permissionAnswerInFlight = delivery;
+  const turnCount = state.agentTurnCount + 1;
+  const answerTurn = { role: 'user', content: `Permission answer to Korina Agent: ${answer}` };
+  const maxTurns = Math.min(64, Math.max(1, parseInt($('agentMaxTurns')?.value || '16', 10) || 16));
+  const transcript = [...cleanHistoryForModel(), answerTurn].slice(-maxTurns);
+  status($('sttStatus'), 'Sending permission answer to Korina Agent…', 'warn');
+  try {
+    const response = await fetch('/api/agent/permission-answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_id: String(req.id ?? ''), answer, transcript })
+    });
+    if (!current()) return true;
+    let result;
+    try { result = await response.json(); }
+    catch {
+      throw new Error(response.ok ? 'Agent returned an invalid JSON confirmation' : `Agent permission HTTP ${response.status}`);
+    }
+    if (!current()) return true;
+    if (!response.ok || result?.ok === false || result?.accepted !== true) {
+      const detail = result?.detail || result?.error || (result?.disabled ? 'Korina Agent is disabled' : 'Agent did not accept the permission answer');
+      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+    }
+  } catch (error) {
+    if (!current()) return true;
+    if (state.awaitingAgentPermission !== req) return true;
+    const message = `Permission answer failed: ${error.message}. The request is still pending; try yes or no again.`;
+    status($('sttStatus'), message, 'bad');
+    throw new Error(message);
+  } finally {
+    if (permissionAnswerInFlight === delivery) permissionAnswerInFlight = null;
+  }
+  if (!current()) return true;
+  log('You', message);
+  state.history.push(answerTurn);
+  state.agentTurnCount++;
+  // Both permission operations own their follow-up work. This successful
+  // delivery must not trigger a second immediate transcript submission.
+  state.agentLastDeliveredTurn = Math.max(state.agentLastDeliveredTurn, turnCount);
+  state.agentLastDeliveryAt = performance.now();
+  state.agentFirstDelivered = true;
+  if (state.awaitingAgentPermission !== req) {
+    status($('sttStatus'), state.awaitingAgentPermission
+      ? 'Permission answer accepted; a newer permission request is still waiting.'
+      : 'Korina Agent accepted the permission answer.', 'good');
+    return true;
+  }
+  state.awaitingAgentPermission = null;
+  status($('sttStatus'), 'Korina Agent accepted the permission answer.', 'good');
   const reply = answer === 'yes' ? 'Okay. I told Korina Agent it has permission.' : 'Okay. I told Korina Agent not to proceed.';
   $('text').value = reply; log('Korina', reply); state.history.push({ role: 'assistant', content: reply });
-  state.agentTurnCount++;
   await speakText(reply, true);
-  maybeDeliverTranscriptToAgent('permission-answer');
   return true;
 }
 
 // ChatRequest.history contains prior turns only; the backend appends message.
 // Explicit history lets callers record the visible current turn before awaiting I/O.
-export async function askLM(message, priorHistory = cleanHistoryForModel()) {
+export async function askLM(message, priorHistory = cleanHistoryForModel(), { isCurrent = () => true } = {}) {
   const session = state.agentSession;
+  const current = () => session === state.agentSession && isCurrent();
+  if (!current()) return null;
   const report = state.pendingAgentStateReport;
   const reportVersion = state.pendingAgentReportVersion;
   const userMessage = stripTranscriptLabels(message);
@@ -269,8 +334,9 @@ export async function askLM(message, priorHistory = cleanHistoryForModel()) {
         reasoning: llmReasoningEnabled()
       })
     });
+    if (!current()) return null;
     const j = await r.json();
-    if (session !== state.agentSession) return null;
+    if (!current()) return null;
     if (!r.ok) throw new Error(j?.detail || JSON.stringify(j));
     if (typeof j?.reply !== 'string') throw new Error('The response LLM returned an invalid reply.');
     if (j.reply.trim() && includedReport && state.pendingAgentReportVersion === reportVersion && state.pendingAgentStateReport === report) {
@@ -278,25 +344,27 @@ export async function askLM(message, priorHistory = cleanHistoryForModel()) {
     }
     return j.reply;
   } catch (error) {
-    if (session !== state.agentSession) return null;
+    if (!current()) return null;
     throw error;
   }
 }
 
 // LM round-trip + speak + post-speak interrupt drain
-export async function askAndSpeak(message, context = '') {
+export async function askAndSpeak(message, context = '', { isCurrent = () => true } = {}) {
   const session = state.agentSession;
+  const current = () => session === state.agentSession && isCurrent();
+  if (!current()) return null;
+  if (await handlePermissionAnswerIfAny(message, { isCurrent: current })) return null;
+  if (!current()) return null;
   log('You', message);
-  if (await handlePermissionAnswerIfAny(message)) return null;
-  if (session !== state.agentSession) return null;
   const priorHistory = cleanHistoryForModel();
   state.history.push({ role: 'user', content: stripTranscriptLabels(message) });
   const lmMessage = context
     ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}`
     : stripTranscriptLabels(message);
 
-  const rawReply = await askLM(lmMessage, priorHistory);
-  if (session !== state.agentSession || rawReply === null) return null;
+  const rawReply = await askLM(lmMessage, priorHistory, { isCurrent: current });
+  if (!current() || rawReply === null) return null;
   const reply = stripTranscriptLabels(rawReply);
   $('text').value = reply; log('Korina', reply);
   state.history.push({ role: 'assistant', content: reply });
@@ -304,14 +372,12 @@ export async function askAndSpeak(message, context = '') {
   state.agentTurnCount++;
   status($('sttStatus'), `LLM replied ${reply ? 'ok' : 'empty'}; speaking…`, 'good');
   await speakText(reply, true);
-  if (session !== state.agentSession) return null;
+  if (!current()) return null;
   if (state.pendingImportantAgentMessage && !state.ttsSpeaking) {
     const msg = state.pendingImportantAgentMessage; state.pendingImportantAgentMessage = '';
     addTranscriptEntry('Korina Agent Interrupt', msg, { includeInHistory: false });
-    state.agentInterruptInProgress = true;
-    await speakText(msg, true).catch(() => {});
-    setAgentInterruptCooldown();
-    state.agentInterruptInProgress = false;
+    await speakAgentInterrupt(msg, current).catch(() => {});
+    if (!current()) return null;
   }
   maybeDeliverTranscriptToAgent('turn');
   // Phase 5/visibility fix: let callers (live loop, manual transcript)

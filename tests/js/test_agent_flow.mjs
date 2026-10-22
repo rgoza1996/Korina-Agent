@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
 import {
   askLM, askAndSpeak, deliverTranscriptToAgent, handleAgentEvent, pollAgentEvents,
+  handlePermissionAnswerIfAny,
 } from '../../Korina/js/agent-ui.js';
 
 const elements = new Map();
 globalThis.document = { getElementById(id) {
-  if (!elements.has(id)) elements.set(id, { value: '', checked: false, textContent: '', className: '', appendChild() {} });
+  if (!elements.has(id)) elements.set(id, { value: '', checked: false, textContent: '', className: '', style: {}, appendChild() {} });
   return elements.get(id);
 }, createElement: () => ({}) };
 const element = id => document.getElementById(id);
@@ -387,4 +388,238 @@ test('pending or failed reset blocks agent delivery, polling, and event injectio
   handleAgentEvent({ type: 'state_report', priority: 'normal', report: 'Old server event.' });
   assert.equal(requests, 0);
   assert.equal(state.pendingAgentStateReport, '');
+});
+
+test('an already cancelled caller cannot log, consume permission, or start a chat request', async () => {
+  state.awaitingAgentPermission = { id: 7 };
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error('cancelled work must not start'); };
+  const options = { isCurrent: () => false };
+  assert.equal(await askLM('Old message.', [], options), null);
+  assert.equal(await askAndSpeak('yes', '', options), null);
+  assert.equal(await handlePermissionAnswerIfAny('yes', options), false);
+  assert.equal(state.awaitingAgentPermission.id, 7);
+  assert.deepEqual(state.history, []);
+  assert.equal(element('sttStatus').textContent, '');
+  assert.equal(calls, 0);
+});
+
+for (const phase of ['fetch', 'JSON']) {
+  test(`caller cancellation during chat ${phase} preserves pending report and current UI`, async () => {
+    let current = true;
+    let finish;
+    state.pendingAgentStateReport = 'Keep for the next turn.';
+    globalThis.fetch = () => phase === 'fetch'
+      ? new Promise(resolve => { finish = () => resolve({ ok: true, json: async () => ({ reply: 'Old reply.' }) }); })
+      : Promise.resolve({ ok: true, json: () => new Promise(resolve => { finish = () => resolve({ reply: 'Old reply.' }); }) });
+    const pending = askLM('Old message.', [], { isCurrent: () => current });
+    await new Promise(setImmediate);
+    current = false;
+    element('sttStatus').textContent = 'Fresh session status.';
+    finish();
+    assert.equal(await pending, null);
+    assert.equal(state.pendingAgentStateReport, 'Keep for the next turn.');
+    assert.equal(element('sttStatus').textContent, 'Fresh session status.');
+  });
+}
+
+test('a late failed chat request is ignored when its live caller is cancelled', async () => {
+  let current = true;
+  let fail;
+  globalThis.fetch = () => new Promise((resolve, reject) => { fail = reject; });
+  const pending = askLM('Old message.', [], { isCurrent: () => current });
+  current = false;
+  fail(new Error('old connection failed'));
+  assert.equal(await pending, null);
+});
+
+test('caller cancellation suppresses a late reply without resetting the agent session', async () => {
+  let current = true;
+  let finish;
+  const requests = [];
+  globalThis.fetch = async url => { requests.push(url); return new Promise(resolve => { finish = resolve; }); };
+  const pending = askAndSpeak('Old user turn.', '', { isCurrent: () => current });
+  await new Promise(setImmediate);
+  current = false;
+  element('text').value = 'Current reply.';
+  finish({ ok: true, json: async () => ({ reply: 'Old reply must be ignored.' }) });
+  assert.equal(await pending, null);
+  assert.equal(element('text').value, 'Current reply.');
+  assert.equal(state.agentTurnCount, 3);
+  assert.deepEqual(state.history, [{ role: 'user', content: 'Old user turn.' }]);
+  assert.deepEqual(requests, ['/api/chat']);
+});
+
+test('caller cancellation suppresses a late permission acknowledgement and speech', async () => {
+  let current = true;
+  let finish;
+  state.awaitingAgentPermission = { id: 7 };
+  const requests = [];
+  globalThis.fetch = async url => { requests.push(url); return new Promise(resolve => { finish = resolve; }); };
+  const pending = askAndSpeak('yes', '', { isCurrent: () => current });
+  current = false;
+  state.history = [];
+  element('text').value = 'Current reply.';
+  finish({ ok: true, json: async () => ({ accepted: true }) });
+  assert.equal(await pending, null);
+  assert.deepEqual(state.history, []);
+  assert.equal(element('text').value, 'Current reply.');
+  assert.deepEqual(requests, ['/api/agent/permission-answer']);
+});
+
+for (const [name, response] of [
+  ['HTTP 503', { ok: false, status: 503, json: async () => ({ detail: 'Agent unavailable' }) }],
+  ['non-JSON success', { ok: true, json: async () => { throw new SyntaxError('invalid JSON'); } }],
+  ['non-JSON HTTP failure', { ok: false, status: 503, json: async () => { throw new SyntaxError('HTML response'); } }],
+  ['rejected acceptance', { ok: true, json: async () => ({ ok: true, accepted: false }) }],
+  ['disabled legacy agent', { ok: true, json: async () => ({ ok: true, accepted: false, disabled: true }) }],
+  ['missing acceptance', { ok: true, json: async () => ({ ok: true }) }],
+  ['explicit failure', { ok: true, json: async () => ({ ok: false, accepted: true }) }],
+  ['network failure', null],
+]) {
+  test(`permission ${name} retains the pending question and does not record or speak success`, async () => {
+    const request = { id: 7 };
+    state.awaitingAgentPermission = request;
+    state.history = [{ role: 'user', content: 'Earlier turn.' }];
+    element('text').value = 'yes';
+    const posts = [];
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, '/api/agent/permission-answer');
+      posts.push(JSON.parse(options.body));
+      if (!response) throw new Error('Network unavailable');
+      return response;
+    };
+    await assert.rejects(askAndSpeak('yes'), /Permission answer failed:.*still pending/);
+    await assert.rejects(askAndSpeak('yes'), /Permission answer failed:.*still pending/);
+    assert.equal(state.awaitingAgentPermission, request);
+    assert.deepEqual(state.history, [{ role: 'user', content: 'Earlier turn.' }]);
+    assert.equal(state.agentTurnCount, 3);
+    assert.equal(state.agentLastDeliveredTurn, 0);
+    assert.equal(state.agentFirstDelivered, false);
+    assert.equal(element('text').value, 'yes');
+    assert.equal(element('sttStatus').className, 'status bad');
+    assert.equal(posts.length, 2);
+    assert.deepEqual(posts[0], posts[1], 'retries do not accumulate failed answer turns');
+    assert.equal(posts[0].transcript.filter(turn => turn.content.startsWith('Permission answer')).length, 1);
+  });
+}
+
+test('concurrent permission answers share one request without adding history', async () => {
+  const request = { id: 7 };
+  state.awaitingAgentPermission = request;
+  let finish;
+  let posts = 0;
+  globalThis.fetch = () => { posts++; return new Promise(resolve => { finish = resolve; }); };
+  const pending = handlePermissionAnswerIfAny('yes');
+  assert.equal(await handlePermissionAnswerIfAny('yes'), true);
+  assert.equal(posts, 1);
+  assert.deepEqual(state.history, []);
+  finish({ ok: false, status: 503, json: async () => ({ detail: 'Agent unavailable' }) });
+  await assert.rejects(pending, /Agent unavailable/);
+  assert.equal(state.awaitingAgentPermission, request);
+  assert.equal(state.agentTurnCount, 3);
+});
+
+test('an accepted old answer preserves a newer permission question without speaking over it', async () => {
+  const old = { id: 7 };
+  const newer = { id: 8 };
+  state.awaitingAgentPermission = old;
+  let finish;
+  const posts = [];
+  globalThis.fetch = (url, options) => {
+    assert.equal(url, '/api/agent/permission-answer');
+    posts.push(JSON.parse(options.body));
+    return new Promise(resolve => { finish = resolve; });
+  };
+  const pending = handlePermissionAnswerIfAny('yes');
+  state.awaitingAgentPermission = newer;
+  element('text').value = 'New permission question.';
+  finish({ ok: true, json: async () => ({ ok: true, accepted: true, queued_as: 'permission_answer' }) });
+  assert.equal(await pending, true);
+  assert.equal(state.awaitingAgentPermission, newer);
+  assert.equal(element('text').value, 'New permission question.');
+  assert.match(element('sttStatus').textContent, /accepted; a newer permission request is still waiting/);
+  assert.deepEqual(state.history, [{ role: 'user', content: 'Permission answer to Korina Agent: yes' }]);
+  assert.equal(state.agentTurnCount, 4);
+  assert.equal(state.agentLastDeliveredTurn, 4);
+  assert.equal(posts.length, 1);
+});
+
+test('an old permission failure does not overwrite a newer question status', async () => {
+  state.awaitingAgentPermission = { id: 7 };
+  let fail;
+  globalThis.fetch = () => new Promise((resolve, reject) => { fail = reject; });
+  const pending = handlePermissionAnswerIfAny('yes');
+  const newer = { id: 8 };
+  state.awaitingAgentPermission = newer;
+  element('sttStatus').textContent = 'New permission question is waiting.';
+  fail(new Error('Old request failed'));
+  assert.equal(await pending, true);
+  assert.equal(state.awaitingAgentPermission, newer);
+  assert.equal(element('sttStatus').textContent, 'New permission question is waiting.');
+  assert.deepEqual(state.history, []);
+});
+
+test('accepted permission bookkeeping does not mark newer conversation turns delivered', async () => {
+  state.awaitingAgentPermission = { id: 7 };
+  let finish;
+  globalThis.fetch = () => new Promise(resolve => { finish = resolve; });
+  const pending = handlePermissionAnswerIfAny('no');
+  state.agentTurnCount++;
+  state.awaitingAgentPermission = { id: 8 };
+  finish({ ok: true, json: async () => ({ ok: true, accepted: true }) });
+  await pending;
+  assert.equal(state.agentTurnCount, 5);
+  assert.equal(state.agentLastDeliveredTurn, 4);
+});
+
+class PermissionAudio extends EventTarget {
+  duration = 1;
+  play() { this.dispatchEvent(new Event('playing')); return Promise.resolve(); }
+  pause() {}
+  removeAttribute() {}
+  load() {}
+}
+
+test('a failed permission answer can retry successfully with one canonical history turn and no extra agent delivery', async () => {
+  const audio = new PermissionAudio();
+  elements.set('audio', audio);
+  element('voice').value = 'af_heart'; element('speed').value = '1';
+  element('ttsBaseUrl').value = 'http://speech.test';
+  Object.assign(state, {
+    mode: 'buf', live: false, audioCtx: { state: 'running', currentTime: 10 },
+    controller: null, activeSources: [], handlingBarge: false, history: [],
+    awaitingAgentPermission: { id: 0 },
+  });
+  const attempts = [];
+  let speechRequests = 0;
+  globalThis.fetch = async (url, options) => {
+    if (url === '/api/agent/permission-answer') {
+      attempts.push(JSON.parse(options.body));
+      return attempts.length === 1
+        ? { ok: false, status: 503, json: async () => ({ detail: 'Agent unavailable' }) }
+        : { ok: true, json: async () => ({ ok: true, accepted: true, queued_as: 'prompt', status: {} }) };
+    }
+    assert.equal(url, 'http://speech.test/v1/audio/speech', 'permission acceptance owns follow-up; do not submit a second transcript');
+    speechRequests++;
+    return { ok: true, blob: async () => new Blob(['fixture audio']) };
+  };
+  await assert.rejects(askAndSpeak('yes'), /Agent unavailable/);
+  const pending = askAndSpeak('yes');
+  await new Promise(setImmediate);
+  assert.equal(state.awaitingAgentPermission, null);
+  audio.dispatchEvent(new Event('ended'));
+  assert.equal(await pending, null);
+  assert.equal(speechRequests, 1);
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0].request_id, '0');
+  assert.deepEqual(attempts[0], attempts[1]);
+  assert.deepEqual(state.history, [
+    { role: 'user', content: 'Permission answer to Korina Agent: yes' },
+    { role: 'assistant', content: 'Okay. I told Korina Agent it has permission.' },
+  ]);
+  assert.equal(state.agentTurnCount, 4);
+  assert.equal(state.agentLastDeliveredTurn, 4);
+  assert.equal(state.agentFirstDelivered, true);
+  assert.equal(element('sttStatus').textContent, 'Korina Agent accepted the permission answer.');
 });
