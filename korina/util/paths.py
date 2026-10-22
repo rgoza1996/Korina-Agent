@@ -26,11 +26,19 @@ def _binary(name: str, command: str, *candidates: Path) -> Path:
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-APP_DIR = _path('KORINA_APP_DIR', REPO_ROOT / 'Korina')
+_SOURCE_ASSETS = REPO_ROOT / 'Korina'
+_BUNDLED_ASSETS = Path(__file__).resolve().parents[1] / '_assets'
+_DEFAULT_ASSETS = _SOURCE_ASSETS if (_SOURCE_ASSETS / 'index.html').is_file() else _BUNDLED_ASSETS
+APP_DIR = _path('KORINA_APP_DIR', _DEFAULT_ASSETS)
+# A wheel's code/static assets may be read-only. Keep generated state in the
+# user's data directory; explicit runtime trees and source installs keep their
+# existing config.json/Ack layout.
+_DATA_HOME = Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share')
+_RUNTIME_DIR = APP_DIR if os.environ.get('KORINA_APP_DIR') or APP_DIR == _SOURCE_ASSETS else _DATA_HOME / 'korina'
 INDEX_PATH = APP_DIR / 'index.html'
-ACK_DIR = APP_DIR / 'Ack'
-ACK_PHRASES_PATH = ACK_DIR / 'ack_phrases.json'
-CONFIG_PATH = APP_DIR / 'config.json'
+ACK_DIR = _RUNTIME_DIR / 'Ack'
+ACK_PHRASES_PATH = APP_DIR / 'Ack' / 'ack_phrases.json'
+CONFIG_PATH = _RUNTIME_DIR / 'config.json'
 KOKORO_URL = os.environ.get('KOKORO_URL', 'http://127.0.0.1:8880')
 ACK_DEFAULT_VOICE = os.environ.get('ACK_DEFAULT_VOICE', 'af_heart')
 WHISPER_MODEL_ID = os.environ.get('WHISPER_MODEL_ID', 'turbo')

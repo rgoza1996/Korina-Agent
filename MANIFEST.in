@@ -1,0 +1,6 @@
+include build_support.py
+include Korina/index.html
+include Korina/styles.css
+include Korina/Ack/ack_phrases.json
+include Korina/config/config.example.json
+recursive-include Korina/js *.js
