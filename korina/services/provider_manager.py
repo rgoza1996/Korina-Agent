@@ -39,6 +39,18 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def _systemctl(*args: str, required: bool = False) -> subprocess.CompletedProcess:
+    """Optional teardown also works on hosts without systemd."""
+    command = ['systemctl', '--user', *args]
+    try:
+        return subprocess.run(command, check=required, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=30)
+    except FileNotFoundError:
+        if required:
+            raise RuntimeError('Managed llama.cpp requires systemd; run an external endpoint on this host')
+        return subprocess.CompletedProcess(command, 127)
+
+
 def gui_env() -> dict:
     """Use the launching user's session without inventing a display server."""
     env = os.environ.copy()
@@ -74,7 +86,7 @@ def start_lmstudio() -> None:
 
 
 def stop_ollama() -> None:
-    subprocess.run(['systemctl', '--user', 'stop', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _systemctl('stop', 'ollama.service')
     binary = shutil.which('ollama')
     if binary:
         provider_processes.terminate_executable(Path(binary), command='serve')
@@ -222,7 +234,7 @@ def wait_for_lmstudio_server_ready(timeout_seconds: float = 90.0) -> None:
 def start_ollama() -> None:
     if shutil.which('ollama') is None:
         raise RuntimeError('Ollama is not installed or is not on PATH')
-    run = subprocess.run(['systemctl', '--user', 'start', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run = _systemctl('start', 'ollama.service')
     if run.returncode != 0:
         subprocess.Popen(['ollama', 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
@@ -263,6 +275,8 @@ def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> N
     unit.append('WorkingDirectory=' + str(LLAMA_SERVER_BIN.resolve().parent).replace('%', '%%'))
     unit += ['', '[Install]', 'WantedBy=default.target', '']
     service_path = LLAMA_SERVER_USER_UNIT
+    if service_path.suffix != '.service':
+        raise ValueError('KORINA_LLAMA_SERVER_USER_UNIT must name a .service file')
     service_path.parent.mkdir(parents=True, exist_ok=True)
     service_path.write_text('\n'.join(unit))
 
@@ -272,13 +286,17 @@ def wait_for_llama_server_ready(timeout_seconds: float = 90.0) -> None:
 
 def start_llama_server(model_path: str, config: Optional[dict] = None) -> None:
     write_llama_server_unit(model_path, config=config)
-    subprocess.run(['systemctl', '--user', 'daemon-reload'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['systemctl', '--user', 'enable', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['systemctl', '--user', 'restart', 'llama-server.service'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    unit_path = LLAMA_SERVER_USER_UNIT.resolve()
+    default_dir = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'systemd/user'
+    if unit_path.parent != default_dir.resolve():
+        _systemctl('link', str(unit_path), required=True)
+    _systemctl('daemon-reload', required=True)
+    _systemctl('enable', unit_path.name)
+    _systemctl('restart', unit_path.name, required=True)
     wait_for_llama_server_ready()
 
 def stop_llama_server() -> None:
-    subprocess.run(['systemctl', '--user', 'stop', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _systemctl('stop', LLAMA_SERVER_USER_UNIT.name)
 
 def _resolve_llama_cpp_model_id(value: str) -> str:
     """Resolve a configured llama.cpp model to an absolute GGUF path on disk.
@@ -316,7 +334,9 @@ def activate_llm_provider(provider: str, config: Optional[dict] = None, model: O
     if provider == 'llama.cpp':
         raw_selected = str(model or config.get('lm_model') or '').strip()
         selected = _resolve_llama_cpp_model_id(raw_selected)
-        if not selected or not Path(selected).exists():
+        if raw_selected and (not selected or not Path(selected).is_file()):
+            raise RuntimeError(f'Requested llama.cpp model not found: {raw_selected}')
+        if not selected:
             discovered = discover_local_gguf_models()
             if discovered:
                 selected = discovered[0]
@@ -326,23 +346,23 @@ def activate_llm_provider(provider: str, config: Optional[dict] = None, model: O
         stop_ollama()
         start_llama_server(selected, config=config)
         preset = provider_preset_base_url(provider)
-        return {'provider': provider, 'model': selected, 'base_url': preset or 'http://127.0.0.1:8080/v1', 'stopped': ['lmstudio', 'ollama', 'stray-llama-server'], 'started': ['llama-server.service']}
+        return {'provider': provider, 'model': selected, 'base_url': preset or 'http://127.0.0.1:8080/v1', 'stopped': ['lmstudio', 'ollama', 'stray-llama-server'], 'started': [LLAMA_SERVER_USER_UNIT.name]}
     if provider == 'lmstudio':
         stop_ollama()
         start_lmstudio_server(model or '', config=config)
         preset = provider_preset_base_url(provider)
-        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:1234/v1', 'stopped': ['llama-server.service', 'ollama', 'stray-llama-server'], 'started': ['lm-studio-server']}
+        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:1234/v1', 'stopped': [LLAMA_SERVER_USER_UNIT.name, 'ollama', 'stray-llama-server'], 'started': ['lm-studio-server']}
     if provider == 'ollama':
         stop_llama_server()
         stop_lmstudio()
         start_ollama()
         preset = provider_preset_base_url(provider)
-        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:11434/v1', 'stopped': ['llama-server.service', 'lmstudio'], 'started': ['ollama']}
+        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:11434/v1', 'stopped': [LLAMA_SERVER_USER_UNIT.name, 'lmstudio'], 'started': ['ollama']}
     stop_llama_server()
     stop_lmstudio_server()
     stop_ollama()
     saved_base = str(config.get('llm_base_url') or '').strip()
-    return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': saved_base, 'stopped': ['llama-server.service', 'lmstudio', 'ollama', 'stray-llama-server'], 'started': []}
+    return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': saved_base, 'stopped': [LLAMA_SERVER_USER_UNIT.name, 'lmstudio', 'ollama', 'stray-llama-server'], 'started': []}
 
 
 

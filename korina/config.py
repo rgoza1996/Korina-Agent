@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import urllib.request
+from functools import wraps
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional, ParamSpec, TypeVar
 
 from korina.util.paths import (
     APP_DIR, CONFIG_PATH, ACK_DEFAULT_VOICE, LMSTUDIO_MODEL, KOKORO_URL,
@@ -17,6 +19,20 @@ from korina.util.paths import (
 
 from korina.util.presets import provider_preset_base_url, is_local_provider_base_url
 from korina.runtime.http import api_key_from_config
+
+_CONFIG_LOCK = threading.RLock()
+_P = ParamSpec('_P')
+_R = TypeVar('_R')
+
+
+def _config_transaction(function: Callable[_P, _R]) -> Callable[_P, _R]:
+    """Serialize atomic file writes and related read/modify/write operations."""
+    @wraps(function)
+    def call(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with _CONFIG_LOCK:
+            return function(*args, **kwargs)
+    return call
+
 
 DEFAULT_CONFIG = {
     'voice': ACK_DEFAULT_VOICE,
@@ -35,6 +51,7 @@ DEFAULT_CONFIG = {
     'lm_model': LMSTUDIO_MODEL,
     'tts_device': 'cpu',
     'tts_provider': 'kokoro',
+    'tts_health_url': '',
     'tts_port': 8880,
     'tts_base_url': '',
     'tts_model': 'kokoro',
@@ -114,8 +131,9 @@ def _config_example_path() -> Path:
     return APP_DIR / 'config' / 'config.example.json'
 
 
+@_config_transaction
 def load_config() -> dict:
-    APP_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     if not CONFIG_PATH.exists():
         example = _config_example_path()
         if example.exists():
@@ -147,8 +165,9 @@ def load_config() -> dict:
     return merged
 
 
+@_config_transaction
 def save_config(config: dict) -> dict:
-    APP_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     merged = dict(DEFAULT_CONFIG)
     for key, value in (config or {}).items():
         if key in CONFIG_KEYS:
@@ -158,6 +177,33 @@ def save_config(config: dict) -> dict:
     tmp.replace(CONFIG_PATH)
     return merged
 
+
+@_config_transaction
+def update_config_values(payload: dict) -> dict:
+    """Merge user settings while preserving server-owned probe cache state."""
+    previous = load_config()
+    current = {**previous, **{key: value for key, value in payload.items()
+                             if key in CONFIG_KEYS and key != 'audio_unsupported'}}
+    return save_config(synchronize_llm_dependents(current, previous))
+
+
+@_config_transaction
+def select_response_provider(provider: str, model: str | None = None) -> dict:
+    """Commit only activation-owned fields against the latest settings/cache."""
+    previous = load_config()
+    current = {**previous, 'llm_provider': provider}
+    preset = provider_preset_base_url(provider)
+    if preset and provider != 'openai-compatible':
+        current['llm_base_url'] = preset
+    if model:
+        current['lm_model'] = model.strip()
+    current = synchronize_llm_dependents(current, previous)
+    prefix = f'{provider}::'
+    current['audio_unsupported'] = {
+        key: value for key, value in config_audio_unsupported(previous).items()
+        if not key.startswith(prefix)
+    }
+    return save_config(current)
 
 
 
@@ -205,6 +251,7 @@ def config_local_model_roots(config: Optional[dict] = None) -> list[str]:
     return [str(p) for p in LOCAL_MODEL_ROOTS]
 
 
+@_config_transaction
 def set_local_model_roots(roots) -> list[str]:
     """Persist a new local_model_roots list and return the normalized list."""
     normalized = _normalize_local_model_roots(roots)
@@ -214,6 +261,7 @@ def set_local_model_roots(roots) -> list[str]:
     return normalized
 
 
+@_config_transaction
 def clear_local_model_roots() -> list[str]:
     cfg = load_config()
     cfg['local_model_roots'] = []
@@ -235,23 +283,28 @@ def synchronize_llm_dependents(config: dict, previous: Optional[dict] = None) ->
         config['llm_base_url'] = preset
 
     if str(config.get('stt_backend') or '').strip() == 'llm':
-        config['stt_llm_provider'] = provider or str(config.get('stt_llm_provider') or '').strip()
-        if provider != 'openai-compatible' and preset:
-            config['stt_llm_base_url'] = preset
-        elif not str(config.get('stt_llm_base_url') or '').strip():
+        keys = ('stt_llm_provider', 'stt_llm_base_url', 'stt_llm_model')
+        unchanged = all(config.get(key) == previous.get(key) for key in keys)
+        followed_response = (
+            str(previous.get('stt_llm_provider') or '').strip() in ('', prev_provider)
+            and normalize_api_base_url(previous.get('stt_llm_base_url') or '') in (
+                '', normalize_api_base_url(previous.get('llm_base_url') or ''), normalize_api_base_url(prev_preset))
+            and str(previous.get('stt_llm_model') or '').strip() in ('', prev_model)
+        )
+        if unchanged and followed_response:
+            config['stt_llm_provider'] = provider
             config['stt_llm_base_url'] = str(config.get('llm_base_url') or '').strip()
-        if current_model:
             config['stt_llm_model'] = current_model
 
     agent_provider_value = str(config.get('agent_provider') or 'openai-compatible').strip().lower()
     if agent_provider_value != 'anthropic':
-        config['agent_provider'] = 'openai-compatible'
-        if provider != 'openai-compatible' and preset:
-            config['agent_base_url'] = preset
-        elif not str(config.get('agent_base_url') or '').strip() or str(config.get('agent_base_url') or '').strip().rstrip('/') == prev_preset.rstrip('/'):
+        previous_base = normalize_api_base_url(previous.get('agent_base_url') or '')
+        follows_base = previous_base in ('', normalize_api_base_url(previous.get('llm_base_url') or ''), normalize_api_base_url(prev_preset))
+        unchanged_base = config.get('agent_base_url') == previous.get('agent_base_url')
+        if follows_base and unchanged_base:
             config['agent_base_url'] = str(config.get('llm_base_url') or '').strip()
         agent_model = str(config.get('agent_model') or '').strip()
-        if not agent_model or agent_model == prev_model:
+        if follows_base and unchanged_base and agent_model in ('', prev_model) and config.get('agent_model') == previous.get('agent_model'):
             config['agent_model'] = current_model
 
     return config
@@ -455,6 +508,7 @@ def config_audio_unsupported(c: dict | None = None) -> dict[str, dict]:
     return out
 
 
+@_config_transaction
 def set_audio_unsupported(provider: str, base_url: str, model: str,
                           reason: str, last_error: str) -> None:
     """Persist a probe failure. Atomic write via save_config()."""
@@ -469,10 +523,11 @@ def set_audio_unsupported(provider: str, base_url: str, model: str,
         "since": datetime.now(timezone.utc).isoformat(),
         "last_error": last_error[:500],  # truncate to keep config.json small
     }
-    cfg["audio_unsupported"] = cache
+    cfg["audio_unsupported"] = dict(list(cache.items())[-512:])
     save_config(cfg)
 
 
+@_config_transaction
 def clear_audio_unsupported(provider: str, base_url: str, model: str) -> bool:
     """Remove one entry. Returns True if removed."""
     triple = audio_unsupported_key(provider, base_url, model)
@@ -486,6 +541,7 @@ def clear_audio_unsupported(provider: str, base_url: str, model: str) -> bool:
     return True
 
 
+@_config_transaction
 def clear_audio_unsupported_for_provider(provider: str) -> int:
     """Remove all entries for a given provider. Returns count removed."""
     cfg = load_config()

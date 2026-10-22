@@ -5,40 +5,33 @@ Phase 1.9: inlined from the monolith's _route_activate_provider helper.
 
 from __future__ import annotations
 
+import threading
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from korina.config import load_config, save_config, synchronize_llm_dependents
+from korina.config import load_config, select_response_provider
 from korina.schemas import ProviderActivateRequest
 from korina.services.provider_manager import activate_llm_provider
 from korina.services.active_probe import probe_audio_support
-from korina.util.presets import provider_preset_base_url
 
 router = APIRouter()
+_activation_lock = threading.Lock()
 
 
 @router.post('/api/llm/provider/activate')
-async def activate_provider(req: ProviderActivateRequest):
+def activate_provider(req: ProviderActivateRequest):
+    if not _activation_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail='Another provider activation is in progress')
+    try:
+        return _activate_provider(req)
+    finally:
+        _activation_lock.release()
+
+
+def _activate_provider(req: ProviderActivateRequest):
     config = load_config()
-    provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip()
-    # Phase 4.5: clear probe cache entries for this provider. Re-activating
-    # may have changed base_url or model, so old probe failures no longer apply.
-    # Reload after clearing so the later save_config(current) cannot resurrect
-    # stale audio_unsupported entries from the pre-clear config snapshot.
-    from korina.config import clear_audio_unsupported_for_provider
-    cleared = clear_audio_unsupported_for_provider(provider)
-    if cleared:
-        print(f"[activate] cleared {cleared} audio probe cache entries for {provider}")
-        config = load_config()  # reload after cache clear
-    current = dict(config)
-    current['llm_provider'] = provider
-    preset = provider_preset_base_url(provider)
-    if provider == 'openai-compatible':
-        current['llm_base_url'] = str(config.get('llm_base_url') or current.get('llm_base_url') or '').strip()
-    elif preset:
-        current['llm_base_url'] = preset
-    if req.model:
-        current['lm_model'] = str(req.model).strip()
+    provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip().lower()
     # Phase 4.4: pre-flight provider/model compatibility check.
     if req.model:
         from korina.services.provider_manager import provider_supports_model
@@ -53,8 +46,7 @@ async def activate_provider(req: ProviderActivateRequest):
                     "reason": reason,
                 },
             )
-    current = synchronize_llm_dependents(current, config)
-    saved = save_config(current)
+    saved = select_response_provider(provider, req.model)
     try:
         result = activate_llm_provider(provider, saved, model=req.model)
         return {'ok': True, 'saved': saved, 'activation': result}

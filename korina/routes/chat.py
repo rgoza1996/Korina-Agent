@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.post('/api/chat')
-async def chat(req: ChatRequest):
+def chat(req: ChatRequest):
     if not req.message.strip():
         raise HTTPException(status_code=400, detail='No message provided')
     started = time.time()

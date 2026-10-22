@@ -67,3 +67,20 @@ def test_provider_activation_clears_probe_cache_and_uses_mocked_lifecycle(monkey
     assert payload["ok"] is True
     assert payload["activation"]["provider"] == "openai-compatible"
     assert config_module.config_audio_unsupported() == {}
+
+
+def test_activation_preserves_settings_and_other_probe_updates_during_preflight(client, monkeypatch, config_module):
+    from korina.routes import providers
+    from korina.services import provider_manager
+
+    def preflight(provider, model):
+        config_module.update_config_values({'speed': 1.5})
+        config_module.set_audio_unsupported('other-provider', 'http://other/v1', 'audio', 'unsupported', '')
+        return True, 'user_provided_endpoint'
+
+    monkeypatch.setattr(provider_manager, 'provider_supports_model', preflight)
+    monkeypatch.setattr(providers, 'activate_llm_provider', lambda *args, **kwargs: {})
+    response = client.post('/api/llm/provider/activate', json={'provider': 'openai-compatible', 'model': 'demo'})
+    assert response.status_code == 200
+    assert response.json()['saved']['speed'] == 1.5
+    assert len(config_module.config_audio_unsupported()) == 1

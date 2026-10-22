@@ -31,6 +31,30 @@ def test_synchronize_llm_dependents_tracks_provider_transition(config_module):
     assert synced["agent_model"] == "/tmp/new-model.gguf"
 
 
+def test_separate_stt_and_agent_endpoints_survive_response_provider_switch(config_module):
+    previous = {
+        **config_module.DEFAULT_CONFIG,
+        'llm_provider': 'openai-compatible', 'llm_base_url': 'http://response.test/v1', 'lm_model': 'response',
+        'stt_backend': 'llm', 'stt_llm_provider': 'openai-compatible',
+        'stt_llm_base_url': 'http://audio.test/v1', 'stt_llm_model': 'audio',
+        'agent_base_url': 'http://agent.test/v1', 'agent_model': 'agent',
+    }
+    current = {**previous, 'llm_provider': 'llama.cpp', 'lm_model': '/models/new.gguf'}
+    saved = config_module.synchronize_llm_dependents(current, previous)
+    assert saved['stt_llm_base_url'] == 'http://audio.test/v1'
+    assert saved['stt_llm_model'] == 'audio'
+    assert saved['agent_base_url'] == 'http://agent.test/v1'
+    assert saved['agent_model'] == 'agent'
+
+
+def test_explicit_stt_change_is_preserved_when_saving(config_module):
+    previous = {**config_module.DEFAULT_CONFIG, 'stt_backend': 'llm'}
+    current = {**previous, 'stt_llm_provider': 'openai-compatible', 'stt_llm_base_url': 'http://audio.test/v1', 'stt_llm_model': 'audio'}
+    saved = config_module.synchronize_llm_dependents(current, previous)
+    assert saved['stt_llm_model'] == 'audio'
+    assert saved['stt_llm_base_url'] == 'http://audio.test/v1'
+
+
 def test_resolve_llama_cpp_model_id_variants(reload_korina_modules, model_root):
     family = model_root / "family"
     family.mkdir(parents=True)
@@ -161,3 +185,42 @@ def test_unit_arguments_protect_paths_with_spaces_and_specifiers(monkeypatch, tm
     assert 'model files%%/demo $$model.gguf"' in body
     assert 'WorkingDirectory=' + str(directory).replace('%', '%%') in body
     assert '--media-path' not in body
+
+
+def test_custom_unit_is_linked_and_managed_by_its_actual_name(monkeypatch, tmp_path):
+    from korina.services import provider_manager as manager
+
+    unit = tmp_path / 'custom-units' / 'korina-demo-llm.service'
+    monkeypatch.setattr(manager, 'LLAMA_SERVER_USER_UNIT', unit)
+    monkeypatch.setattr(manager, 'write_llama_server_unit', lambda *args, **kwargs: None)
+    monkeypatch.setattr(manager, 'wait_for_llama_server_ready', lambda: None)
+    calls = []
+    monkeypatch.setattr(manager, '_systemctl', lambda *args, **kwargs: calls.append(args))
+    manager.start_llama_server('demo.gguf')
+    manager.stop_llama_server()
+    assert ('link', str(unit)) in calls
+    assert ('restart', 'korina-demo-llm.service') in calls
+    assert ('stop', 'korina-demo-llm.service') in calls
+
+
+def test_optional_teardown_works_without_systemd(monkeypatch):
+    from korina.services import provider_manager as manager
+
+    def missing(*args, **kwargs):
+        raise FileNotFoundError('systemctl')
+
+    monkeypatch.setattr(manager.subprocess, 'run', missing)
+    manager.stop_llama_server()
+    assert manager._systemctl('stop', 'ollama.service').returncode == 127
+    with pytest.raises(RuntimeError, match='requires systemd'):
+        manager._systemctl('restart', 'llama-server.service', required=True)
+
+
+def test_explicit_missing_model_does_not_select_a_different_file(monkeypatch, tmp_path):
+    from korina.services import provider_manager as manager
+
+    other = tmp_path / 'other.gguf'
+    other.touch()
+    monkeypatch.setattr(manager, 'discover_local_gguf_models', lambda: [str(other)])
+    with pytest.raises(RuntimeError, match='Requested llama.cpp model not found'):
+        manager.activate_llm_provider('llama.cpp', {}, model='missing-model.gguf')

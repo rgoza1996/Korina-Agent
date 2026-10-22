@@ -61,3 +61,22 @@ def test_audio_unsupported_cache_survives_save_config(config_module):
 
     assert cache[triple]["reason"] == "body_match:audio"
     assert cache[triple]["last_error"] == "audio not supported"
+
+
+def test_concurrent_probe_updates_and_settings_merge_preserve_all_entries(config_module):
+    from concurrent.futures import ThreadPoolExecutor
+
+    def write(index):
+        config_module.set_audio_unsupported('demo', 'http://test/v1', f'model-{index}', 'unsupported', '')
+        config_module.update_config_values({'speed': 1.2})
+
+    with ThreadPoolExecutor(max_workers=8) as workers:
+        list(workers.map(write, range(32)))
+    assert len(config_module.config_audio_unsupported()) == 32
+    assert config_module.load_config()['speed'] == 1.2
+
+
+def test_browser_settings_cannot_reset_server_probe_cache(config_module):
+    config_module.set_audio_unsupported('demo', 'http://test/v1', 'model', 'unsupported', '')
+    config_module.update_config_values({'voice': 'af_bella', 'audio_unsupported': {}})
+    assert len(config_module.config_audio_unsupported()) == 1
