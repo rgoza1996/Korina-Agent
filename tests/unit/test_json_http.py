@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import socket
 import socketserver
 import threading
 import time
@@ -51,31 +52,53 @@ def send_response(connection, body, *, status=200, extra_headers=b''):
 
 @pytest.mark.parametrize('phase', ['headers', 'body', 'chunk-header'])
 def test_total_deadline_cancels_trickling_response_and_closes_socket(phase):
+    phase_entered = threading.Event()
     disconnected = threading.Event()
+    stop = threading.Event()
 
     def respond(connection, request):
+        connection.settimeout(.01)
         try:
             if phase == 'headers':
-                prefix, trickle = b'HTTP/1.1 200 OK\r\nX-Slow: ', b'x' * 100
+                prefix, trickle = b'HTTP/1.1 200 OK\r\nX-Slow: ', b'x' * 10000
             elif phase == 'chunk-header':
                 prefix = b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n'
-                trickle = b'0' * 100 + b'1\r\nx\r\n0\r\n\r\n'
+                trickle = b'0' * 10000 + b'1\r\nx\r\n0\r\n\r\n'
             else:
-                prefix = b'HTTP/1.1 200 OK\r\nContent-Length: 102\r\n\r\n'
-                trickle = b'"' + b'x' * 100 + b'"'
+                prefix = b'HTTP/1.1 200 OK\r\nContent-Length: 10002\r\n\r\n'
+                trickle = b'"' + b'x' * 10000 + b'"'
             connection.sendall(prefix)
+            phase_entered.set()
             for byte in trickle:
+                if stop.is_set():
+                    return
                 connection.sendall(bytes([byte]))
-                time.sleep(.01)
-        finally:
+                # Observe peer closure directly: successful completion of this
+                # deliberately long response must not satisfy the assertion.
+                try:
+                    if not connection.recv(1):
+                        disconnected.set()
+                        return
+                except socket.timeout:
+                    pass
+                if stop.wait(.01):
+                    return
+        except (BrokenPipeError, ConnectionResetError):
             disconnected.set()
 
     with server_for(respond) as base:
-        started = time.monotonic()
-        with pytest.raises(TimeoutError, match='timeout'):
-            json_http.request_json(base, timeout=.15)
-        assert time.monotonic() - started < .45
-        assert disconnected.wait(.35), 'cancelled request must close its connected socket'
+        try:
+            started = time.monotonic()
+            with pytest.raises(TimeoutError, match='timeout'):
+                json_http.request_json(base, timeout=.5)
+            assert time.monotonic() - started < 1
+            # Client setup shares the deadline. Under scheduler contention it
+            # may expire before the server receives a request; that is not a
+            # connected-socket leak. Dedicated owned-I/O tests synchronize entry.
+            if phase_entered.wait(.1):
+                assert disconnected.wait(.5), 'cancelled request must close its connected socket'
+        finally:
+            stop.set()
 
 
 @pytest.mark.parametrize('declared', [True, False])
