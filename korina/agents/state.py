@@ -36,7 +36,13 @@ class AgentState:
 # agent_service and adapter code paths.
 agent_state = AgentState()
 
-_admission_generation: ContextVar[int | None] = ContextVar('builtin_agent_admission_generation', default=None)
+@dataclass
+class _BuiltinAdmission:
+    generation: int
+    cursor: int | None = None
+
+
+_admission: ContextVar[_BuiltinAdmission | None] = ContextVar('builtin_agent_admission_generation', default=None)
 
 
 @contextmanager
@@ -45,18 +51,28 @@ def bind_builtin_admission(generation: int):
 
     Adapter protocols/signatures remain unchanged. Only the built-in service
     consumes this task/thread-local context; custom state is never reset by
-    binding it. Nested dispatch and exceptions restore the previous binding.
-    Worker jobs continue to receive their generation explicitly.
+    binding it. The yielded private record also returns a core turn's cursor
+    captured atomically during admission. Nested dispatch and exceptions
+    restore the previous binding. Worker jobs receive generation explicitly.
     """
-    token = _admission_generation.set(generation)
+    admission = _BuiltinAdmission(generation)
+    token = _admission.set(admission)
     try:
-        yield
+        yield admission
     finally:
-        _admission_generation.reset(token)
+        _admission.reset(token)
 
 
 def expected_builtin_generation() -> int | None:
-    return _admission_generation.get()
+    admission = _admission.get()
+    return admission.generation if admission is not None else None
+
+
+def record_builtin_admission_cursor(cursor: int) -> None:
+    """Return the atomic pre-submission cursor to an owned built-in caller."""
+    admission = _admission.get()
+    if admission is not None:
+        admission.cursor = cursor
 
 
 __all__ = ["AgentState", "agent_state"]

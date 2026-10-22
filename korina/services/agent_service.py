@@ -14,7 +14,7 @@ from korina.config import (
     load_config,
 )
 
-from korina.agents.state import agent_state, expected_builtin_generation
+from korina.agents.state import agent_state, expected_builtin_generation, record_builtin_admission_cursor
 from korina.runtime.json_http import HTTPStatusError, RequestCancelledError, request_json
 from korina.runtime.completion import anthropic_text_completion, openai_text_completion
 from korina.services.agent_priority import PERMISSION_REQUEST, classify_agent_priority
@@ -206,7 +206,7 @@ def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
                 'duplicate_suppressed': False,
             }, generation=generation)
         else:
-            push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'agent_input': agent_input}, generation=generation)
+            push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'report': report, 'agent_input': agent_input}, generation=generation)
     except RequestCancelledError:
         return
     except Exception as exc:
@@ -272,8 +272,8 @@ def shutdown_agent_worker() -> None:
         executor.shutdown(wait=False, cancel_futures=True)
 
 
-def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
-    return _admit_agent_request(req)
+def submit_agent_transcript(req: AgentTranscriptRequest, *, require_idle: bool = False) -> dict:
+    return _admit_agent_request(req, require_idle=require_idle)
 
 
 def submit_agent_permission(req: AgentTranscriptRequest, event: dict) -> dict:
@@ -281,7 +281,9 @@ def submit_agent_permission(req: AgentTranscriptRequest, event: dict) -> dict:
     return _admit_agent_request(req, permission_event=event)
 
 
-def _admit_agent_request(req: AgentTranscriptRequest, *, permission_event: dict | None = None) -> dict:
+def _admit_agent_request(
+    req: AgentTranscriptRequest, *, permission_event: dict | None = None, require_idle: bool = False,
+) -> dict:
     global _executor, _worker_running, _worker_epoch, _queued_prompt
     admission_generation = expected_builtin_generation()
     if admission_generation is None:
@@ -295,6 +297,10 @@ def _admit_agent_request(req: AgentTranscriptRequest, *, permission_event: dict 
     with agent_state.lock:
         if admission_generation != agent_state.generation:
             return {'ok': True, 'accepted': False, 'stale': True, 'status': agent_snapshot()}
+        if require_idle and _worker_running:
+            return {'ok': True, 'accepted': False, 'busy': True, 'status': agent_snapshot()}
+        if require_idle:
+            record_builtin_admission_cursor(agent_state.event_seq)
         notification = None
         if req.delivery_mode == 'injection':
             _queue_injection(req)

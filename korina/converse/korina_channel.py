@@ -106,7 +106,8 @@ class KorinaConverseChannel(ConverseChannel):
         )
 
     async def _poll_until_report(
-        self, adapter: AgentAdapter, started_at: float, cursor: int, generation: int
+        self, adapter: AgentAdapter, started_at: float, cursor: int, generation: int,
+        builtin_generation: int | None,
     ) -> tuple[str, str, int, int, str | None, bool]:
         """Wait for a new report event instead of replaying last_report.
 
@@ -115,13 +116,18 @@ class KorinaConverseChannel(ConverseChannel):
         """
         scanned = 0
         while time.monotonic() - started_at < _MAX_POLL_SECONDS:
-            if self._cancelled(generation):
+            if self._operation_cancelled(adapter, generation, builtin_generation):
                 return '', 'idle', scanned, cursor, 'cancelled', False
             try:
+                previous_cursor = cursor
                 cursor, events = await asyncio.to_thread(adapter.poll_events, cursor)
-                if self._cancelled(generation):
+                if self._operation_cancelled(adapter, generation, builtin_generation):
                     return '', 'idle', scanned, cursor, 'cancelled', False
                 scanned += len(events)
+                if builtin_generation is not None and cursor > previous_cursor and (
+                    not events or int(events[0].get('id', 0)) > previous_cursor + 1
+                ):
+                    return '', 'idle', scanned, cursor, 'Agent event history was truncated', True
                 for event in events:
                     kind = event.get('type')
                     if kind in {'state_report', 'permission_request'}:
@@ -132,14 +138,16 @@ class KorinaConverseChannel(ConverseChannel):
                         error = str(event.get('message') or event.get('error') or 'agent error')
                         return '', 'idle', scanned, cursor, error, False
                     if event.get('status') == 'duplicate_report_suppressed':
+                        if isinstance(event.get('report'), str):
+                            return event['report'], 'idle', scanned, cursor, None, False
                         snapshot = await asyncio.to_thread(AgentHttpBridge(adapter).snapshot)
-                        if self._cancelled(generation):
+                        if self._operation_cancelled(adapter, generation, builtin_generation):
                             return '', 'idle', scanned, cursor, 'cancelled', False
                         return str(snapshot.get('last_report') or ''), 'idle', scanned, cursor, None, False
                     if event.get('status') == 'empty_report_suppressed':
                         return '', 'idle', scanned, cursor, None, False
             except Exception as exc:
-                if self._cancelled(generation):
+                if self._operation_cancelled(adapter, generation, builtin_generation):
                     return '', 'idle', scanned, cursor, 'cancelled', False
                 return '', 'idle', scanned, cursor, f'poll_events failed: {exc}', True
             await asyncio.sleep(_POLL_INTERVAL)
@@ -154,6 +162,23 @@ class KorinaConverseChannel(ConverseChannel):
         with self._lifecycle_lock:
             return generation != self._generation
 
+    @staticmethod
+    def _builtin_generation(adapter: AgentAdapter) -> int | None:
+        # Only the exact built-in adapter owns this process-wide state.
+        # Custom adapters, including subclasses with another backend, retain
+        # their existing protocol and cancellation semantics.
+        from korina.agents.korina_adapter import KorinaAgentAdapter
+        if type(adapter) is not KorinaAgentAdapter:
+            return None
+        from korina.agents.state import agent_state
+        with agent_state.lock:
+            return agent_state.generation
+
+    def _operation_cancelled(self, adapter: AgentAdapter, generation: int, builtin_generation: int | None) -> bool:
+        return self._cancelled(generation) or (
+            builtin_generation is not None and builtin_generation != self._builtin_generation(adapter)
+        )
+
     def _require_recovery(self, adapter: AgentAdapter, generation: int, reason: str) -> None:
         with self._lifecycle_lock:
             if generation != self._generation:
@@ -163,14 +188,22 @@ class KorinaConverseChannel(ConverseChannel):
             self._recovery_generation = self._generation
             self._recovery_reason = reason
 
-    def _submit_if_current(self, adapter: AgentAdapter, turn: UserTurn, generation: int) -> bool:
+    def _submit_if_current(
+        self, adapter: AgentAdapter, turn: UserTurn, generation: int, builtin_generation: int | None,
+    ) -> tuple[bool, int | None]:
         # Reset must follow an already-started synchronous submission. If its
         # thread has not started yet, cancellation prevents submission entirely.
         with self._submit_reset_lock:
-            if self._cancelled(generation):
-                return False
-            adapter.submit_turn(turn)
-            return True
+            if self._operation_cancelled(adapter, generation, builtin_generation):
+                return False, None
+            if builtin_generation is None:
+                adapter.submit_turn(turn)
+                return True, None
+            else:
+                from korina.agents.state import bind_builtin_admission
+                with bind_builtin_admission(builtin_generation) as admission:
+                    adapter.submit_turn(turn)
+                return True, admission.cursor
 
     @asynccontextmanager
     async def _serialize_sends(self):
@@ -213,30 +246,33 @@ class KorinaConverseChannel(ConverseChannel):
 
     async def _send_on_adapter(self, req: ConverseRequest, adapter: AgentAdapter, generation: int) -> ConverseResponse:
         admission_started = False
+        builtin_generation = self._builtin_generation(adapter)
         try:
             try:
                 turn = self.turn_from_request(req)
                 cursor, _ = await asyncio.to_thread(adapter.poll_events, 0)
-                if self._cancelled(generation):
+                if self._operation_cancelled(adapter, generation, builtin_generation):
                     return ConverseResponse(error='cancelled')
                 admission_started = True
-                submitted = await asyncio.to_thread(self._submit_if_current, adapter, turn, generation)
-                if not submitted or self._cancelled(generation):
+                submitted, admission_cursor = await asyncio.to_thread(self._submit_if_current, adapter, turn, generation, builtin_generation)
+                if not submitted or self._operation_cancelled(adapter, generation, builtin_generation):
                     return ConverseResponse(error='cancelled')
+                if admission_cursor is not None:
+                    cursor = admission_cursor
             except AgentAdmissionRejected as exc:
-                if self._cancelled(generation):
+                if self._operation_cancelled(adapter, generation, builtin_generation):
                     return ConverseResponse(error='cancelled')
                 return ConverseResponse(error=f'submit rejected: {exc}')
             except Exception as exc:
-                if self._cancelled(generation):
+                if self._operation_cancelled(adapter, generation, builtin_generation):
                     return ConverseResponse(error='cancelled')
                 if admission_started:
                     self._require_recovery(adapter, generation, 'an uncertain submission failure')
                 return ConverseResponse(text='', finished=True, error=f'submit failed: {exc}')
             text, status, scanned, cursor, error, uncertain = await self._poll_until_report(
-                adapter, time.monotonic(), cursor, generation
+                adapter, time.monotonic(), cursor, generation, builtin_generation
             )
-            if self._cancelled(generation):
+            if self._operation_cancelled(adapter, generation, builtin_generation):
                 text, error = '', 'cancelled'
             elif uncertain:
                 self._require_recovery(adapter, generation, error or 'an uncertain completion')
@@ -246,7 +282,7 @@ class KorinaConverseChannel(ConverseChannel):
             )
         except asyncio.CancelledError:
             # Mark uncertainty before releasing the cross-event-loop send lock.
-            if admission_started:
+            if admission_started and not self._operation_cancelled(adapter, generation, builtin_generation):
                 self._require_recovery(adapter, generation, 'caller cancellation of an admitted turn')
             raise
 

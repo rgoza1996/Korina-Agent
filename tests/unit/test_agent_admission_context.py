@@ -7,19 +7,24 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from korina.agents import AgentHttpBridge
-from korina.agents.state import bind_builtin_admission, expected_builtin_generation
+from korina.agents.state import bind_builtin_admission, expected_builtin_generation, record_builtin_admission_cursor
 from korina.schemas import AgentCapabilities, AgentTranscriptRequest
 
 
 def test_nested_bindings_restore_outer_epoch_even_after_exception():
     assert expected_builtin_generation() is None
-    with bind_builtin_admission(10):
+    with bind_builtin_admission(10) as outer:
         assert expected_builtin_generation() == 10
+        record_builtin_admission_cursor(101)
         with pytest.raises(RuntimeError, match='nested failure'):
-            with bind_builtin_admission(20):
+            with bind_builtin_admission(20) as inner:
                 assert expected_builtin_generation() == 20
+                assert inner.cursor is None
+                record_builtin_admission_cursor(202)
+                assert inner.cursor == 202
                 raise RuntimeError('nested failure')
         assert expected_builtin_generation() == 10
+        assert outer.cursor == 101
     assert expected_builtin_generation() is None
 
 
@@ -28,11 +33,13 @@ def test_bindings_are_isolated_between_concurrent_threads_and_reused_workers():
 
     def dispatch(generation):
         assert expected_builtin_generation() is None
-        with bind_builtin_admission(generation):
+        with bind_builtin_admission(generation) as admission:
             barrier.wait(timeout=2)
+            record_builtin_admission_cursor(generation * 10)
             actual = expected_builtin_generation()
             barrier.wait(timeout=2)
             assert actual == generation == expected_builtin_generation()
+            assert admission.cursor == generation * 10
         assert expected_builtin_generation() is None
 
     with ThreadPoolExecutor(max_workers=2) as executor:

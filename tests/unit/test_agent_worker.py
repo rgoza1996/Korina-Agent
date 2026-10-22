@@ -117,6 +117,6 @@ def test_hidden_reasoning_cannot_escalate_visible_report(monkeypatch):
 
 def test_adapter_preserves_user_text_as_conversation_turn(monkeypatch):
     captured = []
-    monkeypatch.setattr(agent_service, 'submit_agent_transcript', lambda req, *, is_current=None: captured.append(req))
+    monkeypatch.setattr(agent_service, 'submit_agent_transcript', lambda req, **kwargs: captured.append(req))
     KorinaAgentAdapter().submit_turn(UserTurn(text='Hello', session_id='demo', turn_count=1))
     assert captured[0].transcript == [{'role': 'user', 'content': 'Hello'}]

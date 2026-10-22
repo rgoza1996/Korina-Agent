@@ -71,7 +71,8 @@ def test_disabled_send_can_retry_after_real_config_enable_without_cancel(builtin
     asyncio.run(exercise())
 
 
-def test_clear_rejects_a_stale_core_admission_without_waiting_for_a_report(builtin, client, monkeypatch):
+@pytest.mark.parametrize('transition', ['reset', 'off/on'])
+def test_session_transition_cancels_a_stale_core_admission_without_waiting_for_a_report(builtin, client, monkeypatch, transition):
     _, channel, model_calls, resets = builtin
     entered, release = threading.Event(), threading.Event()
     actual_load = agent_service.load_config
@@ -85,8 +86,8 @@ def test_clear_rejects_a_stale_core_admission_without_waiting_for_a_report(built
             assert release.wait(3)
         return config
 
-    def submit(req):
-        result = actual_submit(req)
+    def submit(req, **kwargs):
+        result = actual_submit(req, **kwargs)
         decisions.append(result)
         return result
 
@@ -96,10 +97,14 @@ def test_clear_rejects_a_stale_core_admission_without_waiting_for_a_report(built
     async def exercise():
         pending = asyncio.create_task(channel.send(request('old turn')))
         assert await asyncio.to_thread(entered.wait, 2)
-        assert client.post('/api/agent/reset').status_code == 200
+        if transition == 'reset':
+            assert client.post('/api/agent/reset').status_code == 200
+        else:
+            assert client.post('/api/config', json={'agent_enabled': 'off'}).status_code == 200
+            assert client.post('/api/config', json={'agent_enabled': 'on'}).status_code == 200
         release.set()
         rejected = await pending
-        assert 'submit rejected' in rejected.error and 'session changed' in rejected.error
+        assert rejected.error == 'cancelled'
         assert decisions[0]['accepted'] is False and decisions[0]['stale'] is True
         assert model_calls == []
         assert channel._recovery_adapter is None
@@ -108,7 +113,7 @@ def test_clear_rejects_a_stale_core_admission_without_waiting_for_a_report(built
         assert fresh.error is None
         assert fresh.text == 'Priority: normal\nFresh: fresh after Clear'
         assert model_calls == ['fresh after Clear']
-        assert resets == [True], 'only the explicit API Clear may reset adapter memory'
+        assert resets == ([True] if transition == 'reset' else []), 'no extra adapter reset may follow the transition'
 
     try:
         asyncio.run(exercise())

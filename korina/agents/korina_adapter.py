@@ -25,6 +25,8 @@ def _require_admitted(result: object, operation: str) -> None:
         raise AgentAdmissionRejected('Korina Agent is disabled in settings')
     if result.get('stale'):
         raise AgentAdmissionRejected(f'Korina Agent session changed before {operation} admission')
+    if result.get('busy'):
+        raise AgentAdmissionRejected('Korina Agent is busy; retry after the current report finishes')
     if result.get('accepted') is False:
         raise AgentAdmissionRejected('Korina Agent did not admit this request')
 
@@ -60,7 +62,9 @@ class KorinaAgentAdapter:
             reason=f"user_turn:{turn.session_id}",
             turn_count=turn.turn_count,
         )
-        result = agent_service.submit_agent_transcript(req)
+        # Core callers await this turn's completion. They cannot share the
+        # legacy HTTP queue, where later full snapshots replace queued work.
+        result = agent_service.submit_agent_transcript(req, require_idle=True)
         _require_admitted(result, 'turn')
 
     # ---- outbound: adapter -> Converse ---------------------------------------
