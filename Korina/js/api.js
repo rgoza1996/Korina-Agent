@@ -19,6 +19,7 @@ import { loadAgentModelOptions, loadCapabilities, setBaseUrlEditability } from '
 
 let capabilitiesInFlight = null;
 const CAPABILITIES_FAILURE = 'Provider capabilities unavailable: ';
+let healthPollVersion = 0;
 
 export function refreshProviderCapabilities() {
   if (capabilitiesInFlight) return capabilitiesInFlight;
@@ -54,18 +55,25 @@ export function refreshProviderCapabilities() {
 }
 
 export async function activateSelectedProvider(provider, model = '') {
-  const r = await fetch('/api/llm/provider/activate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, model: model || '' }),
-  });
-  const j = await r.json();
-  if (!r.ok) throw new Error(apiErrorMessage(j, `HTTP ${r.status}`));
-  if (j.saved) state.appConfig = { ...state.appConfig, ...j.saved };
-  // Signal a pending provider switch so the readiness pill flips to
-  // "loading" until /api/health confirms the new model is loaded.
-  state.providerPending = true;
-  return j;
+  healthPollVersion++;
+  try {
+    const r = await fetch('/api/llm/provider/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, model: model || '' }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(apiErrorMessage(j, `HTTP ${r.status}`));
+    if (j.saved) state.appConfig = { ...state.appConfig, ...j.saved };
+    // Signal a pending provider switch so the readiness pill flips to
+    // "loading" until /api/health confirms the new model is loaded.
+    state.providerPending = true;
+    return j;
+  } finally {
+    // A same-selection reload (including a partial failure) can change the
+    // running server without changing the selected configuration identity.
+    healthPollVersion++;
+  }
 }
 
 const sameSetting = (left, right) => JSON.stringify(left) === JSON.stringify(right);
@@ -229,16 +237,37 @@ export function saveConfigSoon() {
 // - hostInfo is owned here (every 5s), not in form change handlers.
 // - settingsLiveStatus reads the runtime provider load blocks.
 const HEALTH_FAIL_GRACE = 3; // consecutive misses before flipping pageDot red
+const HEALTH_SETTING_KEYS = [
+  'llm_provider', 'llm_base_url', 'lm_model', 'llm_api_key_env',
+  'stt_backend', 'stt_device', 'stt_model', 'stt_llm_provider',
+  'stt_llm_base_url', 'stt_llm_model', 'stt_llm_api_key_env', 'partial_window_ms',
+  'tts_provider', 'tts_base_url', 'tts_port', 'tts_health_url', 'tts_model', 'tts_device',
+  'agent_enabled', 'agent_provider', 'agent_base_url', 'agent_model', 'agent_api_key',
+];
+
+function healthIdentity() {
+  const form = collectConfig();
+  return JSON.stringify([state.liveSession, state.agentSession,
+    HEALTH_SETTING_KEYS.map(key => [form[key], state.appConfig[key]])]);
+}
 
 export async function health() {
+  const version = ++healthPollVersion;
+  const identity = healthIdentity();
+  const current = () => version === healthPollVersion && identity === healthIdentity();
   const ackContext = { revision: state.ackStatusRevision, voice: $('voice')?.value,
     liveSession: state.liveSession, agentSession: state.agentSession };
   let j = null;
   let pageFailed = false;
   try {
     const response = await fetch('/api/health');
+    if (!current()) {
+      try { void response.body?.cancel().catch(() => {}); } catch {}
+      return;
+    }
     if (!response.ok) throw new Error(`Health check failed: HTTP ${response.status}`);
     j = await response.json();
+    if (!current()) return;
     if (!j || typeof j !== 'object' || j.ok !== true) throw new Error('Invalid health response');
     const limits = j.audio_limits;
     const limitsError = typeof j.audio_limits_error === 'string' ? j.audio_limits_error.trim() : '';
@@ -254,6 +283,7 @@ export async function health() {
     }
     state.healthFailures = 0;
   } catch (e) {
+    if (!current()) return;
     j = null;
     pageFailed = true;
     state.healthFailures = (state.healthFailures || 0) + 1;
