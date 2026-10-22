@@ -112,31 +112,67 @@ export async function setBaseUrlEditability(){
   if($("agentBaseUrl")) $("agentBaseUrl").disabled = !agentEditable;
 }
 
+let modelsRequest = 0;
+let agentModelsRequest = 0;
+let modelStatusRequest = 0;
+
+export function modelDiscoveryQuery(){
+  return new URLSearchParams({
+    llm_base_url: llmBaseUrl(),
+    llm_api_key_env: String($("llmApiKeyEnv")?.value||"").trim(),
+    stt_llm_base_url: effectiveSttLlmBaseUrl(),
+    stt_llm_api_key_env: effectiveSttLlmApiKeyEnv(),
+    llm_provider: String($("llmProvider")?.value||"").trim(),
+    stt_llm_provider: effectiveSttLlmProvider(),
+  }).toString();
+}
+
+function agentDiscoveryQuery(){
+  return JSON.stringify(['agentProvider', 'agentBaseUrl', 'agentApiKey', 'llmBaseUrl', 'llmApiKeyEnv']
+    .map(id => String($(id)?.value || '').trim()));
+}
+
 export async function loadModelOptions(force=false){
+  const request = ++modelsRequest;
+  const statusRequest = ++modelStatusRequest;
+  const query = modelDiscoveryQuery();
+  const isCurrent = () => request === modelsRequest && query === modelDiscoveryQuery();
+  const clearFailedCache = () => {
+    if(state.lastModelsQuery === query){
+      state.lastModelsPayload = null;
+      state.lastModelsQuery = '';
+      state.lastModelsLoadedAt = 0;
+    }
+  };
   try{
+    let audioUnsupported;
     try {
       const probeResp = await listAudioProbes();
-      state.audioUnsupported = probeResp.entries || {};
+      audioUnsupported = probeResp.entries || {};
     } catch (_) {
-      state.audioUnsupported = {};
+      audioUnsupported = {};
     }
-    const params=new URLSearchParams({
-      llm_base_url: llmBaseUrl(),
-      llm_api_key_env: String($("llmApiKeyEnv")?.value||"").trim(),
-      stt_llm_base_url: effectiveSttLlmBaseUrl(),
-      stt_llm_api_key_env: effectiveSttLlmApiKeyEnv(),
-      llm_provider: String($("llmProvider")?.value||"").trim(),
-      stt_llm_provider: effectiveSttLlmProvider(),
-    });
-    const query=params.toString();
+    if(!isCurrent()) return;
     let j=state.lastModelsPayload;
     if(force || !j || query!==state.lastModelsQuery){
       const r=await fetch(`/api/models?${query}`);
+      if(!r.ok) throw new Error(`HTTP ${r.status} from /api/models`);
       j=await r.json();
-      state.lastModelsQuery=query;
-      state.lastModelsPayload=j;
-      state.lastModelsLoadedAt=Date.now();
+      if(!isCurrent()) return;
+      if(!j || !Array.isArray(j.llm_models) || !Array.isArray(j.stt_llm_models)){
+        throw new Error('invalid model list response');
+      }
+      // Partial discovery still renders local/fallback choices and its error,
+      // but must retry the unavailable provider on the next picker request.
+      if(j.llm_error || j.stt_llm_error) clearFailedCache();
+      else {
+        state.lastModelsQuery=query;
+        state.lastModelsPayload=j;
+        state.lastModelsLoadedAt=Date.now();
+      }
     }
+    if(!isCurrent()) return;
+    state.audioUnsupported = audioUnsupported;
 
     const llmStatuses = j.llm_models_status || {};
     const sttStatuses = j.stt_llm_models_status || {};
@@ -262,15 +298,31 @@ export async function loadModelOptions(force=false){
         }
       }
     }
+    const previousStatus = $("modelOptionsStatus").textContent;
     syncConverseSettingsUI();
-    $("modelOptionsStatus").textContent=`Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo}`.trim();
-  }catch(e){ $("modelOptionsStatus").textContent="Model list load failed: "+e.message; }
+    $("modelOptionsStatus").textContent = statusRequest === modelStatusRequest
+      ? `Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo}`.trim()
+      : previousStatus;
+    return j;
+  }catch(e){
+    if(!isCurrent()) return;
+    clearFailedCache();
+    if(statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent="Model list load failed: "+e.message;
+  }
 }
 
 export async function loadAgentModelOptions(){
+  const request = ++agentModelsRequest;
+  const statusRequest = ++modelStatusRequest;
+  const query = agentDiscoveryQuery();
+  const isCurrent = () => request === agentModelsRequest && query === agentDiscoveryQuery();
   try{
+    const r=await fetch("/api/agent/models");
+    if(!r.ok) throw new Error(`HTTP ${r.status} from /api/agent/models`);
+    const j=await r.json();
+    if(!isCurrent()) return;
+    if(!j || j.ok === false || !Array.isArray(j.models)) throw new Error(j?.error || 'invalid agent model list response');
     const current=$("agentModel")?.value||"";
-    const j=await (await fetch("/api/agent/models")).json();
     if($("agentModel")){
       $("agentModel").innerHTML="";
       const blank=document.createElement("option"); blank.value=""; blank.textContent="Use Korina Converse model"; $("agentModel").appendChild(blank);
@@ -282,6 +334,8 @@ export async function loadAgentModelOptions(){
       }
       $("agentModel").value = current;
     }
-    $("modelOptionsStatus").textContent=`Loaded ${(j.models||[]).length} Korina Agent models from ${j.provider}. ${j.error?("Error: "+j.error):""}`;
-  }catch(e){ $("modelOptionsStatus").textContent="Agent model list load failed: "+e.message; }
+    if(statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent=`Loaded ${j.models.length} Korina Agent models from ${j.provider}.`;
+  }catch(e){
+    if(isCurrent() && statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent="Agent model list load failed: "+e.message;
+  }
 }
