@@ -227,7 +227,7 @@ def test_maybe_fallback_legacy_empty_text_no_finish_reason_is_transient():
 # ---------- lmstudio_transcribe_wav returns finish_reason ----------
 
 
-def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch):
+def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch, mock_provider_http):
     """The new contract: lmstudio_transcribe_wav now includes finish_reason
     in the returned dict so the audio-probe / stt route can detect silent-empty."""
     from korina.services import multimodal_stt
@@ -240,18 +240,8 @@ def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch):
         'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'total_tokens': 15},
     }
 
-    class FakeResp:
-        def __init__(self, body):
-            self._body = body
-        def read(self):
-            return json.dumps(self._body).encode('utf-8')
-        def __enter__(self):
-            return self
-        def __exit__(self, *a):
-            return False
-
-    # Patch urlopen + the wav.read_bytes + config so the call doesn't touch disk/network
-    monkeypatch.setattr('urllib.request.urlopen', lambda *a, **kw: FakeResp(fake_response_body))
+    import httpx
+    mock_provider_http(lambda request: httpx.Response(200, json=fake_response_body))
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_chat_url', lambda c: 'http://127.0.0.1:8080/v1/chat/completions')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_api_env', lambda c: '')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_model', lambda c: 'google/gemma-4-e4b')
@@ -275,7 +265,7 @@ def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch):
     assert result['backend'] == 'multimodal-stt'
 
 
-def test_lmstudio_transcribe_wav_stop_finish_reason():
+def test_lmstudio_transcribe_wav_stop_finish_reason(monkeypatch, mock_provider_http):
     """When the model stops cleanly, finish_reason='stop' is captured."""
     from korina.services import multimodal_stt
 
@@ -286,18 +276,8 @@ def test_lmstudio_transcribe_wav_stop_finish_reason():
         }],
     }
 
-    class FakeResp:
-        def read(self):
-            return json.dumps(self._body).encode('utf-8')
-        def __enter__(self):
-            return self
-        def __exit__(self, *a):
-            return False
-        def __init__(self, body):
-            self._body = body
-
-    monkeypatch = __import__('pytest').MonkeyPatch()
-    monkeypatch.setattr('urllib.request.urlopen', lambda *a, **kw: FakeResp(fake_response_body))
+    import httpx
+    mock_provider_http(lambda request: httpx.Response(200, json=fake_response_body))
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_chat_url', lambda c: 'http://127.0.0.1:8080/v1/chat/completions')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_api_env', lambda c: '')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_model', lambda c: 'good-model')
@@ -314,4 +294,3 @@ def test_lmstudio_transcribe_wav_stop_finish_reason():
     )
     assert result['finish_reason'] == 'stop'
     assert result['text'] == 'hello world'
-    monkeypatch.undo()

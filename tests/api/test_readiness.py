@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import io
-import json
 import time
+import httpx
 
 from korina.routes import health
 
@@ -40,31 +39,27 @@ def test_readiness_distinguishes_reachable_backend_from_voice_stack(client, monk
     assert result.json()['checks']['response_llm'] is False
 
 
-def test_probe_uses_configured_base_path_auth_and_exact_model(monkeypatch):
-    import urllib.request
-
+def test_probe_uses_configured_base_path_auth_and_exact_model(mock_provider_http):
     requests = []
 
-    def urlopen(request, timeout):
+    def request_handler(request):
         requests.append(request)
-        return io.BytesIO(json.dumps({'data': [{'id': 'demo-other'}, {'id': '/models/demo.gguf'}]}).encode())
+        return httpx.Response(200, json={'data': [{'id': 'demo-other'}, {'id': '/models/demo.gguf'}]})
 
-    monkeypatch.setattr(urllib.request, 'urlopen', urlopen)
+    mock_provider_http(request_handler)
     result = health._probe_llm_models('https://provider.test/custom/v2', 'demo', headers={'Authorization': 'Bearer example'})
     assert result['loaded'] is False
-    assert requests[0].full_url == 'https://provider.test/custom/v2/models'
-    assert requests[0].get_header('Authorization') == 'Bearer example'
+    assert str(requests[0].url) == 'https://provider.test/custom/v2/models'
+    assert requests[0].headers.get('Authorization') == 'Bearer example'
     assert health._probe_llm_models('https://provider.test/v1', 'demo.gguf')['loaded'] is True
     health._probe_llm_models('https://provider.test/v1/chat/completions', 'demo')
-    assert requests[-1].full_url == 'https://provider.test/v1/models'
+    assert str(requests[-1].url) == 'https://provider.test/v1/models'
 
 
-def test_bad_provider_urls_and_nonobject_tts_are_degraded(monkeypatch):
-    import urllib.request
-
+def test_bad_provider_urls_and_nonobject_tts_are_degraded(mock_provider_http):
     assert health._probe_llm_models('not a URL', 'demo')['ok'] is False
     assert health._probe_tts_backend('not a URL')[0] is False
-    monkeypatch.setattr(urllib.request, 'urlopen', lambda *args, **kwargs: io.BytesIO(b'[]'))
+    mock_provider_http(lambda request: httpx.Response(200, json=[]))
     ok, _, error = health._probe_tts_backend('https://tts.test')
     assert not ok and error
 

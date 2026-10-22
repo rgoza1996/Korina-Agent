@@ -167,9 +167,9 @@ def test_probe_audio_support_synthetic_wav_is_valid():
         assert w.getnframes() == 16000
 
 
-def test_default_probe_forwards_timeout_without_leaking_configured_secret(monkeypatch, config_module):
-    import json
-    from korina.services import active_probe, multimodal_stt
+def test_default_probe_forwards_timeout_without_leaking_configured_secret(monkeypatch, config_module, mock_provider_http):
+    import httpx
+    from korina.services import active_probe
 
     config_module.update_config_values({
         'stt_llm_base_url': 'https://configured.test/v1',
@@ -179,17 +179,17 @@ def test_default_probe_forwards_timeout_without_leaking_configured_secret(monkey
     monkeypatch.setenv('PROBE_CONFIGURED_KEY', 'configured-secret')
     calls = []
 
-    def urlopen(request, timeout):
-        calls.append((request, timeout))
-        return io.BytesIO(json.dumps({'choices': [{'message': {'content': 'hello'}, 'finish_reason': 'stop'}]}).encode())
+    def request_handler(request):
+        calls.append((request, request.extensions['timeout']['read']))
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'hello'}, 'finish_reason': 'stop'}]})
 
-    monkeypatch.setattr(multimodal_stt.urllib.request, 'urlopen', urlopen)
+    mock_provider_http(request_handler)
     result = active_probe.probe_audio_support(
         'openai-compatible', 'https://candidate.test/v1', 'audio-model', timeout=0.25,
     )
     assert result.supported is True
-    assert calls[0][0].full_url == 'https://candidate.test/v1/chat/completions'
-    assert calls[0][0].get_header('Authorization') is None
+    assert str(calls[0][0].url) == 'https://candidate.test/v1/chat/completions'
+    assert calls[0][0].headers.get('Authorization') is None
     assert calls[0][1] == 0.25
 
 

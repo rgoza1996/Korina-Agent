@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 import base64
-import json
 import math
 import re
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +20,7 @@ from korina.config import (
     normalize_api_base_url,
 )
 from korina.runtime.http import auth_headers_from_env
+from korina.runtime.json_http import HTTPStatusError, request_json
 from korina.services.model_catalog import llm_models_for
 
 
@@ -121,20 +119,12 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
         'reasoning': config_stt_llm_reasoning(config),
     }
     headers = {'Content-Type': 'application/json'} | auth_headers_from_env(resolved_api_env)
-    http_req = urllib.request.Request(
-        resolved_base_url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers,
-        method='POST',
-    )
     try:
-        with urllib.request.urlopen(http_req, timeout=timeout) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode('utf-8', errors='replace')
+        body = request_json(resolved_base_url, method='POST', headers=headers, json_body=payload, timeout=timeout)
+    except HTTPStatusError as e:
         raise RuntimeError(
-            f'Multimodal STT model {selected_model!r} rejected audio transcription request: HTTP {e.code}: {detail}'
-        )
+            f'Multimodal STT model {selected_model!r} rejected audio transcription request: HTTP {e.status_code}: {e.detail}'
+        ) from e
     choice = (body.get('choices') or [{}])[0] or {}
     message = choice.get('message') or {}
     text = (message.get('content') or '').strip()

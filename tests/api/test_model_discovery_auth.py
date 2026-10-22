@@ -1,8 +1,7 @@
 """Unsaved discovery candidates must never borrow another endpoint's auth."""
 from __future__ import annotations
 
-import io
-import json
+import httpx
 
 import pytest
 
@@ -19,7 +18,7 @@ import pytest
     ({'llm_base_url': 'https://candidate.test/v1', 'llm_api_key_env': 'EXPLICIT_KEY',
       'stt_llm_base_url': 'https://candidate-audio.test/v1', 'stt_llm_api_key_env': 'EXPLICIT_KEY'}, ('Bearer explicit-test-token', 'Bearer explicit-test-token')),
 ])
-def test_discovery_auth_is_scoped_to_its_endpoint(monkeypatch, client, config_module, params, expected):
+def test_discovery_auth_is_scoped_to_its_endpoint(monkeypatch, client, config_module, params, expected, mock_provider_http):
     from korina.routes import models
     from korina.services import model_catalog
 
@@ -33,11 +32,11 @@ def test_discovery_auth_is_scoped_to_its_endpoint(monkeypatch, client, config_mo
     monkeypatch.setenv('EXPLICIT_KEY', 'explicit-test-token')
     calls = []
 
-    def urlopen(request, timeout):
-        calls.append((request.full_url, request.get_header('Authorization')))
-        return io.BytesIO(json.dumps({'data': []}).encode())
+    def request_handler(request):
+        calls.append((str(request.url), request.headers.get('Authorization')))
+        return httpx.Response(200, json={'data': []})
 
-    monkeypatch.setattr('urllib.request.urlopen', urlopen)
+    mock_provider_http(request_handler)
     monkeypatch.setattr(models, 'llm_models_for', model_catalog.llm_models_for)
     monkeypatch.setattr(models, 'discover_local_gguf_models', lambda: [])
     monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda: [])

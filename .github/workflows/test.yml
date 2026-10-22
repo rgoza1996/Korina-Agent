@@ -51,7 +51,7 @@ jobs:
       - name: Verify installed UI assets
         run: |
           python -m venv /tmp/korina-wheel
-          /tmp/korina-wheel/bin/pip install dist/*.whl 'httpx>=0.27,<1'
+          /tmp/korina-wheel/bin/pip install dist/*.whl
           checkout="$PWD"
           cd /tmp
           /tmp/korina-wheel/bin/python "$checkout/scripts/check_installed.py" --source-assets "$checkout/Korina"

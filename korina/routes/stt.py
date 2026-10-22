@@ -10,8 +10,10 @@ from functools import partial
 from pathlib import Path
 from typing import Optional
 
+from anyio import CancelScope
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from korina.config import (
     config_stt_llm_api_env,
@@ -26,6 +28,7 @@ from korina.services.multimodal_stt import (
 )
 from korina.services.whisper_service import (
     AudioDurationLimitError,
+    WhisperBusyError,
     audio_metadata,
     convert_to_16k_wav,
     sse_event,
@@ -36,6 +39,21 @@ from korina.services.whisper_service import (
 from korina.util.paths import LMSTUDIO_MODEL, PARTIAL_MIN_SECONDS
 
 router = APIRouter()
+
+
+class SttStreamResponse(StreamingResponse):
+    """Close lazy model usage and temporary audio on disconnect or send failure."""
+
+    def __init__(self, content, **kwargs):
+        self._content = content
+        super().__init__(content, **kwargs)
+
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            with CancelScope(shield=True):
+                await run_in_threadpool(self._content.close)
 
 
 def _whisper_fallback_payload(wav: Path, *, device, model_id, started, metadata) -> dict:
@@ -198,6 +216,8 @@ def transcribe(
         ))
     except AudioDurationLimitError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except WhisperBusyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -223,6 +243,8 @@ def transcribe_partial(
         return JSONResponse(result)
     except AudioDurationLimitError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
+    except WhisperBusyError as exc:
+        raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -236,7 +258,7 @@ def transcribe_stream(
     llm_model: Optional[str] = Query(None),
 ):
     suffix = Path(audio.filename or 'recording.webm').suffix or '.webm'
-    return StreamingResponse(
+    return SttStreamResponse(
         _stream_events(audio.file, suffix, device=device, model=model,
                        backend=backend, llm_model=llm_model),
         media_type='text/event-stream',

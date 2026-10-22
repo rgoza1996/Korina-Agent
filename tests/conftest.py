@@ -7,9 +7,42 @@ import os
 import shutil
 import sys
 import tempfile
+from functools import partial
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture
+def mock_provider_http(monkeypatch):
+    """Replace only outbound provider I/O, retaining its real caps/deadline code."""
+    import httpx
+    from korina.runtime import json_http
+
+    client_type = httpx.AsyncClient
+
+    class BytesStream(httpx.AsyncByteStream):
+        def __init__(self, content):
+            self.content = content
+
+        async def __aiter__(self):
+            yield self.content
+
+    def install(handler):
+        def streaming_handler(request):
+            response = handler(request)
+            if response.is_stream_consumed:
+                return httpx.Response(
+                    response.status_code, headers=response.headers,
+                    stream=BytesStream(response.content),
+                )
+            return response
+
+        monkeypatch.setattr(json_http.httpx, 'AsyncClient', partial(
+            client_type, transport=httpx.MockTransport(streaming_handler),
+        ))
+
+    return install
 
 
 _TEST_ROOT = Path(tempfile.mkdtemp(prefix="korina-pytest-"))

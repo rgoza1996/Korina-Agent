@@ -33,6 +33,7 @@ from korina.config import (
 from korina.runtime import state
 from korina.runtime.limits import AudioLimits, MAX_AUDIO_UPLOAD_BYTES, resolve_audio_limits
 from korina.runtime.http import auth_headers_from_env
+from korina.runtime.json_http import HTTPStatusError, request_json
 from korina.services.ack_service import ack_files_for, ack_status
 from korina.services.whisper_service import compute_type_for, cuda_available, normalize_device
 from korina.util.paths import (
@@ -59,17 +60,12 @@ def _probe_tts_backend(base_url, timeout=2.0, health_url=None):
     """
     import json as _json
     import socket
-    import urllib.error
-    import urllib.request
 
     if not base_url:
         return (False, {}, "no base_url configured")
     try:
-        req = urllib.request.Request(health_url or base_url.rstrip('/') + '/health', method='GET')
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode('utf-8', errors='replace')
         try:
-            body = _json.loads(raw)
+            body = request_json(health_url or base_url.rstrip('/') + '/health', timeout=timeout)
         except _json.JSONDecodeError:
             return (False, {}, f'non-JSON response from {base_url}/health')
         if not isinstance(body, dict):
@@ -77,10 +73,8 @@ def _probe_tts_backend(base_url, timeout=2.0, health_url=None):
         return (True, body, None)
     except socket.timeout:
         return (False, {}, f'timeout after {timeout}s probing {base_url}/health')
-    except urllib.error.HTTPError as e:
-        return (False, {}, f'HTTP {e.code} from {base_url}/health')
-    except urllib.error.URLError as e:
-        return (False, {}, f'{type(e).__name__}: {e.reason}')
+    except HTTPStatusError as e:
+        return (False, {}, f'HTTP {e.status_code} from {base_url}/health')
     except (ConnectionRefusedError, ConnectionResetError) as e:
         return (False, {}, f'{type(e).__name__}: {e}')
     except (OSError, ValueError) as e:
@@ -106,8 +100,6 @@ def _probe_llm_models(base_url, expected, timeout=1.5, headers=None):
     """
     import json as _json
     import socket
-    import urllib.error
-    import urllib.request
 
     base_clean = (base_url or "").strip().rstrip("/")
     for suffix in ('/chat/completions', '/messages'):
@@ -132,25 +124,18 @@ def _probe_llm_models(base_url, expected, timeout=1.5, headers=None):
         parsed = urlsplit(base_clean)
         if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
             raise ValueError('expected an http(s) provider URL')
-        req = urllib.request.Request(base_clean + "/models", headers=headers or {}, method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
+        body = request_json(base_clean + '/models', headers=headers or {}, timeout=timeout)
+    except _json.JSONDecodeError:
+        block["error"] = f"non-JSON response from {base_clean}/v1/models"
+        return block
     except (socket.timeout, ConnectionRefusedError, ConnectionResetError) as e:
         block["error"] = f"{type(e).__name__}: {e}"
         return block
-    except urllib.error.HTTPError as e:
-        block["error"] = f"HTTP {e.code} from {base_clean}/v1/models"
-        return block
-    except urllib.error.URLError as e:
-        block["error"] = f"URLError: {e.reason}"
+    except HTTPStatusError as e:
+        block["error"] = f"HTTP {e.status_code} from {base_clean}/v1/models"
         return block
     except (OSError, ValueError) as e:
         block["error"] = f"OSError: {e}"
-        return block
-    try:
-        body = _json.loads(raw) if raw else {}
-    except _json.JSONDecodeError:
-        block["error"] = f"non-JSON response from {base_clean}/v1/models"
         return block
     items = body.get("data") if isinstance(body, dict) else None
     if items is None and isinstance(body, list):

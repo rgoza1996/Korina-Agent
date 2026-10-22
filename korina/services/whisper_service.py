@@ -8,6 +8,7 @@ import shutil
 import soundfile as sf
 import subprocess
 import tempfile
+import threading
 import time
 
 from korina.config import (
@@ -59,20 +60,29 @@ def compute_type_for(device: str) -> str:
         return WHISPER_COMPUTE_TYPE
     return 'float16' if device == 'cuda' else 'int8'
 
+
+class WhisperBusyError(RuntimeError):
+    """A different model is still serving a lazy transcription."""
+
+
 def get_asr(device: Optional[str] = None, model_id: Optional[str] = None):
     resolved = normalize_device(device, default_env=WHISPER_DEVICE)
     selected_model = (model_id or WHISPER_MODEL_ID).strip() or WHISPER_MODEL_ID
     compute_type = compute_type_for(resolved)
     key = f'{selected_model}:{resolved}:{compute_type}'
-    if key in state.asr.models:
-        state.asr.device = resolved
-        state.asr.compute_type = compute_type
-        return state.asr.models[key]
     with state.asr.lock:
         if key in state.asr.models:
             state.asr.device = resolved
             state.asr.compute_type = compute_type
             return state.asr.models[key]
+        if state.asr.model_users:
+            raise WhisperBusyError('Whisper is transcribing with another model or device; retry after it finishes')
+        # Release only idle cache references before allocating replacement weights.
+        # Active iterators pin their model; never force native teardown mid-inference.
+        state.asr.models.clear()
+        state.asr.loaded_at_by_device.clear()
+        state.asr.device = None
+        state.asr.compute_type = None
         from faster_whisper import WhisperModel
 
         print(
@@ -92,6 +102,56 @@ def get_asr(device: Optional[str] = None, model_id: Optional[str] = None):
         state.asr.compute_type = compute_type
         print(f'[faster-whisper] loaded {key}', flush=True)
         return model
+
+
+class _WhisperSegments:
+    """Own an inference iterator/model lease across pool-thread boundaries."""
+
+    def __init__(self, iterator, model, owner):
+        self._iterator = iterator
+        self._model = model
+        self._owner = owner
+        self._closed = False
+        self._operation = threading.Lock()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        with self._operation:
+            if self._closed:
+                raise StopIteration
+            try:
+                with self._owner.infer_lock:
+                    return next(self._iterator)
+            except BaseException:
+                self._close_locked()
+                raise
+
+    def _close_locked(self):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            close = getattr(self._iterator, 'close', None)
+            if close is not None:
+                with self._owner.infer_lock:
+                    close()
+        finally:
+            self._iterator = None
+            self._model = None
+            with self._owner.lock:
+                self._owner.model_users -= 1
+
+    def close(self):
+        with self._operation:
+            self._close_locked()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
 @dataclass(frozen=True)
 class WhisperInferenceInfo:
@@ -115,33 +175,26 @@ def transcribe_wav_segments(wav: Path, *, vad_filter: bool = True, device: Optio
     """
     resolved_device = normalize_device(device, default_env=WHISPER_DEVICE)
     selected_model = (model_id or WHISPER_MODEL_ID).strip() or WHISPER_MODEL_ID
-    asr = get_asr(resolved_device, selected_model)
-    with state.asr.infer_lock:
-        segments, info = asr.transcribe(
-            str(wav),
-            beam_size=WHISPER_BEAM_SIZE,
-            vad_filter=vad_filter,
-            language='en',
-            condition_on_previous_text=False,
-        )
-    iterator = iter(segments)
+    owner = state.asr
+    with owner.lock:
+        asr = get_asr(resolved_device, selected_model)
+        owner.model_users += 1
+    try:
+        with owner.infer_lock:
+            segments, info = asr.transcribe(
+                str(wav),
+                beam_size=WHISPER_BEAM_SIZE,
+                vad_filter=vad_filter,
+                language='en',
+                condition_on_previous_text=False,
+            )
+        parts = _WhisperSegments(iter(segments), asr, owner)
+    except BaseException:
+        with owner.lock:
+            owner.model_users -= 1
+        raise
 
-    def locked_segments():
-        try:
-            while True:
-                with state.asr.infer_lock:
-                    try:
-                        segment = next(iterator)
-                    except StopIteration:
-                        return
-                yield segment
-        finally:
-            close = getattr(iterator, 'close', None)
-            if close is not None:
-                with state.asr.infer_lock:
-                    close()
-
-    return locked_segments(), WhisperInferenceInfo(
+    return parts, WhisperInferenceInfo(
         info, selected_model, resolved_device, compute_type_for(resolved_device),
     )
 

@@ -1,9 +1,9 @@
 """ACK HTTP validation and disabled/rebuild policy."""
 from __future__ import annotations
 
-import io
 import time
 
+import httpx
 import pytest
 
 from korina.runtime.state import AckState
@@ -34,11 +34,11 @@ def test_get_disabled_catalog_does_not_queue_generation(ack_cache, client, monke
     assert ack_service.state.ack.worker_running is False
 
 
-def test_explicit_rebuild_generates_even_when_playback_is_disabled(ack_cache, client, monkeypatch):
+def test_explicit_rebuild_generates_even_when_playback_is_disabled(ack_cache, client, monkeypatch, mock_provider_http):
     from korina.routes import acks
     monkeypatch.setattr(acks, 'enqueue_missing_acks', ack_cache[2])
     data = b'RIFF' + (100).to_bytes(4, 'little') + b'WAVE' + b'\0' * 100
-    monkeypatch.setattr(ack_service.urllib.request, 'urlopen', lambda *args, **kwargs: io.BytesIO(data))
+    mock_provider_http(lambda request: httpx.Response(200, content=data))
     response = client.post('/api/acks/rebuild', json={'voice': 'af_heart', 'clear': True})
     assert response.status_code == 200
     assert response.json()['ok'] is True

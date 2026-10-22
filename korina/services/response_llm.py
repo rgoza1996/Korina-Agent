@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import json
 import re
-import urllib.error
-import urllib.request
 
 from korina.config import (
     config_llm_chat_url,
@@ -12,6 +9,7 @@ from korina.config import (
 )
 
 from korina.runtime.http import auth_headers_from_env
+from korina.runtime.json_http import HTTPStatusError, request_json
 
 from korina.schemas import ChatRequest
 
@@ -62,20 +60,11 @@ def response_llm_chat(req: ChatRequest) -> str:
         'stream': False,
         'reasoning': (str(req.reasoning).strip().lower() if req.reasoning else config_llm_reasoning(config)),
     }
-    data = json.dumps(payload).encode('utf-8')
     headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
-    http_req = urllib.request.Request(
-        config_llm_chat_url(config),
-        data=data,
-        headers=headers,
-        method='POST',
-    )
     try:
-        with urllib.request.urlopen(http_req, timeout=90) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode('utf-8', errors='replace')
-        raise RuntimeError(f'Response LLM HTTP {e.code}: {detail}')
+        body = request_json(config_llm_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90)
+    except HTTPStatusError as e:
+        raise RuntimeError(f'Response LLM HTTP {e.status_code}: {e.detail}') from e
     except Exception as e:
         raise RuntimeError(f'Response LLM request failed: {e}')
 

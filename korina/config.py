@@ -426,7 +426,12 @@ def config_stt_llm_models_url(config: Optional[dict] = None) -> str:
 
 def config_stt_llm_api_env(config: Optional[dict] = None) -> str:
     config = config or load_config()
-    return str(config.get('stt_llm_api_key_env') or config.get('llm_api_key_env') or '').strip()
+    explicit = str(config.get('stt_llm_api_key_env') or '').strip()
+    if explicit:
+        return explicit
+    if normalize_api_base_url(config_stt_llm_base_url(config)) == normalize_api_base_url(config_llm_base_url(config)):
+        return str(config.get('llm_api_key_env') or '').strip()
+    return ''
 
 
 def config_stt_llm_model(config: Optional[dict] = None) -> str:
@@ -500,7 +505,12 @@ def agent_chat_url(config: Optional[dict] = None) -> str:
 
 
 def agent_auth_headers(config: dict) -> dict:
-    key = api_key_from_config(config, config.get('agent_api_key') or '', config.get('llm_api_key_env') or '')
+    # A blank role-specific key must not send the response provider's secret
+    # to an independently configured endpoint.
+    agent_base = normalize_api_base_url(agent_base_url(config)).removesuffix('/messages')
+    response_base = normalize_api_base_url(config_llm_base_url(config))
+    inherited_env = (config.get('llm_api_key_env') or '') if agent_base == response_base else ''
+    key = api_key_from_config(config, config.get('agent_api_key') or '', inherited_env)
     provider = agent_provider(config)
     if not key:
         return {}

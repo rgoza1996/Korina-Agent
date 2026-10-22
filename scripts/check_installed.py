@@ -1,6 +1,6 @@
 """Verify an installed wheel outside its checkout, using a disposable data tree.
 
-Run with the wheel environment's Python. Install httpx there for TestClient.
+Run with the wheel environment's Python.
 The optional source-assets directory verifies that every shipped UI file is
 identical to the checkout that produced the wheel.
 """

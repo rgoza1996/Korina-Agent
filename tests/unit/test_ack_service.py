@@ -1,13 +1,14 @@
 """ACK cache bounds, cancellation, disabled behavior, and WAV publication."""
 from __future__ import annotations
 
-import io
 import threading
 import time
 
+import httpx
 import pytest
 
 from korina.runtime.state import AckState
+from korina.runtime.json_http import ResponseTooLargeError
 from korina.services import ack_service
 
 
@@ -71,33 +72,29 @@ def test_shutdown_cancels_pending_work_without_deleting_published_cache(ack_runt
     assert cache.read_bytes() == WAV
 
 
-def test_clear_invalidates_inflight_audio_and_allows_same_phrase_rebuild(ack_runtime, monkeypatch):
+def test_clear_invalidates_inflight_audio_and_allows_same_phrase_rebuild(ack_runtime, mock_provider_http):
     first_started, release_first = threading.Event(), threading.Event()
     second_started, release_second = threading.Event(), threading.Event()
     calls = 0
 
-    class BlockedAudio(io.BytesIO):
+    class BlockedAudio(httpx.AsyncByteStream):
         def __init__(self, started, release, suffix):
-            super().__init__(WAV + suffix)
+            self.audio = WAV + suffix
             self.started, self.release = started, release
-            self.first = True
 
-        def read(self, size=-1):
-            assert size > 0  # never read an unbounded response
-            if self.first:
-                self.first = False
-                self.started.set()
-                assert self.release.wait(3)
-            return super().read(size)
+        async def __aiter__(self):
+            self.started.set()
+            assert self.release.wait(3)
+            yield self.audio
 
     def response(*args, **kwargs):
         nonlocal calls
         calls += 1
         if calls == 1:
-            return BlockedAudio(first_started, release_first, b'OLD')
-        return BlockedAudio(second_started, release_second, b'NEW')
+            return httpx.Response(200, stream=BlockedAudio(first_started, release_first, b'OLD'))
+        return httpx.Response(200, stream=BlockedAudio(second_started, release_second, b'NEW'))
 
-    monkeypatch.setattr(ack_service.urllib.request, 'urlopen', response)
+    mock_provider_http(response)
     destination = ack_service.ack_path('af_heart', ack_runtime['phrase'])
     try:
         ack_runtime['enqueue']('af_heart')
@@ -120,32 +117,24 @@ def test_clear_invalidates_inflight_audio_and_allows_same_phrase_rebuild(ack_run
         wait_for_worker()
 
 
-def test_turning_ack_off_while_response_is_inflight_suppresses_publication(ack_runtime, monkeypatch):
-    class DisableDuringRead(io.BytesIO):
-        def read(self, size=-1):
+def test_turning_ack_off_while_response_is_inflight_suppresses_publication(ack_runtime, mock_provider_http):
+    class DisableDuringRead(httpx.AsyncByteStream):
+        async def __aiter__(self):
             ack_runtime['config']['ack_enabled'] = 'off'
-            return super().read(size)
+            yield WAV
 
-    monkeypatch.setattr(ack_service.urllib.request, 'urlopen', lambda *args, **kwargs: DisableDuringRead(WAV))
+    mock_provider_http(lambda request: httpx.Response(200, stream=DisableDuringRead()))
     assert ack_service.synthesize_ack_wav('af_heart', 'test_phrase', 'Okay.') is False
     assert list(ack_runtime['cache'].iterdir()) == []
 
 
-def test_oversize_or_invalid_response_never_publishes_partial_wav(ack_runtime, monkeypatch):
+def test_oversize_or_invalid_response_never_publishes_partial_wav(ack_runtime, monkeypatch, mock_provider_http):
     monkeypatch.setattr(ack_service, 'MAX_ACK_WAV_BYTES', 100)
-    sizes = []
-
-    class TrackedAudio(io.BytesIO):
-        def read(self, size=-1):
-            sizes.append(size)
-            return super().read(size)
-
-    monkeypatch.setattr(ack_service.urllib.request, 'urlopen', lambda *args, **kwargs: TrackedAudio(WAV + b'x' * 1000))
-    with pytest.raises(RuntimeError, match='exceeds'):
+    mock_provider_http(lambda request: httpx.Response(200, content=WAV + b'x' * 1000))
+    with pytest.raises(ResponseTooLargeError, match='exceeds'):
         ack_service.synthesize_ack_wav('af_heart', 'test_phrase', 'Okay.')
-    assert sizes and all(0 < size <= 65536 for size in sizes)
     assert list(ack_runtime['cache'].iterdir()) == []
-    monkeypatch.setattr(ack_service.urllib.request, 'urlopen', lambda *args, **kwargs: io.BytesIO(b'not audio' * 8))
+    mock_provider_http(lambda request: httpx.Response(200, content=b'not audio' * 8))
     with pytest.raises(RuntimeError, match='not a WAV'):
         ack_service.synthesize_ack_wav('af_heart', 'test_phrase', 'Okay.')
     assert list(ack_runtime['cache'].iterdir()) == []

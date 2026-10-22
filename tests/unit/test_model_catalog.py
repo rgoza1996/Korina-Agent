@@ -1,21 +1,7 @@
 
 from __future__ import annotations
 
-import json
-
-
-class FakeResponse:
-    def __init__(self, payload: dict):
-        self.payload = payload
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        return False
-
-    def read(self):
-        return json.dumps(self.payload).encode("utf-8")
+import httpx
 
 
 def test_discover_local_gguf_models_uses_temp_roots(reload_korina_modules, model_root):
@@ -101,17 +87,17 @@ def test_discover_lmstudio_local_models_returns_empty_when_lms_missing(reload_ko
     assert model_catalog.discover_lmstudio_local_models() == []
 
 
-def test_llm_models_for_combines_endpoint_and_local_gguf(monkeypatch, reload_korina_modules, model_root):
+def test_llm_models_for_combines_endpoint_and_local_gguf(reload_korina_modules, model_root, mock_provider_http):
     local = model_root / "local" / "local-model.gguf"
     local.parent.mkdir(parents=True, exist_ok=True)
     local.write_text("gguf")
     model_catalog = reload_korina_modules("korina.services.model_catalog")[0]
 
-    def fake_urlopen(req, timeout):
-        assert req.full_url == "http://127.0.0.1:8080/v1/models"
-        return FakeResponse({"data": [{"id": "endpoint-model"}]})
+    def fake_request(req):
+        assert str(req.url) == "http://127.0.0.1:8080/v1/models"
+        return httpx.Response(200, json={"data": [{"id": "endpoint-model"}]})
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    mock_provider_http(fake_request)
 
     models = model_catalog.llm_models_for("http://127.0.0.1:8080/v1", "")
 

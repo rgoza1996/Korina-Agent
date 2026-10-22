@@ -5,11 +5,11 @@ import json
 import logging
 import tempfile
 import threading
-import urllib.request
 
 from korina.config import config_tts_base_url, load_config
 
 from korina.runtime import state
+from korina.runtime.json_http import RequestCancelledError, request_bytes
 
 from korina.util.labels import safe_slug
 
@@ -155,7 +155,7 @@ def _generation_allowed(generation: int, force: bool) -> bool:
 def synthesize_ack_wav(
     voice: str, phrase_id: str, text: str, *, generation: int | None = None, force: bool = False,
 ) -> bool:
-    """Stream bounded audio to a temp file and publish only current work."""
+    """Download bounded audio and atomically publish only current work."""
     with state.ack.queue_lock:
         if generation is None:
             generation = state.ack.generation
@@ -163,35 +163,29 @@ def synthesize_ack_wav(
             return False
     phrase = next((p for p in load_ack_manifest() if p['id'] == phrase_id), {'id': phrase_id, 'text': text, 'tags': ['global']})
     out = ack_path(voice, phrase)
-    payload = json.dumps({'input': text, 'voice': voice, 'speed': 1.0, 'device': 'cpu'}).encode('utf-8')
-    request = urllib.request.Request(
-        f'{config_tts_base_url()}/v1/audio/speech', data=payload,
-        headers={'Content-Type': 'application/json'}, method='POST',
-    )
+    payload = {'input': text, 'voice': voice, 'speed': 1.0, 'device': 'cpu'}
+
+    def is_current() -> bool:
+        with state.ack.queue_lock:
+            return _generation_allowed(generation, force)
+
+    try:
+        audio_bytes = request_bytes(
+            f'{config_tts_base_url()}/v1/audio/speech', method='POST', json_body=payload,
+            timeout=ACK_HTTP_TIMEOUT, max_bytes=MAX_ACK_WAV_BYTES, is_current=is_current,
+        )
+    except RequestCancelledError:
+        return False
+    if len(audio_bytes) <= 44:
+        raise RuntimeError(f'generated ack for {phrase_id} was empty')
+    if audio_bytes[:4] != b'RIFF' or audio_bytes[8:12] != b'WAVE':
+        raise RuntimeError(f'generated ack for {phrase_id} was not a WAV file')
     ACK_DIR.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(dir=ACK_DIR, prefix='ack-', suffix='.tmp', delete=False) as output:
             temporary = Path(output.name)
-            size = 0
-            with urllib.request.urlopen(request, timeout=ACK_HTTP_TIMEOUT) as response:
-                while True:
-                    with state.ack.queue_lock:
-                        if not _generation_allowed(generation, force):
-                            return False
-                    chunk = response.read(min(65536, MAX_ACK_WAV_BYTES - size + 1))
-                    if not chunk:
-                        break
-                    size += len(chunk)
-                    if size > MAX_ACK_WAV_BYTES:
-                        raise RuntimeError(f'generated ack exceeds {MAX_ACK_WAV_BYTES} bytes')
-                    output.write(chunk)
-            if size <= 44:
-                raise RuntimeError(f'generated ack for {phrase_id} was empty')
-        with temporary.open('rb') as audio:
-            header = audio.read(12)
-        if header[:4] != b'RIFF' or header[8:12] != b'WAVE':
-            raise RuntimeError(f'generated ack for {phrase_id} was not a WAV file')
+            output.write(audio_bytes)
         with state.ack.queue_lock:
             if not _generation_allowed(generation, force):
                 return False

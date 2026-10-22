@@ -147,10 +147,8 @@ def llm_models_for(base_url: str, api_env: str) -> list:
     url = f"{base}/models"
     from korina.runtime.http import auth_headers_from_env
     headers = auth_headers_from_env(api_env)
-    import urllib.request as _ur
-    req = _ur.Request(url, headers=headers, method="GET")
-    with _ur.urlopen(req, timeout=15) as resp:
-        body = json.loads(resp.read().decode("utf-8"))
+    from korina.runtime.json_http import request_json
+    body = request_json(url, headers=headers, timeout=15)
     models = []
     for item in body.get("data", []):
         mid = item.get("id")

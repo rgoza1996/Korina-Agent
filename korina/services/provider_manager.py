@@ -8,8 +8,6 @@ import shutil
 import subprocess
 import threading
 import time
-import urllib.error
-import urllib.request
 
 from korina.config import (
     config_llm_reasoning,
@@ -30,6 +28,7 @@ from korina.util.paths import (
 )
 
 from korina.util.presets import provider_preset_base_url
+from korina.runtime.json_http import HTTPStatusError, request_bytes
 from korina.services import provider_processes
 
 from pathlib import Path
@@ -116,8 +115,8 @@ def _lms_run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
 def _is_lmstudio_server_already_up(port: int = 1234) -> bool:
     """True if LM Studio HTTP server is already serving :port."""
     try:
-        with urllib.request.urlopen(f'http://127.0.0.1:{port}/v1/models', timeout=1) as resp:
-            return resp.status == 200
+        request_bytes(f'http://127.0.0.1:{port}/v1/models', timeout=1)
+        return True
     except Exception:
         return False
 
@@ -220,11 +219,9 @@ def _wait_for_models(url: str, label: str, timeout_seconds: float) -> None:
     while time.monotonic() < deadline:
         try:
             remaining = max(0.01, deadline - time.monotonic())
-            with urllib.request.urlopen(url, timeout=min(2, remaining)) as resp:
-                if resp.status == 200:
-                    return
-                last_error = f'HTTP {resp.status}'
-        except (OSError, urllib.error.URLError) as exc:
+            request_bytes(url, timeout=min(2, remaining))
+            return
+        except (OSError, ValueError, HTTPStatusError) as exc:
             last_error = str(exc)
         time.sleep(min(0.5, max(0, deadline - time.monotonic())))
     raise RuntimeError(f'{label} did not become ready within {timeout_seconds:.0f}s: {last_error}')

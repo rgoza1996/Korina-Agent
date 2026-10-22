@@ -26,10 +26,11 @@ from korina.util.paths import ACK_DEFAULT_VOICE
 
 @dataclass
 class AsrState:
-    """State for the Whisper/faster-whisper ASR subsystem."""
+    """One cached Whisper model, pinned while lazy transcription uses it."""
 
     models: dict = field(default_factory=dict)
     loaded_at_by_device: dict[str, float] = field(default_factory=dict)
+    model_users: int = 0
     lock: "threading.RLock" = field(default_factory=threading.RLock)
     infer_lock: "threading.RLock" = field(default_factory=threading.RLock)
     device: Optional[str] = None

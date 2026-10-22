@@ -5,8 +5,6 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 import time
-import urllib.error
-import urllib.request
 
 from korina.config import (
     agent_auth_headers,
@@ -16,6 +14,7 @@ from korina.config import (
 )
 
 from korina.agents.state import agent_state
+from korina.runtime.json_http import HTTPStatusError, request_json
 from korina.services.agent_priority import PERMISSION_REQUEST, classify_agent_priority
 
 from korina.schemas import (
@@ -78,18 +77,10 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
             'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
             'stream': False,
         }
-    http_req = urllib.request.Request(
-        agent_chat_url(config),
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers,
-        method='POST',
-    )
     try:
-        with urllib.request.urlopen(http_req, timeout=90) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode('utf-8', errors='replace')
-        raise RuntimeError(f'Korina Agent {provider} HTTP {e.code}: {detail}')
+        body = request_json(agent_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90)
+    except HTTPStatusError as e:
+        raise RuntimeError(f'Korina Agent {provider} HTTP {e.status_code}: {e.detail}') from e
     except Exception as e:
         raise RuntimeError(f'Korina Agent request failed: {e}')
     try:
@@ -317,8 +308,5 @@ def parse_model_ids(body: dict) -> list:
 def agent_model_choices() -> list:
     from korina.config import agent_models_url, agent_auth_headers, load_config
     config = load_config()
-    import urllib.request as _ur
-    req = _ur.Request(agent_models_url(config), headers=agent_auth_headers(config), method='GET')
-    with _ur.urlopen(req, timeout=20) as resp:
-        body = json.loads(resp.read().decode('utf-8'))
+    body = request_json(agent_models_url(config), headers=agent_auth_headers(config), timeout=20)
     return parse_model_ids(body)

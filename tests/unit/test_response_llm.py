@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import io
 import json
+import httpx
 
 import pytest
 
@@ -41,22 +41,22 @@ def test_format_voice_reply_empty_input_returns_empty():
     'Injection: Korina Agent state report for this next reply:\nReady.\n\n'
     'The user interrupted the previous reply.\n\nThe user now says: The current spoken user turn.',
 ])
-def test_response_payload_appends_current_message_once_after_prior_history(monkeypatch, message):
+def test_response_payload_appends_current_message_once_after_prior_history(monkeypatch, message, mock_provider_http):
     prior = [
         {'role': 'user' if index % 2 == 0 else 'assistant', 'content': f'Prior turn {index}.'}
         for index in range(20)
     ]
     payloads = []
 
-    def request(http_request, timeout):
-        assert timeout == 90
-        payloads.append(json.loads(http_request.data))
-        return io.BytesIO(json.dumps({'choices': [{'message': {'content': 'A reply.'}}]}).encode())
+    def request(http_request):
+        assert http_request.extensions['timeout']['read'] == 90
+        payloads.append(json.loads(http_request.content))
+        return httpx.Response(200, json={'choices': [{'message': {'content': 'A reply.'}}]})
 
     monkeypatch.setattr(response_llm, 'load_config', lambda: {
         'llm_provider': 'openai-compatible', 'llm_base_url': 'http://local-fixture/v1', 'lm_model': 'fixture',
     })
-    monkeypatch.setattr(response_llm.urllib.request, 'urlopen', request)
+    mock_provider_http(request)
 
     assert response_llm.response_llm_chat(ChatRequest(message=message, history=prior)) == 'A reply.'
     messages = payloads[0]['messages']
