@@ -201,7 +201,7 @@ korina</code></pre>
 # Infrastructure-only check when models are intentionally unavailable:
 python scripts/check_stack.py --base http://127.0.0.1:8001 --allow-degraded</code></pre>
 <p>The smoke command reads UI/assets, capabilities, health, and readiness. <code>--allow-degraded</code> accepts unavailable model services while checking the HTTP/assets layer; it does not establish a working voice demo.</p>
-<div class="req-note"><strong>Legacy regression changes runtime state.</strong> <code>tests/regression_smoke.py</code> resets sessions, rebuilds ACK audio, activates providers, and temporarily writes configuration, even with <code>--no-chat --no-transcribe</code>. Run it only against a disposable or deliberately selected local stack. Use <code>scripts/check_stack.py</code> for the routine read-only gate.</div>
+<div class="req-note"><strong>Legacy regression runner retired.</strong> <code>tests/regression_smoke.py</code> prints replacement commands and exits 2 without runtime operations. Use <code>scripts/check_stack.py</code> for the read-only gate, current deterministic suites for software checks, and the rehearsal below for real model and hardware behavior.</div>
 <h2>Recovery to rehearse</h2>
 <ul>
 <li><strong>Optional ACKs:</strong> Leave acknowledgement playback off unless needed. When enabled, confirm the selected voice has cached clips; a queued rebuild does not mean speech is ready. Voice settings are saved before rebuilding. Save/catalog/rebuild failures appear beside the ACK selector, separately from transcription status.</li>
