@@ -4,11 +4,11 @@ Work is tracked in [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24) a
 
 ## Deterministic and browser checks
 
-The core refactor at `22b401c` passed 347 Python tests in clean Python 3.10.20, 3.11.15, 3.12.3, and 3.13.14 environments. Python coverage was 85%. Real FFmpeg compressed-audio limits ran without skips. Ruff, projectwide mypy, ESLint, source/wheel builds, and an isolated wheel serving every JS asset plus CSS/index/config/console entrypoints passed.
+The integrated checkpoint at `dd7f990` passed **484 Python tests with 87% coverage on Python 3.12.3**. Clean Python 3.10.20, 3.11.15, and 3.13.14 environments each passed 483 tests with one intentional skip: the optional real Whisper decoder is installed and exercised in the 3.12 environment. Real FFmpeg compressed-audio limits ran in every environment.
 
-The integrated follow-up checkpoint passed **388 Python tests with 86% coverage, 44 executable Node tests (+17 label assertions), and 13 real Chromium tests**. Ruff's complete Pyflakes correctness rules, projectwide mypy, ESLint, source/wheel builds, and a fresh isolated wheel check passed. The wheel check served every UI asset, exercised protocol discovery/health/writable configuration, and confirmed the PyAV compatibility bound in package metadata.
+The checkpoint also passed **113 executable Node tests (+17 label assertions) and 24 real Chromium tests**. Ruff's complete Pyflakes correctness rules, projectwide mypy over 55 modules, ESLint, source/wheel builds, and a fresh isolated wheel check passed. Installed JavaScript files matched the committed snapshot byte for byte; the wheel served every UI asset and exercised settings validation, writable configuration, and protocol discovery. The earlier speech wheel check also confirmed the PyAV compatibility bound in package metadata.
 
-The Chromium suite includes actual app boot/settings/channel rendering and controlled provider-response fixtures for delayed saves/activations, endpoint independence, HTTP failure recovery, reset races, and current-turn history. The four-version matrix above belongs to the earlier core checkpoint; the later total was run on Python 3.12.3.
+The Chromium suite includes app boot/settings/channel rendering, delayed provider/save/reset fixtures, current-turn history, permission acceptance failures/retries, native buffered WAV playback, native streaming PCM failure/Stop behavior, and fake-device microphone cancellation. The full suite ran against a freshly started managed backend and isolated configuration.
 
 GitHub Actions checks did not start: the account payment/spending limit blocked jobs. Local results are not a substitute claim for successful hosted CI.
 
@@ -47,7 +47,7 @@ Generic PyPI Torch attempted to pull CUDA dependencies on this CPU host. Install
 
 ## Actual browser voice pipeline
 
-Chrome for Testing 156.0.8078.4, driven by Playwright 1.64.1, completed one live conversation through the real browser modules and local HTTP services. Chromium's fake microphone consumed espeak-ng speech with leading and trailing silence. Native `MediaRecorder` produced WebM/Opus chunks, browser VAD ended the utterance, and actual Whisper `tiny.en` CPU/int8 inference handled both partial and final transcription. The response model was a deterministic local OpenAI-compatible fixture; Kokoro synthesis and native WebAudio playback were real. No paid service or external response LLM was involved.
+Chrome for Testing 156.0.8078.4, driven by Playwright 1.64.1, completed live conversations through the real browser modules and local HTTP services. Chromium's fake microphone consumed espeak-ng speech with leading and trailing silence. Native `MediaRecorder` produced WebM/Opus chunks, browser VAD ended the utterance, and actual Whisper `tiny.en` CPU/int8 inference handled both partial and final transcription. The response model was a deterministic local OpenAI-compatible fixture; Kokoro synthesis and native WebAudio playback were real. No paid service or external response LLM was involved. The following table records the initial run.
 
 | Stage | Observed result |
 | --- | --- |
@@ -62,6 +62,31 @@ Chrome for Testing 156.0.8078.4, driven by Playwright 1.64.1, completed one live
 The page raised no JavaScript or console errors. The final transcript was “The Long World. This is a local speech test. The Blue Mysicle is beside the garden.” The intended opening and bicycle differed, so this also records the small model's recognition errors rather than claiming accuracy. WebAudio scheduling and completion do not establish physical speaker audibility; fake capture does not establish physical microphone behavior.
 
 This run exposed a duplicated current user turn in the upstream chat payload. The frontend now sends only prior turns in `history`, leaving the backend to append `message` once. It retains the raw current turn in visible/agent history, while interruption context and a pending agent report belong only to the current model message. Executable Node, Python payload, and Chromium regressions cover that contract. A separate follow-up Chromium → actual backend → local upstream fixture run confirmed the current user appears once for both ordinary and interrupted/injected turns; that check intentionally intercepted TTS with empty SSE and did not repeat speech inference. Node regressions also cover adopting a lower authoritative agent cursor after a server restart, clearing stale agent context, and rejecting old in-flight delivery results.
+
+After the partial-queue refactor, the same fake-microphone WAV and actual speech services completed another turn in **20.745 seconds**, compared with the initial **30.920 seconds**. These are two single observations, not a controlled latency benchmark. Full-final mode now discards unnecessary queued partial work instead of draining it before submitting the complete recording.
+
+| Follow-up stage | Observed result |
+| --- | --- |
+| Partial work | One HTTP 200; the next request was aborted by the browser at 10.228 s |
+| Final transcription | Started at 10.250 s; HTTP 200 SSE completed at 13.946 s; 8.82 s audio; 3.674 s inference |
+| Response | HTTP 200; upstream payload contained exactly one system turn and one current user turn |
+| Synthesis/playback | Real Kokoro HTTP 200; 60,600 samples at 24 kHz; 2.525 s native playback; RMS 0.04764 |
+| Completion/cleanup | 20.745 s click-to-playback-ended; no page/console errors; Stop released microphone and recorder |
+
+The transcript retained the same known small-model recognition errors. Aborting the browser request does not establish that already running backend inference was cancelled.
+
+## Agent and permission integration
+
+Seven integration scenarios passed using the real backend, adapter/worker/event state, HTTP transport, and Chromium modules. Model responses came from a deterministic local OpenAI-compatible fixture; speech used 240 silent PCM frames. This check did not perform speech recognition, external model inference, or tool execution.
+
+- A sanitized transcript reached the agent model prompt once and produced a normal report.
+- The report entered exactly one next response without duplicating the current user turn.
+- A real permission event flowed through browser recognition of “yes”, the permission-answer HTTP endpoint, and a follow-up report.
+- Reset completed in 72 ms while a model request was deliberately blocked; its stale report was discarded and fresh queued context completed.
+- Clear Session discarded a delayed chat reply and retained empty conversation state.
+- Agent model HTTP concurrency remained one, and the browser reported no runtime or console errors.
+
+The harness called exported browser delivery/poll functions for deterministic timing while ordinary intervals remained active with long delivery thresholds. Separate executable and Chromium regressions cover failed permission confirmation, retry coalescing, and preserving a newer pending question.
 
 ## Still requiring rehearsal
 

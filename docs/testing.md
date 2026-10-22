@@ -22,7 +22,7 @@ CI runs Python 3.10–3.13, coverage artifacts, JavaScript lint/tests on Node 22
 
 ## Current verification checkpoint
 
-On 2026-10-22, the integrated speech/protocol checkpoint passed 388 Python tests with 86% coverage, 44 Node tests (+17 label assertions), 13 real Chromium tests, mypy, Ruff/ESLint, source/wheel builds, and an isolated wheel install. The earlier 347-test core checkpoint also passed in clean Python 3.10–3.13 environments. GitHub Actions jobs did not start because GitHub reported an account payment/spending-limit problem. This is local evidence, not a passing hosted run. See [observed verification](verification.md) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) for precise boundaries and later results.
+On 2026-10-22, checkpoint `dd7f990` passed 484 Python tests with 87% coverage, 113 Node tests (+17 label assertions), 24 real Chromium tests, mypy, Ruff/ESLint, source/wheel builds, and an isolated wheel install. Clean Python 3.10, 3.11, and 3.13 environments each passed 483 tests with only the optional Whisper decoder skipped; Python 3.12 exercised it. GitHub Actions jobs did not start because GitHub reported an account payment/spending-limit problem. This is local evidence, not a passing hosted run. See [observed verification](verification.md) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) for precise boundaries and later results.
 
 ## HTTP smoke without changing state
 
