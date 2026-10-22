@@ -42,7 +42,7 @@ The manually dispatched **Live voice-stack smoke** workflow uses a self-hosted r
 
 ## Actual speech-runtime evidence
 
-[Observed verification](verification.md) records real CPU Whisper buffered/partial/SSE inference and real Kokoro buffered/SSE synthesis, exact package/model versions, timings, and limits. The Whisper runtime job also decodes a real WAV without downloading model weights, catching dependency API breaks such as PyAV 19.
+[Observed verification](verification.md) records real CPU Whisper buffered/partial/SSE inference, real Kokoro buffered/SSE synthesis, and a complete browser turn with pinned local SmolLM2 response/agent inference, exact package/model versions, timings, and limits. The Whisper runtime job also decodes a real WAV without downloading model weights, catching dependency API breaks such as PyAV 19.
 
 ## Rehearse with actual services
 

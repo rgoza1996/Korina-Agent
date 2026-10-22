@@ -77,6 +77,26 @@ The transcript retained the same known small-model recognition errors. Aborting 
 
 A repeat from an immutable archive of `64d74c7` exercised the bounded capture, strict SSE, shared HTTP transport, and leased Whisper cache together. Native playback reached its `ended` event **21.642 seconds** after Live was clicked. One partial request completed, the next was aborted, and final SSE handled 8.76 seconds of audio in 4.495 seconds. The local response fixture received the current user once; actual Kokoro returned 60,600 samples at 24 kHz, and the 2.525-second native buffer completed with nonzero RMS. The browser raised no page/console errors, and Stop released the microphone. This third timing is another single observation, not a controlled comparison.
 
+## Browser pipeline with real response and agent inference
+
+Immutable `fb996a1` also completed a separate CPU run with actual response and agent inference. Both roles used [HuggingFaceTB/SmolLM2-135M-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct), pinned to revision `12fd25f77366fa6b3b4b768ec3050bf629380bac`. A disposable local OpenAI-compatible wrapper loaded safetensors with `trust_remote_code=False` and `local_files_only=True`; it applied the model's chat template without rewriting Korina's messages or returning fixture replies. No paid inference service was used.
+
+Environment: Python 3.12.3, Torch 2.14.1+cpu, Transformers 5.20.2, float32, four intra-op threads and one inter-op thread. The wrapper limited the response alias to 96 new tokens, agent alias to 192, and context to 8192 tokens; actual completions were shorter. Whisper, Kokoro, Chromium, and the fake microphone used the versions and boundaries above. Speech weights were warmed before the turn; Whisper loaded during the run.
+
+| Stage | Observed result |
+| --- | --- |
+| Final Whisper SSE | 8.82 seconds of audio / 141,120 samples; 4.637 seconds inference; HTTP 200 |
+| Actual response model | 217 prompt tokens / 9 generated tokens; 5.527 seconds inference; “The World is a local speech test.” |
+| Actual Kokoro and playback | One SSE chunk, 61,200 samples at 24 kHz; 2.55 seconds of native playback; nonzero RMS and `ended` |
+| Complete voice turn | **29.365 seconds** from Live click through playback completion |
+| Actual agent model | 465 prompt tokens / 64 generated tokens; 22.094 seconds inference; busy → idle, nonempty report, no error |
+| Agent follow-up | The report appeared once in the next response's current message; actual response inference completed in 5.138 seconds |
+| Readiness and cleanup | All six read-only smoke requests passed, including enabled agent readiness; no browser/console errors; Stop released capture; disposable services stopped |
+
+The final transcript was “The World. This is a local speech test. The Blue Bicycle is beside the garden.” The intended opening was “Hello world.” The agent echoed its JSON input rather than producing a useful state report, and the follow-up mostly repeated the earlier answer. This small model establishes real inference and injection transport, **not presentation-quality conversation or agent reasoning**. Select and rehearse suitable event models separately. The timing is one observation and is not comparable as a performance benchmark with earlier fixture-response runs.
+
+An earlier attempt completed real response speech in 39.268 seconds, but its harness stopped immediately after accepting agent work. That attempt did not establish agent completion. The successful repeat explicitly polled busy/idle status until a nonempty report and recorded the actual model calls.
+
 ## Agent and permission integration
 
 Seven integration scenarios passed using the real backend, adapter/worker/event state, HTTP transport, and Chromium modules. Model responses came from a deterministic local OpenAI-compatible fixture; speech used 240 silent PCM frames. This check did not perform speech recognition, external model inference, or tool execution.
@@ -95,7 +115,7 @@ Transport follow-up tests hold connected agent and ACK HTTP requests across rese
 ## Still requiring rehearsal
 
 - Physical microphone/headset capture, speakers, echo cancellation, and human interruptions.
-- The selected real response LLM and enabled agent model, including model quality and full turn latency.
+- The selected presentation response LLM and enabled agent model, including useful model quality and full turn latency. The tiny CPU model above establishes integration only.
 - GPU execution and remote HTTPS/CORS deployment if used at the event.
 - Event-specific Meta requirements and successful hosted CI after account billing is resolved.
 
