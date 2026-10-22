@@ -24,6 +24,8 @@ The **Response token budget** control persists `llm_max_tokens`, an integer from
 
 Meta reasoning may consume this output budget before any visible answer, while the profile retains model-default reasoning. If a provider returns no visible text with `finish_reason: "length"`, `/api/chat` returns HTTP 500 with an actionable instruction to increase Response token budget in Settings or choose another response model. Korina does not silently increase the budget or retry. A nonempty truncated answer remains compatible with the existing response contract.
 
+The built-in Meta/OpenAI-compatible agent reports the same empty-budget condition through its existing error status/events and preserves its previous report. Its **State report max tokens** control is independent; deliberate adjustment does not reset memory or silently retry. Intentional empty reports ending with `stop` remain suppressed normally.
+
 ## Saving and activation
 
 `POST /api/config` validates and atomically saves settings. It does not activate providers. Independent STT and agent endpoints stay independent; settings saves cannot replace the server-owned audio-probe cache.

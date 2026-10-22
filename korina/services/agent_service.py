@@ -87,7 +87,13 @@ def generate_agent_state_report(
         raise RuntimeError(f'Korina Agent request failed: {e}')
     if provider == 'anthropic':
         return anthropic_text_completion(body)
-    return openai_text_completion(body).text
+    completion = openai_text_completion(body)
+    if not completion.text and completion.finish_reason == 'length':
+        raise RuntimeError(
+            'Agent model exhausted its output-token budget before returning a report. '
+            'Increase State report max tokens in Korina Agent settings or choose another agent model.'
+        )
+    return completion.text
 
 def sanitize_agent_report(report: str) -> str:
     text = report or ''
