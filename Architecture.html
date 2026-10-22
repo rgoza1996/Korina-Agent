@@ -170,7 +170,7 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
 <li>Browser SSE parsing validates framing, UTF-8, fields, byte limits, and complete termination. Buffered and PCM playback enforce download, sample-rate, and cumulative duration budgets before allocation.</li>
 <li>Validated schemas and request byte limits bound work before it reaches model services. Read-only health audio limits drive browser capture deadlines and byte budgets; complete native files are preserved, idle files rotate, and oversize captures are discarded whole with recovery text.</li>
 <li>ACK generation has a bounded queue, generation epochs that suppress cleared work, and bounded atomic WAV publication. Explicit rebuild can run while ACK playback is off.</li>
-<li>The optional Kokoro service uses bounded inference admission and releases synthesis state on response completion or disconnect.</li>
+<li>The optional Kokoro service serializes native advancement and generator cleanup. Disconnect stops delivery; the single inference slot stays busy until active native work and cleanup finish, while health remains responsive. A second request receives retryable HTTP 503.</li>
 <li>Health aggregates server-resolved providers and readiness signals; frontend polling distinguishes transient misses, loading, and unavailable services.</li>
 <li>Wheels bundle the UI; generated config and ACK audio stay in a writable user directory. Linux service units render checkout/interpreter paths instead of assuming a home layout.</li></ul>
 <h2>Remaining architecture work</h2>
