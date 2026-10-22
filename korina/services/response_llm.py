@@ -24,7 +24,7 @@ def format_voice_reply(text: str) -> str:
     if not text:
         return text
     # Preserve deliberate newlines, but split any multi-sentence line.
-    lines = []
+    lines: list[str] = []
     for raw in text.splitlines():
         raw = raw.strip()
         if not raw:

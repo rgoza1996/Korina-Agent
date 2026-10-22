@@ -13,6 +13,8 @@ from typing import Any, Protocol, runtime_checkable
 
 from korina.schemas import (
     AgentCapabilities,
+    AgentPermissionAnswer,
+    AgentTranscriptRequest,
     PermissionAnswerEvent,
     UserTurn,
 )
@@ -35,7 +37,7 @@ class AgentAdapter(Protocol):
     def submit_turn(self, turn: UserTurn) -> None:
         """Submit a user utterance to the agent.
 
-        Fire-and-forget or async; the agent processes the turn and emits
+        The synchronous submission returns immediately; background work emits
         events that are observable via :meth:`poll_events`.
         """
         ...
@@ -58,4 +60,22 @@ class AgentAdapter(Protocol):
 
     def health_check(self) -> dict:
         """Lightweight liveness probe; returns ``{"ok": bool, ...}``."""
+        ...
+
+@runtime_checkable
+class LegacyAgentHttpAdapter(Protocol):
+    """Optional compatibility extension for the original HTTP wire contract.
+
+    The core AgentAdapter remains sufficient for new backends. Adapters that
+    need full transcript/injection semantics can additionally implement this
+    extension; the built-in Korina adapter already does.
+    """
+
+    def snapshot(self) -> dict[str, Any]:
+        ...
+
+    def submit_transcript_legacy(self, req: AgentTranscriptRequest) -> dict[str, Any]:
+        ...
+
+    def answer_permission_legacy(self, req: AgentPermissionAnswer) -> dict[str, Any]:
         ...

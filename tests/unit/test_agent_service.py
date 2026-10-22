@@ -54,3 +54,17 @@ Ack Phrase another internal label
 
 def test_sanitize_agent_report_handles_unclosed_think_block():
     assert sanitize_agent_report("Before\n<think>never closed\nAfter") == "Before"
+
+
+@pytest.mark.parametrize(
+    ('report', 'expected'),
+    [
+        ('Priority: important\nThe posttest task completed.', 'important'),
+        ('Priority: critical\nAn instrument failed.', 'critical'),
+        ('Priority: important\nSTT output is garbled.', 'normal'),
+        ('Priority: normal\nPermission Request : deploy this update?', 'critical'),
+        ('The task is unblocked: build complete.', 'normal'),
+    ],
+)
+def test_priority_matches_whole_words_and_permission_spacing(report, expected):
+    assert classify_agent_priority(report) == expected

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
 import urllib.error
 import urllib.request
@@ -11,12 +11,12 @@ import urllib.request
 from korina.config import (
     agent_auth_headers,
     agent_chat_url,
-    agent_models_url,
     agent_provider,
     load_config,
 )
 
 from korina.agents.state import agent_state
+from korina.services.agent_priority import PERMISSION_REQUEST, classify_agent_priority
 
 from korina.schemas import (
     AgentStateRequest,
@@ -111,33 +111,10 @@ def sanitize_agent_report(report: str) -> str:
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
-def classify_agent_priority(report: str) -> str:
-    text = (report or '').lower()
-    m = re.search(r'^\s*priority\s*:\s*(low|normal|important|critical)\b', text, re.I | re.M)
-    explicit = m.group(1).lower() if m else None
-    critical_cues = ['permission request:', 'explicit permission', 'approve this command', 'authorization required', 'destructive command', 'delete data', 'data loss', 'secret leaked', 'credential exposed']
-    garbled_cues = ['garbled', 'whisper', 'transcription uncertainty', 'stt', 'unclear transcript']
-    self_loop_cues = ['<think>', 'state report', 'korina agent interrupt', 'acknowledgment loop', 'ack phrase']
-    # Guardrail: even if the model says critical/important, garbled STT or self-referential reporting alone is not interrupt-worthy.
-    has_critical_cue = any(word in text for word in critical_cues)
-    if explicit in ('critical', 'important') and any(word in text for word in garbled_cues + self_loop_cues) and not has_critical_cue:
-        return 'normal'
-    # Critical is intentionally narrow: immediate safety/security/data-loss/time-sensitive risk or explicit permission.
-    # A critical cue must override a lower explicit label from the model (for example: "Priority: normal" plus
-    # "Permission request:" still needs to become a permission_request event downstream).
-    if has_critical_cue:
-        return 'critical'
-    if explicit:
-        return explicit
-    if any(word in text for word in ['critical:', 'urgent:', 'blocked:', 'security risk', 'cannot continue without', 'task is blocked']):
-        return 'important'
-    # Garbled STT, Whisper uncertainty, generic errors, and routine warnings should not interrupt by keyword accident.
-    if any(word in text for word in ['garbled', 'whisper', 'transcription uncertainty', 'stt', 'unclear transcript']):
-        return 'normal'
-    return 'normal'
-
-def push_agent_event(event: dict) -> dict:
+def push_agent_event(event: dict, *, generation: int | None = None) -> dict:
     with agent_state.lock:
+        if generation is not None and generation != agent_state.generation:
+            return {}
         agent_state.event_seq += 1
         event = dict(event)
         event['id'] = agent_state.event_seq
@@ -157,34 +134,40 @@ def agent_snapshot() -> dict:
             'last_event_id': agent_state.event_seq,
         }
 
-def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
-    config = load_config()
+# One running request and one replaceable follow-up snapshot. A burst of
+# transcript deliveries never creates another thread or an unbounded job queue.
+_MAX_PENDING_INJECTIONS = 5
+_executor: ThreadPoolExecutor | None = None
+_worker_running = False
+_worker_epoch = 0
+_queued_prompt: tuple[AgentTranscriptRequest, int] | None = None
+
+
+def _queue_injection(req: AgentTranscriptRequest) -> None:
+    """Caller holds agent_state.lock; keep only recent bounded snapshots."""
+    agent_state.pending_injections.append({
+        'transcript': req.transcript,
+        'reason': req.reason,
+        'turn_count': req.turn_count,
+        'created_at': time.time(),
+    })
+    del agent_state.pending_injections[:-_MAX_PENDING_INJECTIONS]
+
+
+def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
     with agent_state.lock:
-        if agent_state.busy:
-            agent_state.pending_injections.append({
-                'transcript': req.transcript,
-                'reason': req.reason,
-                'turn_count': req.turn_count,
-                'created_at': time.time(),
-            })
-            queued_busy = True
-        else:
-            queued_busy = False
-        if not queued_busy:
-            agent_state.busy = True
-            agent_state.status = 'working'
-    if queued_busy:
-        push_agent_event({'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; transcript delta queued as injection.'})
-        return
-    push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'})
-    try:
+        if generation != agent_state.generation:
+            return
+        agent_state.status = 'working'
         previous = agent_state.last_report
-        with agent_state.lock:
-            if agent_state.pending_injections:
-                injection_text = '\n\nQueued injection while busy:\n' + json.dumps(agent_state.pending_injections[-5:], ensure_ascii=False)
-                agent_state.pending_injections.clear()
-            else:
-                injection_text = ''
+        if agent_state.pending_injections:
+            injection_text = '\n\nQueued injection while busy:\n' + json.dumps(agent_state.pending_injections, ensure_ascii=False)
+            agent_state.pending_injections.clear()
+        else:
+            injection_text = ''
+    push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'}, generation=generation)
+    try:
+        config = load_config()
         state_req = AgentStateRequest(
             transcript=req.transcript,
             previous_report=(previous + injection_text)[-6000:],
@@ -199,22 +182,23 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
             'transcript': state_req.transcript,
             'model': state_req.model,
         }
-        raw_report = generate_agent_state_report(state_req)
-        report = sanitize_agent_report(raw_report)
+        report = sanitize_agent_report(generate_agent_state_report(state_req))
         if not report:
-            push_agent_event({'type': 'agent_status', 'status': 'empty_report_suppressed', 'priority': 'low', 'message': 'Empty/internal Korina Agent report suppressed.', 'agent_input': agent_input})
+            push_agent_event({'type': 'agent_status', 'status': 'empty_report_suppressed', 'priority': 'low', 'message': 'Empty/internal Korina Agent report suppressed.', 'agent_input': agent_input}, generation=generation)
             return
-        priority = classify_agent_priority(raw_report + '\n' + report)
+        # Hidden reasoning must not promote the visible report's priority.
+        priority = classify_agent_priority(report)
         report_hash = hashlib.sha256(report.encode('utf-8')).hexdigest()
         now = time.time()
-        duplicate_recent = report_hash == agent_state.last_emitted_report_hash and (now - agent_state.last_emitted_report_at) < 60 and priority != 'critical'
-        agent_state.last_emitted_report_hash = report_hash
-        agent_state.last_emitted_report_at = now
         with agent_state.lock:
+            if generation != agent_state.generation:
+                return
+            duplicate_recent = report_hash == agent_state.last_emitted_report_hash and (now - agent_state.last_emitted_report_at) < 60 and priority != 'critical'
+            agent_state.last_emitted_report_hash = report_hash
+            agent_state.last_emitted_report_at = now
             agent_state.last_report = report
-            agent_state.status = 'idle'
             agent_state.last_error = None
-        event_type = 'permission_request' if priority == 'critical' and 'permission request:' in report.lower() else 'state_report'
+        event_type = 'permission_request' if priority == 'critical' and PERMISSION_REQUEST.search(report) else 'state_report'
         if not duplicate_recent:
             push_agent_event({
                 'type': event_type,
@@ -226,30 +210,95 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
                 'turn_count': req.turn_count,
                 'agent_input': agent_input,
                 'duplicate_suppressed': False,
-            })
+            }, generation=generation)
         else:
-            push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'agent_input': agent_input})
-    except Exception as e:
+            push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'agent_input': agent_input}, generation=generation)
+    except Exception as exc:
         with agent_state.lock:
-            agent_state.status = 'idle'
-            agent_state.last_error = str(e)
-        push_agent_event({'type': 'agent_error', 'priority': 'important', 'message': str(e)})
-    finally:
+            if generation != agent_state.generation:
+                return
+            agent_state.last_error = str(exc)
+        push_agent_event({'type': 'agent_error', 'priority': 'important', 'message': str(exc)}, generation=generation)
+
+
+def _drain_transcript_jobs(req: AgentTranscriptRequest, generation: int, epoch: int) -> None:
+    global _worker_running, _queued_prompt
+    while True:
+        _process_transcript(req, generation)
         with agent_state.lock:
-            agent_state.busy = False
+            if epoch != _worker_epoch:
+                return
+            if _queued_prompt is None:
+                _worker_running = False
+                agent_state.busy = False
+                agent_state.status = 'idle'
+                return
+            req, generation = _queued_prompt
+            _queued_prompt = None
+
+
+def reset_agent_state() -> None:
+    """Clear the session and invalidate output from any in-flight model call."""
+    global _queued_prompt
+    with agent_state.lock:
+        agent_state.generation += 1
+        _queued_prompt = None
+        agent_state.events.clear()
+        # Event ids are monotonic within a session; reset restarts the cursor.
+        agent_state.event_seq = 0
+        agent_state.pending_injections.clear()
+        agent_state.busy = False
+        agent_state.status = 'idle'
+        agent_state.last_report = ''
+        agent_state.last_error = None
+        agent_state.last_emitted_report_hash = ''
+        agent_state.last_emitted_report_at = 0.0
+
+
+def shutdown_agent_worker() -> None:
+    """Drop queued work and suppress in-flight output; next submit can restart.
+
+    An active urllib request completes with its normal timeout. Shutdown does
+    not wait for that request and cannot cancel the remote model's execution.
+    """
+    global _executor, _worker_running, _worker_epoch
+    with agent_state.lock:
+        reset_agent_state()
+        executor, _executor = _executor, None
+        _worker_running = False
+        _worker_epoch += 1
+    if executor is not None:
+        executor.shutdown(wait=False, cancel_futures=True)
+
 
 def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
+    global _executor, _worker_running, _queued_prompt
     config = load_config()
     if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
-    if req.delivery_mode == 'injection':
-        with agent_state.lock:
-            agent_state.pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
-        push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
-        return {'ok': True, 'accepted': True, 'queued_as': 'injection', 'status': agent_snapshot()}
-    threading.Thread(target=run_agent_transcript_job, args=(req,), daemon=True).start()
-    return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': agent_snapshot()}
-
+    with agent_state.lock:
+        if req.delivery_mode == 'injection':
+            _queue_injection(req)
+            push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
+            queued_as = 'injection'
+        elif _worker_running:
+            # Full transcript snapshots supersede earlier queued prompts.
+            # Preserve their bounded context as injections for the follow-up.
+            if _queued_prompt is not None:
+                _queue_injection(_queued_prompt[0])
+            _queued_prompt = (req, agent_state.generation)
+            agent_state.busy = True
+            push_agent_event({'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; latest transcript queued.'})
+            queued_as = 'injection'
+        else:
+            if _executor is None:
+                _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='korina-agent')
+            _worker_running = True
+            agent_state.busy = True
+            agent_state.status = 'working'
+            _executor.submit(_drain_transcript_jobs, req, agent_state.generation, _worker_epoch)
+            queued_as = 'prompt'
+    return {'ok': True, 'accepted': True, 'queued_as': queued_as, 'status': agent_snapshot()}
 
 
 # --- Phase 1.5 helpers moved from korina.config ---

@@ -13,12 +13,13 @@ Notes on schema vs events:
       expose the older ``transcript``/``delivery_mode`` fields.
     * The adapter emits events whose ``type`` field is one of
       ``"state_report"`` / ``"injection"`` / ``"permission_request"``.
-    * Completion signal is ``agent_state.last_report`` becoming
-      non-empty (it's a plain ``str`` on the adapter state).
+    * Completion is a fresh report/error event after the submission cursor.
 """
 from __future__ import annotations
 
 import asyncio
+import threading
+from contextlib import asynccontextmanager
 import time
 from typing import AsyncIterator, List
 
@@ -36,12 +37,10 @@ class KorinaConverseChannel(ConverseChannel):
     """Bridge between the ``ConverseChannel`` protocol and ``agent_gateway()``.
 
     Semantics:
-        * ``send()``  — submit a turn, poll ``last_report`` until it is
-          non-empty or the deadline passes. Single submission per call.
+        * ``send()`` — submit once and wait for a fresh completion event.
         * ``stream()``— yields the interim "thinking" event, then calls
           ``send()`` once for the final. No double-submit.
-        * ``cancel()``— placeholder; the wrapped adapter has no
-          per-channel cancellation surface today.
+        * ``cancel()`` — invalidate the wait and reset queued adapter work.
     """
 
     name = "korina"
@@ -52,6 +51,8 @@ class KorinaConverseChannel(ConverseChannel):
         # import-time path to avoid cyclic imports during Phase 3+ wiring.
         from korina.agents.gateway import agent_gateway
         self._agent_gateway = agent_gateway
+        self._send_lock = threading.Lock()
+        self._generation = 0
 
     # ---- helpers (testable; exposed at module level too) ------------
 
@@ -91,85 +92,76 @@ class KorinaConverseChannel(ConverseChannel):
             turn_count=int(meta.get("turn_count", 0) or 0),
         )
 
-    @staticmethod
-    def _poll_state() -> tuple[str, str]:
-        """Snapshot adapter state under its lock.
-
-        Returns ``(last_report, status)``. ``last_report`` is a string.
-        """
-        from korina.agents.state import agent_state
-        with agent_state.lock:
-            return (
-                str(agent_state.last_report or ""),
-                str(agent_state.status or "idle"),
-            )
-
     async def _poll_until_report(
-        self, started_at: float, cursor: int
+        self, started_at: float, cursor: int, generation: int
     ) -> tuple[str, str, int, int, str | None]:
-        """Poll until ``last_report`` is set or we time out.
+        """Wait for a new report event instead of replaying last_report.
 
-        Returns ``(text, status, scanned_events, new_cursor, last_error)``.
-        ``cursor`` is passed in from the caller; we advance it as events
-        are drained via ``adapter.poll_events``.
+        The cursor is captured before submission. Old reports remain useful
+        diagnostics but can never complete the next turn.
         """
         adapter = self._adapter()
-        last_error: str | None = None
         scanned = 0
-
         while time.monotonic() - started_at < _MAX_POLL_SECONDS:
-            try:
-                text, status = await asyncio.to_thread(self._poll_state)
-            except Exception as e:  # pragma: no cover
-                last_error = f"state probe failed: {e}"
-                break
-
+            if generation != self._generation:
+                return '', 'idle', scanned, cursor, 'cancelled'
             try:
                 cursor, events = await asyncio.to_thread(adapter.poll_events, cursor)
                 scanned += len(events)
-                for ev in events or []:
-                    if not isinstance(ev, dict):
-                        continue
-                    if ev.get("type") == "error":
-                        last_error = str(
-                            ev.get("error") or last_error or "agent error"
-                        )
-            except Exception as e:  # pragma: no cover
-                last_error = f"poll_events failed: {e}"
-
-            if text:
-                return text, status, scanned, cursor, last_error
-
+                for event in events:
+                    kind = event.get('type')
+                    if kind in {'state_report', 'permission_request'}:
+                        text = str(event.get('report') or event.get('message') or '')
+                        if text:
+                            return text, 'idle', scanned, cursor, None
+                    if kind in {'agent_error', 'error'}:
+                        error = str(event.get('message') or event.get('error') or 'agent error')
+                        return '', 'idle', scanned, cursor, error
+                    if event.get('status') == 'duplicate_report_suppressed':
+                        snapshot = await asyncio.to_thread(adapter.snapshot)
+                        return str(snapshot.get('last_report') or ''), 'idle', scanned, cursor, None
+                    if event.get('status') == 'empty_report_suppressed':
+                        return '', 'idle', scanned, cursor, None
+            except Exception as exc:
+                return '', 'idle', scanned, cursor, f'poll_events failed: {exc}'
             await asyncio.sleep(_POLL_INTERVAL)
-
-        text, status = await asyncio.to_thread(self._poll_state)
-        return text or "", status, scanned, cursor, last_error or "timeout"
+        return '', 'idle', scanned, cursor, 'timeout'
 
     # ---- ConverseChannel surface ------------------------------------
 
     def _adapter(self):
         return self._agent_gateway()
 
-    async def send(self, req: ConverseRequest) -> ConverseResponse:
-        adapter = self._adapter()
-        turn = self.turn_from_request(req)
+    @asynccontextmanager
+    async def _serialize_sends(self):
+        # Channels can be shared by several event loops; do not bind the lock
+        # to one loop or block that loop while another caller holds it.
+        while not self._send_lock.acquire(blocking=False):
+            await asyncio.sleep(_POLL_INTERVAL)
         try:
-            await asyncio.to_thread(adapter.submit_turn, turn)
-        except Exception as e:
-            return ConverseResponse(text="", finished=True, error=f"submit failed: {e}")
+            yield
+        finally:
+            self._send_lock.release()
 
-        started_at = time.monotonic()
-        text, status, scanned, cursor, err = await self._poll_until_report(started_at, 0)
-        return ConverseResponse(
-            text=text or "",
-            finished=True,
-            error=err,
-            metadata={
-                "status": status,
-                "events_scanned": scanned,
-                "next_cursor": cursor,
-            },
-        )
+    async def send(self, req: ConverseRequest) -> ConverseResponse:
+        # The adapter is a single conversational worker. Serialize awaited
+        # channel sends so each caller receives its own completion event.
+        async with self._serialize_sends():
+            adapter = self._adapter()
+            try:
+                turn = self.turn_from_request(req)
+                cursor, _ = await asyncio.to_thread(adapter.poll_events, 0)
+                generation = self._generation
+                await asyncio.to_thread(adapter.submit_turn, turn)
+            except Exception as exc:
+                return ConverseResponse(text='', finished=True, error=f'submit failed: {exc}')
+            text, status, scanned, cursor, error = await self._poll_until_report(
+                time.monotonic(), cursor, generation
+            )
+            return ConverseResponse(
+                text=text, finished=True, error=error,
+                metadata={'status': status, 'events_scanned': scanned, 'next_cursor': cursor},
+            )
 
     async def stream(
         self, req: ConverseRequest
@@ -190,8 +182,9 @@ class KorinaConverseChannel(ConverseChannel):
         yield final
 
     async def cancel(self) -> None:
-        """No-op placeholder; the wrapped adapter has no per-channel cancellation."""
-        return None
+        """Invalidate this channel wait and discard queued agent work."""
+        self._generation += 1
+        await asyncio.to_thread(self._adapter().reset)
 
     async def health(self) -> dict:
         adapter = self._adapter()

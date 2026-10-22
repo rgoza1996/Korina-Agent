@@ -16,14 +16,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from korina.agents import agent_gateway
+from korina.agents import AgentHttpBridge, UnsupportedAgentOperation, agent_gateway
 from korina.config import agent_provider, load_config
 from korina.schemas import (
     AgentPermissionAnswer,
     AgentStateRequest,
     AgentTranscriptRequest,
-    PermissionAnswerEvent,
-    UserTurn,
 )
 from korina.services.agent_service import (
     agent_model_choices,
@@ -46,38 +44,38 @@ def _default_model() -> str:
 @router.get('/api/agent/status')
 def agent_status():
     """Compat alias: same shape as legacy endpoint, served via the gateway."""
-    return {'ok': True, **agent_gateway().snapshot()}
+    return {'ok': True, **AgentHttpBridge(agent_gateway()).snapshot()}
 
 
 @router.get('/api/agent/events')
-def agent_events(after: int = Query(0)):
+def agent_events(after: int = Query(0, ge=0)):
     """Compat alias: raw dicts pass through unchanged (frontend contract)."""
     gateway = agent_gateway()
     cursor, events = gateway.poll_events(after)
     return {
         'ok': True,
         'events': events,  # already raw dicts from poll_events
+        **AgentHttpBridge(gateway).snapshot(),
         'last_event_id': cursor,
-        **gateway.snapshot(),
     }
 
 
 @router.post('/api/agent/transcript')
-async def agent_transcript(req: AgentTranscriptRequest):
-    """Legacy compat: preserve ``delivery_mode`` / ``reason`` / ``turn_count``.
-
-    Phase 8 will add a native ``/api/agent/turn`` endpoint that accepts
-    ``UserTurn`` directly. Until then, this endpoint passes the legacy
-    ``AgentTranscriptRequest`` straight through via the adapter's
-    compatibility method.
-    """
-    return agent_gateway().submit_transcript_legacy(req)
+def agent_transcript(req: AgentTranscriptRequest):
+    """Preserve rich legacy delivery, or bridge prompt turns to a core adapter."""
+    try:
+        return AgentHttpBridge(agent_gateway()).submit_transcript(req)
+    except UnsupportedAgentOperation as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post('/api/agent/permission-answer')
-async def agent_permission_answer(req: AgentPermissionAnswer):
+def agent_permission_answer(req: AgentPermissionAnswer):
     """Legacy compat: push event + submit transcript, return legacy service shape."""
-    return agent_gateway().answer_permission_legacy(req)
+    try:
+        return AgentHttpBridge(agent_gateway()).answer_permission(req)
+    except UnsupportedAgentOperation as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post('/api/agent/reset')
@@ -85,7 +83,7 @@ def agent_reset():
     """Compat alias: reset via gateway, return legacy shape."""
     gateway = agent_gateway()
     gateway.reset()
-    return {'ok': True, 'status': gateway.snapshot()}
+    return {'ok': True, 'status': AgentHttpBridge(gateway).snapshot()}
 
 
 @router.get('/api/agent/models')
@@ -111,7 +109,7 @@ def agent_models():
 
 
 @router.post('/api/agent/state-report')
-async def agent_state_report(req: AgentStateRequest):
+def agent_state_report(req: AgentStateRequest):
     """Service-function call; not state-coupled. No gateway change yet."""
     if str(load_config().get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'state_report': '', 'disabled': True}

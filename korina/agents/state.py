@@ -26,6 +26,7 @@ class AgentState:
     lock: "threading.RLock" = field(default_factory=threading.RLock)
     events: list = field(default_factory=list)
     event_seq: int = 0
+    generation: int = 0
     busy: bool = False
     status: str = "idle"
     last_report: str = ""

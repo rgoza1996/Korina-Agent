@@ -68,7 +68,7 @@ class ConverseChannel(ABC):
         ...
 
     @abstractmethod
-    async def stream(self, req: ConverseRequest) -> AsyncIterator[ConverseResponse]:
+    def stream(self, req: ConverseRequest) -> AsyncIterator[ConverseResponse]:
         """Stream partial responses as the adapter produces them.
 
         Implementations must yield at least one ConverseResponse with

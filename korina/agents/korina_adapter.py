@@ -62,12 +62,14 @@ class KorinaAgentAdapter:
         from korina.services import agent_service
 
         req = AgentTranscriptRequest(
-            transcript=[turn.text],
+            transcript=[{"role": "user", "content": turn.text}],
             delivery_mode="prompt",
             reason=f"user_turn:{turn.session_id}",
             turn_count=turn.turn_count,
         )
-        agent_service.submit_agent_transcript(req)
+        result = agent_service.submit_agent_transcript(req)
+        if isinstance(result, dict) and result.get("disabled"):
+            raise RuntimeError("Korina Agent is disabled in settings")
 
     # ---- outbound: adapter -> Converse ---------------------------------------
 
@@ -109,7 +111,7 @@ class KorinaAgentAdapter:
         })
         agent_service.submit_agent_transcript(
             AgentTranscriptRequest(
-                transcript=[answer.transcript],
+                transcript=[{"role": "user", "content": answer.transcript}],
                 delivery_mode="prompt",
                 reason=f"permission_answer:{answer.answer}",
                 turn_count=0,
@@ -118,19 +120,8 @@ class KorinaAgentAdapter:
 
     def reset(self) -> None:
         """Clear agent state. Matches legacy /api/agent/reset semantics."""
-        from korina.agents.state import agent_state
-
-        agent = agent_state
-        with agent.lock:
-            agent.events.clear()
-            agent.event_seq = 0
-            agent.pending_injections.clear()
-            agent.busy = False
-            agent.status = "idle"
-            agent.last_report = ""
-            agent.last_error = None
-            agent.last_emitted_report_hash = ""
-            agent.last_emitted_report_at = 0.0
+        from korina.services.agent_service import reset_agent_state
+        reset_agent_state()
 
     # ---- diagnostics ---------------------------------------------------------
 
@@ -187,7 +178,6 @@ class KorinaAgentAdapter:
         from korina.services import agent_service
         from korina.schemas import AgentTranscriptRequest
 
-        transcript_text = " ".join(str(t) for t in (req.transcript or [])).strip()
         agent_service.push_agent_event({
             "type": "permission_answer",
             "priority": "normal",
