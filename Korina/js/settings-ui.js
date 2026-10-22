@@ -1,7 +1,7 @@
 // Settings form access, saved configuration, and channel selection.
 
 import { state } from './state.js';
-import { $ } from './dom.js';
+import { $, setSectionHidden } from './dom.js';
 import { prettyModelLabel } from './labels.js';
 
 // Settings getters
@@ -249,12 +249,4 @@ export function syncConverseSettingsUI() {
   $('modelOptionsStatus').textContent = multimodal
     ? `Multimodal STT selected. STT model endpoint resolves to ${effectiveSttLlmBaseUrl() || 'the LLM Response base URL'} and falls back to the LLM Response section when STT-specific fields are blank.`
     : 'Whisper is built into Korina. Open a model picker to query its current /v1/models endpoint or the local llama.cpp model catalog.';
-}
-
-// Local helper used by syncConverseSettingsUI. The original inline
-// `setSectionHidden` lived elsewhere in index.html; this copy keeps
-// the module self-contained without re-implementing the behaviour.
-function setSectionHidden(id, hidden) {
-  const el = $(id);
-  if (el) el.classList.toggle('settingsHidden', !!hidden);
 }

@@ -71,7 +71,7 @@ beforeEach(() => {
     mediaRecorder: null, recChunks: [], meterAudioCtx: null, analyser: null, raf: null,
     liveTranscriptionController: null, partialRecorder: null, partialRecorderDone: null,
     partialController: null, partialTimer: null, partialQueue: [], partialCaptureActive: false,
-    partialQueueProcessing: false, partialInFlight: false, partialNeedsFullPass: false, partialWindowMs: 1800,
+    partialQueueProcessing: false, partialNeedsFullPass: false, partialWindowMs: 1800,
     bargeRecorder: null, bargeChunks: [], bargeLoopId: null, handlingBarge: false,
     ttsSpeaking: false, controller: null, activeSources: [], audioCtx: null, ackSource: null,
     awaitingAgentPermission: null, pendingAgentStateReport: '', pendingImportantAgentMessage: '', history: [],

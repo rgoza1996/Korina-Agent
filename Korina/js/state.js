@@ -60,17 +60,14 @@ export const state = {
 
   // --- partial transcription ---
   partialTimer: null,
-  partialInFlight: false,
   partialSeq: 0,
   partialController: null,
   latestPartialText: '',
-  latestPartialAt: 0,
   partialRecorder: null,
   partialRecorderDone: null,
   partialCaptureActive: false,
   partialNeedsFullPass: false,
   partialFallbackReason: '',
-  partialChunks: [],
   partialWindowMs: 1800,
   partialWindowIndex: 0,
   partialQueue: [],
@@ -98,7 +95,6 @@ export const state = {
   // the new model is loaded. Drives the providerReady pill in the debug strip.
   providerPending: false,
   agentStateReport: '',
-  agentLastTranscriptHash: '',
   pendingAgentStateReport: '',
   pendingAgentReportVersion: 0,
   agentSession: 0,
@@ -124,7 +120,6 @@ export const state = {
 
   // --- model-list cache ---
   lastModelsQuery: '',
-  lastModelsLoadedAt: 0,
   lastModelsPayload: null,
 
   // --- Phase 2 capabilities cache ---

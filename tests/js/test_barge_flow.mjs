@@ -86,7 +86,7 @@ beforeEach(() => {
     stream, mediaRecorder: null, recChunks: [], meterAudioCtx: null, analyser: null, raf: null,
     partialRecorder: null, partialRecorderDone: null, partialCaptureActive: false,
     partialTimer: null, partialQueue: [], partialSeq: 0, partialController: null,
-    partialInFlight: false, partialQueueProcessing: false, partialNeedsFullPass: false,
+    partialQueueProcessing: false, partialNeedsFullPass: false,
     liveLoopId: null, liveTranscriptionController: null,
     audioCtx: { state: 'running', currentTime: 10, close: async () => {} }, gain: {},
     ttsSpeaking: false, mode: 'buf', controller: null, activeSources: [], ackSource: null,

@@ -44,7 +44,7 @@ beforeEach(() => {
   element('agentProvider').value = 'openai-compatible';
   element('agentBaseUrl').value = 'http://agent.example/v1';
   endpoint('old');
-  Object.assign(state, { lastModelsPayload: null, lastModelsQuery: '', lastModelsLoadedAt: 0,
+  Object.assign(state, { lastModelsPayload: null, lastModelsQuery: '',
     audioUnsupported: {}, capabilityFilterOverride: false });
   state.lastModelsNeedsRefresh = false;
   globalThis.fetch = async (url, options) => {

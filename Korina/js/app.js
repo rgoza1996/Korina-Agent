@@ -284,7 +284,6 @@ async function clearSession() {
   try { stopTtsNow(); } catch {}
   state.history = [];
   state.agentStateReport = '';
-  state.agentLastTranscriptHash = '';
   state.pendingAgentStateReport = '';
   state.pendingAgentReportVersion++;
   state.agentSession++;
@@ -302,7 +301,6 @@ async function clearSession() {
   state.deferredAgentInterrupt = null;
   state.agentInterruptInProgress = false;
   state.latestPartialText = '';
-  state.latestPartialAt = 0;
   state.partialQueue = [];
   $('log').innerHTML = '';
   $('agentDebug').textContent = 'Session cleared. Agent prompts, injection deliveries, and outputs will appear here.';

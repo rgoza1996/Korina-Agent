@@ -43,18 +43,13 @@ export function getAgentProviderCaps(provider){
   return caps[String(provider||"").trim()] || null;
 }
 
-export function providerPresetBaseUrl(provider){
-  const caps = getResponseLlmProviderCaps(provider);
-  return caps ? String(caps.default_base_url || "") : "";
-}
-
 export function maybeApplyProviderPreset(providerId, baseUrlId, {clearWhenBlank=false}={}){
   const provider=$(providerId)?.value||"";
   const input=$(baseUrlId);
   if(!input) return false;
   const isAgent = providerId === "agentProvider";
   const caps = (isAgent ? getAgentProviderCaps(provider) : getResponseLlmProviderCaps(provider));
-  const preset = caps ? String(caps.default_base_url || "") : providerPresetBaseUrl(provider);
+  const preset = String(caps?.default_base_url || "");
   if(preset){ input.value=preset; return true; }
   if(clearWhenBlank && !provider){ input.value=""; return true; }
   return false;
@@ -185,7 +180,6 @@ export async function loadModelOptions(force=false){
     if(state.lastModelsQuery === query){
       state.lastModelsPayload = null;
       state.lastModelsQuery = '';
-      state.lastModelsLoadedAt = 0;
     }
   };
   try{
@@ -209,7 +203,6 @@ export async function loadModelOptions(force=false){
       else {
         state.lastModelsQuery=query;
         state.lastModelsPayload=j;
-        state.lastModelsLoadedAt=Date.now();
         state.lastModelsNeedsRefresh=false;
       }
     }

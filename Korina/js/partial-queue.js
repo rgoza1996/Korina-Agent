@@ -19,7 +19,7 @@ function requireFullTranscript(reason) {
 export function startPartialTranscriptionLoop() {
   stopPartialTranscriptionLoop(true);
   state.partialWindowIndex = 0;
-  state.latestPartialText = ''; state.latestPartialAt = 0;
+  state.latestPartialText = '';
   state.partialNeedsFullPass = false;
   state.partialFallbackReason = '';
   state.partialCaptureActive = true;
@@ -44,7 +44,6 @@ export function startPartialWindowRecorder() {
     done = new Promise(resolve => { finishStop = resolve; });
     state.partialRecorder = recorder;
     state.partialRecorderDone = done;
-    state.partialChunks = chunks;
     recorder.ondataavailable = event => {
       if (!event.data.size || seq !== state.partialSeq) return;
       bytes += event.data.size;
@@ -57,7 +56,7 @@ export function startPartialWindowRecorder() {
     recorder.onstop = () => {
       clearTimeout(timer);
       if (state.partialTimer === timer) state.partialTimer = null;
-      if (state.partialRecorder === recorder) { state.partialRecorder = null; state.partialChunks = []; }
+      if (state.partialRecorder === recorder) state.partialRecorder = null;
       try {
         if (!state.live || seq !== state.partialSeq || !state.liveSpeechStart || state.liveLastVoice < startedAt) return;
         const blob = new Blob(chunks, { type: chunks[0]?.type || mime });
@@ -100,7 +99,6 @@ export async function processPartialQueue() {
   const worker = { seq: state.partialSeq };
   activeWorker = worker;
   state.partialQueueProcessing = true;
-  state.partialInFlight = true;
   const current = () => activeWorker === worker && worker.seq === state.partialSeq;
   try {
     while (current() && state.partialQueue.length) {
@@ -117,7 +115,6 @@ export async function processPartialQueue() {
     // A cancelled old worker must not drain or clear a newer capture's state.
     if (activeWorker === worker) {
       activeWorker = null;
-      state.partialInFlight = false;
       state.partialQueueProcessing = false;
     }
   }
@@ -139,7 +136,6 @@ export function stopPartialTranscriptionLoop(abort = true) {
     state.partialSeq++;
     state.partialQueue = [];
     activeWorker = null;
-    state.partialInFlight = false;
     state.partialQueueProcessing = false;
     const controller = state.partialController;
     state.partialController = null;
@@ -149,6 +145,5 @@ export function stopPartialTranscriptionLoop(abort = true) {
   const done = state.partialRecorderDone || Promise.resolve();
   if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch {} }
   state.partialRecorder = null;
-  state.partialChunks = [];
   return done;
 }

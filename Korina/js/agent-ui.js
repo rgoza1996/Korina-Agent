@@ -220,7 +220,6 @@ function clearPreviousAgentSession() {
   state.awaitingAgentPermission = null;
   state.deferredAgentInterrupt = null;
   state.agentInterruptCooldownUntil = 0;
-  state.agentLastTranscriptHash = '';
   state.agentFirstDelivered = false;
   state.agentLastDeliveredTurn = 0;
   state.agentLastDeliveryAt = 0;

@@ -58,7 +58,7 @@ beforeEach(() => {
     live: false, liveSession: 0, liveBusy: false, handlingBarge: false,
     stream: null, meterAudioCtx: null, analyser: null, mediaRecorder: null,
     partialRecorder: null, partialTimer: null, partialQueue: [], partialQueueProcessing: false,
-    partialInFlight: false, partialController: null, liveLoopId: null, bargeLoopId: null, raf: null,
+    partialController: null, liveLoopId: null, bargeLoopId: null, raf: null,
     bargeRecorder: null, audioCtx: null, ackSource: null, activeSources: [],
     controller: null, recChunks: [], latestPartialText: '', ackFiles: [], ackBuffersByTag: {},
     pendingImportantAgentMessage: '', awaitingAgentPermission: null,

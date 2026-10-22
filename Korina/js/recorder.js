@@ -209,7 +209,6 @@ export async function transcribePartialBlob(blob, seq, meta = {}, { isCurrent = 
     if (text) {
       // Each window is independently decodable; middle WebM chunks are not.
       state.latestPartialText = (state.latestPartialText ? `${state.latestPartialText} ${text}` : text).replace(/\s+/g, ' ').trim();
-      state.latestPartialAt = performance.now();
       $('transcript').value = state.latestPartialText + ' …';
       $('transcript').scrollTop = $('transcript').scrollHeight;
       status($('sttStatus'), `Queued partial window ${meta.startChunk} · ${j.duration.toFixed(1)}s audio → ${j.seconds.toFixed(2)}s STT: ${text}`, 'warn'); $('transcriptInfo').textContent = `Queued WebM partial window ${meta.startChunk} · ${j.seconds.toFixed(2)}s CPU STT`;

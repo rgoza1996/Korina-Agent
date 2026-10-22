@@ -44,7 +44,7 @@ beforeEach(() => {
     audioCtx: null, analyser: null, raf: null, liveLoopId: null, bargeLoopId: null,
     bargeRecorder: null, handlingBarge: false, awaitingAgentPermission: null,
     partialRecorder: null, partialRecorderDone: null, partialController: null,
-    partialQueue: [], partialQueueProcessing: false, partialInFlight: false,
+    partialQueue: [], partialQueueProcessing: false,
     partialCaptureActive: false, partialNeedsFullPass: false, partialFallbackReason: '',
     partialWindowMs: 60_000, partialTimer: null, latestPartialText: '',
     liveSpeechStart: performance.now() - 1000, liveLastVoice: performance.now(),
@@ -113,7 +113,6 @@ test('an oversized window is discarded before its bytes enter the queue', async 
   assert.equal(state.partialNeedsFullPass, true);
   assert.match(state.partialFallbackReason, /size limit/);
   assert.equal(state.partialQueue.length, 0);
-  assert.equal(state.partialChunks.length, 0);
 });
 
 test('a cancelled old worker cannot consume a new queue or clear its controller and busy flags', async () => {
@@ -132,7 +131,6 @@ test('a cancelled old worker cannot consume a new queue or clear its controller 
   old.resolve(json(partial('Old text.')));
   await tick();
   assert.equal(state.partialQueueProcessing, true);
-  assert.equal(state.partialInFlight, true);
   assert.equal(state.partialController, controller);
   assert.equal(state.partialQueue.length, 1);
   assert.equal(state.latestPartialText, '');
@@ -160,7 +158,6 @@ test('late final data from an old recorder cannot consume or clear a new recorde
   old.finishStop([audio('old-late-')]);
   assert.equal(state.partialRecorder, current);
   assert.equal(state.partialTimer, timer);
-  assert.equal(state.partialChunks.length, 1);
   assert.equal(state.partialQueue.length, 0);
   state.liveLastVoice = performance.now();
   current.stop();
