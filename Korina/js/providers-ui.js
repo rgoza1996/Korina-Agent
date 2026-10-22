@@ -176,7 +176,7 @@ function agentDiscoverySettings(){
 
 export function loadModelOptions(force=false){
   const query = modelDiscoveryQuery();
-  if (!force && modelsInFlight?.query === query) return modelsInFlight.promise;
+  if (!force && modelsInFlight?.query === query && modelsController && !modelsController.signal.aborted) return modelsInFlight.promise;
   const flight = { query, promise: null };
   flight.promise = discoverModelOptions(force).finally(() => {
     if (modelsInFlight === flight) modelsInFlight = null;
@@ -192,7 +192,7 @@ async function discoverModelOptions(force){
   const request = ++modelsRequest;
   const statusRequest = ++modelStatusRequest;
   const query = modelDiscoveryQuery();
-  const isCurrent = () => request === modelsRequest && query === modelDiscoveryQuery();
+  const isCurrent = () => !controller.signal.aborted && request === modelsRequest && query === modelDiscoveryQuery();
   const clearFailedCache = () => {
     if(state.lastModelsQuery === query){
       state.lastModelsPayload = null;
@@ -200,12 +200,13 @@ async function discoverModelOptions(force){
     }
   };
   try{
-    let audioUnsupported;
+    let audioUnsupported = null, probeWarning = '';
     try {
-      const probeResp = await listAudioProbes();
-      audioUnsupported = probeResp.entries || {};
+      const probeResp = await listAudioProbes({ signal: controller.signal, isCurrent });
+      audioUnsupported = probeResp.entries;
     } catch (_) {
-      audioUnsupported = {};
+      if (controller.signal.aborted || !isCurrent()) return;
+      probeWarning = 'Audio probe cache unavailable; previous entries retained. Reopen the picker to retry.';
     }
     if(!isCurrent()) return;
     let j=state.lastModelsPayload;
@@ -224,7 +225,7 @@ async function discoverModelOptions(force){
       }
     }
     if(!isCurrent()) return;
-    state.audioUnsupported = audioUnsupported;
+    if (audioUnsupported !== null) state.audioUnsupported = audioUnsupported;
 
     const llmStatuses = j.llm_models_status || {};
     const sttStatuses = j.stt_llm_models_status || {};
@@ -321,7 +322,7 @@ async function discoverModelOptions(force){
     const previousStatus = $("modelOptionsStatus").textContent;
     syncConverseSettingsUI();
     $("modelOptionsStatus").textContent = statusRequest === modelStatusRequest
-      ? `Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo} ${catalogNotice(j.catalog_info)} ${unlistedSelection ? 'Saved selections not listed by discovery were retained.' : ''}`.trim()
+      ? `Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo} ${catalogNotice(j.catalog_info)} ${unlistedSelection ? 'Saved selections not listed by discovery were retained.' : ''} ${probeWarning}`.trim()
       : previousStatus;
     return j;
   }catch(e){
@@ -386,6 +387,7 @@ function selectedAudioProbe() {
 }
 
 export function syncAudioProbeButton() {
+  if (modelsInFlight && modelsInFlight.query !== modelDiscoveryQuery()) modelsController?.abort();
   const button = $("clearProbeBtn");
   if (!button) return;
   if (probeReset && !probeReset.isCurrent()) retireProbeReset(probeReset);
@@ -427,8 +429,10 @@ export async function resetSelectedAudioProbe() {
     delete probes[selected.triple];
     state.audioUnsupported = probes;
     syncAudioProbeButton();
-    await loadModelOptions(true);
-    if (isCurrent() && action.textContent === pending) action.textContent = 'Audio capability probe reset. Try transcription again.';
+    if (action.textContent === pending) action.textContent = 'Audio capability probe reset. Try transcription again.';
+    // The DELETE is confirmed. Optional model discovery owns its own errors
+    // and must not keep the reset control waiting on another network request.
+    void loadModelOptions(true);
   } catch (error) {
     if (isCurrent() && action.textContent === pending) action.textContent = `Audio probe reset failed: ${error.message}. Retry Reset audio probe.`;
   } finally {

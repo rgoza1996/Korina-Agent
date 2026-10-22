@@ -51,6 +51,31 @@ test('overlapping picker focus and pointer loads share discovery and retain the 
   assert.equal(calls, 1, 'a completed cached query does not repeat model discovery');
 });
 
+test('rapid endpoint backtracking starts a fresh discovery instead of joining its retired cleanup', async () => {
+  const held = deferred(); let probeCalls = 0, oldSignal;
+  globalThis.fetch = async (url, options) => {
+    if (url === '/api/audio-probe') {
+      if (++probeCalls === 1) { oldSignal = options.signal; return held.promise; }
+      return response({ entries: { [triple('audio-b')]: { reason: 'current probe' } } });
+    }
+    return response(payload);
+  };
+  const old = loadModelOptions(true);
+  const original = el('llmBaseUrl').value;
+  el('llmBaseUrl').value = 'http://other-response.test/v1'; syncAudioProbeButton();
+  assert.equal(oldSignal.aborted, true);
+  el('llmBaseUrl').value = original; syncAudioProbeButton();
+  const fresh = loadModelOptions();
+  assert.notEqual(fresh, old, 'same query may coalesce only with a live owner');
+  await fresh;
+  assert.equal(probeCalls, 2);
+  const currentStatus = el('modelOptionsStatus').textContent;
+  held.resolve(response({ entries: {} })); await old;
+  assert.ok(state.audioUnsupported[triple('audio-b')]);
+  assert.equal(el('modelOptionsStatus').textContent, currentStatus);
+  assert.equal(el('lmModel').value, 'response-model');
+});
+
 test('failed picker discovery can retry the same query without forcing a refresh', async () => {
   let calls = 0;
   globalThis.fetch = async url => {
@@ -174,8 +199,31 @@ test('a successful current reset removes only its probe and refreshes model stat
     return response(payload);
   };
   await resetSelectedAudioProbe();
+  await loadModelOptions();
   assert.equal(state.audioUnsupported[triple('audio-a')], undefined);
   assert.ok(state.audioUnsupported[triple('audio-b')]);
   assert.equal(el('clearProbeBtn').style.display, 'none');
   assert.match(el('settingsActionStatus').textContent, /probe reset.*Try transcription again/);
 });
+
+for (const [name, failed] of [
+  ['HTTP503', () => response({ detail: 'probe unavailable' }, 503)],
+  ['invalid UTF8', () => new Response(new Uint8Array([255]))],
+  ['oversize', () => new Response('{}', { headers: { 'Content-Length': String(16 * 1024 * 1024 + 1) } })],
+  ['malformed entry', () => response({ entries: { model: { reason: false } } })],
+]) {
+  test(`probe read ${name} preserves known entries and Reset while models load, then retries normally`, async () => {
+    globalThis.fetch = async url => url === '/api/audio-probe' ? failed() : response(payload);
+    await loadModelOptions(true);
+    assert.ok(state.audioUnsupported[triple('audio-a')]);
+    assert.ok(state.audioUnsupported[triple('audio-b')]);
+    assert.equal(el('clearProbeBtn').style.display, '');
+    assert.equal(el('clearProbeBtn').disabled, false);
+    assert.match(el('modelOptionsStatus').textContent, /cache unavailable.*retained.*retry/);
+    globalThis.fetch = async url => url === '/api/audio-probe' ? response({ entries: {} }) : response(payload);
+    await loadModelOptions();
+    assert.deepEqual(state.audioUnsupported, {});
+    assert.equal(el('clearProbeBtn').style.display, 'none');
+    assert.doesNotMatch(el('modelOptionsStatus').textContent, /cache unavailable/);
+  });
+}

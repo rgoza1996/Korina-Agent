@@ -8,11 +8,15 @@ const models = { llm_models: ['saved-response', 'other-response'], llm_default: 
 
 async function app(page, backend = 'whisper') {
   const scenario = { modelCalls: 0, heldModels: [], holdModels: false, reset: 'http', heldReset: null,
+    probeRead: 'success', heldProbeReads: [], abortedProbeReads: 0,
     probes: { [triple('audio-a')]: { reason: 'cached unsupported a' }, [triple('audio-b')]: { reason: 'cached unsupported b' } }, errors: [] };
   const config = { ack_enabled: 'off', agent_enabled: 'off', stt_backend: backend,
     llm_provider: 'openai-compatible', llm_base_url: 'http://response.fixture/v1', lm_model: 'saved-response',
     stt_llm_provider: 'openai-compatible', stt_llm_base_url: 'http://audio.fixture/v1', stt_llm_model: 'audio-a' };
   page.on('pageerror', error => scenario.errors.push(error.message));
+  page.on('requestfailed', request => {
+    if (request.method() === 'GET' && new URL(request.url()).pathname === '/api/audio-probe') scenario.abortedProbeReads++;
+  });
   await page.route('**/api/**', async route => {
     const request = route.request(), url = new URL(request.url());
     if (url.pathname === '/api/config') {
@@ -29,7 +33,11 @@ async function app(page, backend = 'whisper') {
       return route.fulfill({ json: models });
     }
     if (url.pathname === '/api/audio-probe') {
-      if (request.method() === 'GET') return route.fulfill({ json: { entries: scenario.probes } });
+      if (request.method() === 'GET') {
+        if (scenario.probeRead === 'hold') { scenario.heldProbeReads.push(route); return; }
+        if (scenario.probeRead === 'http') return route.fulfill({ status: 503, json: { detail: 'Probe cache temporarily unavailable' } });
+        return route.fulfill({ json: { entries: scenario.probes } });
+      }
       if (scenario.reset === 'hold') { scenario.heldReset = route; return; }
       if (scenario.reset === 'network') return route.abort('failed');
       if (scenario.reset === 'http') return route.fulfill({ status: 503, json: { detail: { reason: 'Disk unavailable' } } });
@@ -139,5 +147,65 @@ test('selecting another model releases its reset control before the old DELETE c
   await expect(reset).toBeEnabled();
   await expect(page.locator('#settingsActionStatus')).toContainText('Current reset failed');
   expect(scenario.probes[triple('audio-b')]).toBeTruthy();
+  expect(scenario.errors).toEqual([]);
+});
+
+test('changing an endpoint aborts a held probe GET and a later picker action can discover models', async ({ page }) => {
+  const scenario = await app(page, 'llm');
+  scenario.probeRead = 'hold';
+  await page.locator('#sttLlmModel').focus();
+  await expect.poll(() => scenario.heldProbeReads.length).toBe(1);
+  expect(scenario.modelCalls).toBe(0);
+  await page.locator('#sttLlmBaseUrl').fill('http://new-audio.fixture/v1');
+  scenario.probeRead = 'success';
+  await page.locator('#sttLlmBaseUrl').press('Tab');
+  await expect.poll(() => scenario.abortedProbeReads).toBe(1);
+  await expect(page.locator('#modelOptionsStatus')).toContainText('Loaded 2 response models');
+  await page.locator('#sttLlmModel').focus();
+  await page.locator('#sttLlmModel').press('ArrowDown');
+  await page.evaluate(() => window.loadModelOptions());
+  await expect(page.locator('#modelOptionsStatus')).toContainText('Loaded 2 response models');
+  expect(scenario.modelCalls).toBe(1);
+  expect(scenario.errors).toEqual([]);
+});
+
+test('confirmed Reset releases before optional probe discovery and retains other cached choices', async ({ page }) => {
+  const scenario = await app(page, 'llm');
+  await page.locator('#sttLlmModel').focus();
+  const reset = page.locator('#clearProbeBtn');
+  await expect(reset).toBeVisible();
+  scenario.reset = 'success'; scenario.probeRead = 'hold';
+  await reset.click();
+  await expect.poll(() => scenario.heldProbeReads.length).toBe(1);
+  await expect(page.locator('#settingsActionStatus')).toContainText('Audio capability probe reset.');
+  await expect(reset).toBeEnabled();
+  await page.locator('#sttLlmModel').selectOption('audio-b');
+  await expect(reset).toBeVisible();
+  await expect(reset).toBeEnabled();
+  await expect(reset).toHaveAttribute('data-model', 'audio-b');
+  expect(await page.evaluate(async () => {
+    const { state } = await import('/js/state.js');
+    return Object.keys(state.audioUnsupported);
+  })).toEqual([triple('audio-b')]);
+  scenario.probeRead = 'success';
+  await scenario.heldProbeReads[0].fulfill({ json: { entries: scenario.probes } });
+  await page.evaluate(() => window.loadModelOptions());
+  await expect(page.locator('#modelOptionsStatus')).toContainText('Loaded 2 response models');
+  expect(scenario.errors).toEqual([]);
+});
+
+test('probe cache failure keeps Reset available and a confirmed empty retry clears it', async ({ page }) => {
+  const scenario = await app(page, 'llm');
+  await page.locator('#sttLlmModel').focus();
+  const reset = page.locator('#clearProbeBtn');
+  await expect(reset).toBeVisible();
+  scenario.probeRead = 'http';
+  await page.evaluate(() => window.loadModelOptions(true));
+  await expect(page.locator('#modelOptionsStatus')).toContainText('Audio probe cache unavailable; previous entries retained.');
+  await expect(reset).toBeVisible(); await expect(reset).toBeEnabled();
+  scenario.probeRead = 'success'; scenario.probes = {};
+  await page.evaluate(() => window.loadModelOptions());
+  await expect(page.locator('#modelOptionsStatus')).not.toContainText('cache unavailable');
+  await expect(reset).toBeHidden();
   expect(scenario.errors).toEqual([]);
 });
