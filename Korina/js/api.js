@@ -15,7 +15,43 @@ import {
   partialWindowMsSetting,
   markActivity,
 } from './settings-ui.js';
-import { loadAgentModelOptions } from './providers-ui.js';
+import { loadAgentModelOptions, loadCapabilities, setBaseUrlEditability } from './providers-ui.js';
+
+let capabilitiesInFlight = null;
+const CAPABILITIES_FAILURE = 'Provider capabilities unavailable: ';
+
+export function refreshProviderCapabilities() {
+  if (capabilitiesInFlight) return capabilitiesInFlight;
+  capabilitiesInFlight = (async () => {
+    try {
+      const registry = await loadCapabilities();
+      if (!registry?.providers || typeof registry.providers !== 'object' || Array.isArray(registry.providers)
+        || !Object.keys(registry.providers).length
+        || !registry.agentProviders || typeof registry.agentProviders !== 'object' || Array.isArray(registry.agentProviders)) {
+        throw new Error('The server returned an invalid provider registry');
+      }
+      // Read current selections after the request; a delayed initial reply
+      // must not apply editability for an older form selection.
+      await setBaseUrlEditability();
+      const action = $('settingsActionStatus');
+      if (action?.textContent.startsWith(CAPABILITIES_FAILURE)) action.textContent = '';
+      const stt = $('sttStatus');
+      if (stt?.textContent.startsWith(CAPABILITIES_FAILURE)) status(stt, 'Provider capabilities loaded.', 'good');
+      return true;
+    } catch (error) {
+      state._capabilitiesCache = null;
+      const message = apiErrorMessage({ detail: `${CAPABILITIES_FAILURE}${apiErrorMessage(error)}. Open Settings to retry.` });
+      const action = $('settingsActionStatus');
+      if (action) action.textContent = message;
+      const stt = $('sttStatus');
+      if (stt) status(stt, message, 'bad');
+      return false;
+    } finally {
+      capabilitiesInFlight = null;
+    }
+  })();
+  return capabilitiesInFlight;
+}
 
 export async function activateSelectedProvider(provider, model = '') {
   const r = await fetch('/api/llm/provider/activate', {
@@ -45,6 +81,9 @@ export async function loadConfig() {
     if (controlVersion !== agentControlVersion || state.agentControlPending) delete c.agent_enabled;
     applyConfig(c);
     syncConverseSettingsUI();
+    // Config and capabilities load independently. Re-read these selections
+    // even when an overlapping capabilities refresh already applied its UI.
+    if (state._capabilitiesCache) await setBaseUrlEditability();
     $('settingsInfo').textContent = 'Loaded saved config.json settings.';
   } catch (e) {
     $('settingsActionStatus').textContent = `Settings load failed: ${e.message}`;
@@ -303,15 +342,16 @@ export function recordSttBackend(payload, errorMsg) {
 // Load configuration before starting periodic health and agent updates.
 export async function initApp() {
   await loadConfig();
-  await loadAgentModelOptions();
-  await loadConfig(); // Re-apply after model options are populated.
-  await (await import('./acks.js')).loadAcks('global');
   health();
   setInterval(health, 5000); // poll debug strip every 5s so it reflects runtime state, not last config-change
   markActivity('init');
   setInterval(async () => (await import('./agent-ui.js')).maybeDeliverTranscriptToAgent('timer'), 3000);
   setInterval(async () => (await import('./agent-ui.js')).pollAgentEvents(), 2000);
   setInterval(async () => (await import('./agent-ui.js')).maybeReleaseDeferredAgentInterrupt(), 500);
+  // Discovery preserves the current selection and must not delay runtime status.
+  void loadAgentModelOptions();
+  void import('./acks.js').then(module => module.loadAcks('global'))
+    .catch(error => console.warn('ack startup failed', error));
 }
 
 export async function listAudioProbes() {

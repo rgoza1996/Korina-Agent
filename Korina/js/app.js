@@ -1,11 +1,13 @@
 // Browser entrypoint: settings, recording controls, event wiring, and startup.
 
 import { state } from "./state.js";
+import { apiErrorMessage } from './api-errors.js';
 import { $, status, setDot, log, setSectionHidden, clamp } from "./dom.js";
 import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from "./labels.js";
 import {
   loadConfig, saveConfigNow, saveConfigSoon, health,
   activateSelectedProvider, initApp,
+  refreshProviderCapabilities,
   listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl,
 } from "./api.js";
 import {
@@ -20,7 +22,7 @@ import {
 } from "./settings-ui.js";
 import {
   loadCapabilities, getResponseLlmProviderCaps, getAgentProviderCaps,
-  setBaseUrlEditability, maybeApplyProviderPreset,
+  maybeApplyProviderPreset,
   loadModelOptions, loadAgentModelOptions,
 } from "./providers-ui.js";
 import { setCapabilityFilterOverride } from "./capability-filter.js";
@@ -59,7 +61,7 @@ Object.assign(window, {
   listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl,
   collectConfig, applyConfig, markActivity, syncConverseSettingsUI,
   loadCapabilities, getResponseLlmProviderCaps, getAgentProviderCaps,
-  setBaseUrlEditability, maybeApplyProviderPreset,
+  setBaseUrlEditability: refreshProviderCapabilities, maybeApplyProviderPreset,
   loadModelOptions, loadAgentModelOptions,
   setCapabilityFilterOverride,
   loadAcks, preloadAckBuffers, playRandomAck,
@@ -127,6 +129,7 @@ async function _closeSettingsImpl() {
       const changed = Object.keys(response).some(key => String(response[key] || 'off') !== String(snap[key] || 'off'));
       if (changed) {
         try {
+          if (!await refreshProviderCapabilities()) throw new Error('Provider capabilities are unavailable. Reopen Settings to retry.');
           status($('sttStatus'), `Applying settings: activating ${response.llm_provider}…`, 'warn');
           const result = await activateSelectedProvider(response.llm_provider, response.lm_model);
           const activation = result.activation;
@@ -148,7 +151,7 @@ async function _closeSettingsImpl() {
 async function openSettings() {
   $('settingsModal')?.classList.add('open');
   syncConverseSettingsUI();
-  await setBaseUrlEditability();
+  if (!await refreshProviderCapabilities()) return;
   loadAgentModelOptions();
 }
 
@@ -364,8 +367,8 @@ function wireSettingsInputs() {
   };
   const llmProviderEl = $('llmProvider');
   if (llmProviderEl) llmProviderEl.onchange = async () => {
+    if (!await refreshProviderCapabilities()) return;
     maybeApplyProviderPreset('llmProvider', 'llmBaseUrl');
-    await setBaseUrlEditability();
     syncConverseSettingsUI();
     status($('sttStatus'), 'Response provider will be activated when settings close.', 'warn');
     saveConfigSoon();
@@ -384,9 +387,9 @@ function wireSettingsInputs() {
   const sttLlmModelEl = $('sttLlmModel');
   if (sttLlmModelEl) sttLlmModelEl.onchange = () => { status($('sttStatus'), `Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
   const sttLlmProviderEl = $('sttLlmProvider');
-  if (sttLlmProviderEl) sttLlmProviderEl.onchange = async () => { maybeApplyProviderPreset('sttLlmProvider', 'sttLlmBaseUrl', { clearWhenBlank: true }); await setBaseUrlEditability(); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
+  if (sttLlmProviderEl) sttLlmProviderEl.onchange = async () => { if (!await refreshProviderCapabilities()) return; maybeApplyProviderPreset('sttLlmProvider', 'sttLlmBaseUrl', { clearWhenBlank: true }); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
   const sttLlmBaseUrlEl = $('sttLlmBaseUrl');
-  if (sttLlmBaseUrlEl) sttLlmBaseUrlEl.onchange = async () => { await setBaseUrlEditability(); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
+  if (sttLlmBaseUrlEl) sttLlmBaseUrlEl.onchange = async () => { if (!await refreshProviderCapabilities()) return; syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
   const sttLlmApiKeyEnvEl = $('sttLlmApiKeyEnv');
   if (sttLlmApiKeyEnvEl) sttLlmApiKeyEnvEl.onchange = () => { syncConverseSettingsUI(); loadModelOptions(); saveConfigSoon(); };
   const ttsDeviceEl = $('ttsDevice');
@@ -451,7 +454,7 @@ function wireUiHandlers() {
   bindClick('endpointsBtn', openEndpoints);
   bindClick('closeEndpointsBtn', closeEndpoints);
   bindClick('refreshEndpointsBtn', () => populateEndpoints().catch(e => console.warn('populateEndpoints failed:', e)));
-  bindClick('refreshAgentModelsBtn', () => loadAgentModelOptions());
+  bindClick('refreshAgentModelsBtn', async () => { if (await refreshProviderCapabilities()) await loadAgentModelOptions(); });
   bindClick('clearSessionBtn', () => clearSession());
   bindClick('recBtn', () => startRecording());
   bindClick('stopRecBtn', stopRecording);
@@ -522,7 +525,11 @@ if (clearBtn) {
 }
 
 // --- Boot ---
-await loadCapabilities().then(() => setBaseUrlEditability());
 wireUiHandlers();
 wireLocalModelsUi();
-initApp();
+void refreshProviderCapabilities();
+void initApp().catch(error => {
+  const message = 'Application startup failed: ' + apiErrorMessage(error);
+  $('settingsActionStatus').textContent = message;
+  status($('sttStatus'), message, 'bad');
+});

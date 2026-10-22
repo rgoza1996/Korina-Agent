@@ -101,3 +101,24 @@ test('a valid settings load still applies the config and records its provider sn
   assert.equal(state.appConfigSnapshot.llm_provider, 'lmstudio');
   assert.equal(element('settingsInfo').textContent, 'Loaded saved config.json settings.');
 });
+
+test('settings applied after capabilities use the saved provider editability without refetching metadata', async () => {
+  state._capabilitiesCache = {
+    providers: { 'openai-compatible': { editable_base_url: true }, 'llama.cpp': { editable_base_url: false } },
+    agentProviders: {},
+  };
+  element('llmProvider').value = 'llama.cpp';
+  element('llmBaseUrl').disabled = true;
+  let requests = 0;
+  globalThis.fetch = async url => {
+    requests++;
+    assert.equal(url, '/api/config');
+    return { ok: true, json: async () => ({ llm_provider: 'openai-compatible', llm_base_url: 'https://saved.example/v1' }) };
+  };
+  try {
+    await loadConfig();
+    assert.equal(element('llmBaseUrl').disabled, false);
+    assert.equal(element('llmBaseUrl').value, 'https://saved.example/v1');
+    assert.equal(requests, 1);
+  } finally { state._capabilitiesCache = null; }
+});
