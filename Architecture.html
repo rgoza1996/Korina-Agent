@@ -166,7 +166,7 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
 <h2>Refactor preview</h2>
 <ul><li>Shared transcription and payload/fallback logic reduces duplication across buffered, partial, and SSE routes. Blocking conversion/inference is delegated away from the async event loop.</li>
 <li>Bounded agent deliveries and reset protection prevent stale work from entering a cleared session. Priority rules are separated from orchestration.</li>
-<li>Validated schemas and request byte limits bound work before it reaches model services.</li>
+<li>Validated schemas and request byte limits bound work before it reaches model services. Read-only health audio limits drive browser capture deadlines and byte budgets; complete native files are preserved, idle files rotate, and oversize captures are discarded whole with recovery text.</li>
 <li>ACK generation has a bounded queue, generation epochs that suppress cleared work, and bounded atomic WAV publication. Explicit rebuild can run while ACK playback is off.</li>
 <li>The optional Kokoro service uses bounded inference admission and releases synthesis state on response completion or disconnect.</li>
 <li>Health aggregates server-resolved providers and readiness signals; frontend polling distinguishes transient misses, loading, and unavailable services.</li>
