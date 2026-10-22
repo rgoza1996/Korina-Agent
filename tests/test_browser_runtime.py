@@ -151,19 +151,26 @@ assert provider_processes.PROC_ROOT == before_proc
 
 
 def test_default_browser_server_fails_on_occupied_8765_without_reusing_it(tmp_path):
-    listener = socket.socket()
-    try:
-        try:
-            listener.bind(('127.0.0.1', 8765))
-            listener.listen()
-        except OSError as error:
-            if error.errno != errno.EADDRINUSE:
+    import fcntl
+
+    # Matrix processes share this default port. Keep a stable lock inode, even
+    # when each caller uses a different TMPDIR, and own the listener throughout.
+    lock_path = Path('/tmp') / f'korina-browser-8765-{os.getuid()}.lock'
+    with lock_path.open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with socket.socket() as listener:
+            try:
+                listener.bind(('127.0.0.1', 8765))
+                listener.listen()
+            except OSError as error:
+                if error.errno == errno.EADDRINUSE:
+                    raise AssertionError(
+                        'Cannot test occupied port 8765: an unrelated listener owns it; stop that listener and retry'
+                    ) from error
                 raise
-        result = subprocess.run([sys.executable, str(FIXTURES / 'browser_server.py')], cwd=REPO,
-                                env={**os.environ, 'TMPDIR': str(tmp_path)},
-                                capture_output=True, text=True, timeout=15)
-        assert result.returncode != 0
-        assert 'address already in use' in result.stderr.lower()
-        assert not list(tmp_path.glob('korina-browser-*'))
-    finally:
-        listener.close()
+            result = subprocess.run([sys.executable, str(FIXTURES / 'browser_server.py')], cwd=REPO,
+                                    env={**os.environ, 'TMPDIR': str(tmp_path)},
+                                    capture_output=True, text=True, timeout=15)
+            assert result.returncode != 0
+            assert 'address already in use' in result.stderr.lower()
+            assert not list(tmp_path.glob('korina-browser-*'))
