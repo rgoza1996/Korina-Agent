@@ -92,6 +92,10 @@ test('Stop settles a buffered native fetch before response headers arrive', asyn
 
 test('buffered interruption context waits for synthesis and follows the paused native media clock', async ({ page }) => {
   await loadBufferedPage(page, wavTone(4));
+  await page.evaluate(() => {
+    window.__bufferedPlaying = false;
+    document.getElementById('audio').addEventListener('playing', () => { window.__bufferedPlaying = true; }, { once: true });
+  });
   let release, requested = false;
   const held = new Promise(resolve => { release = resolve; });
   await page.route('http://speech.fixture/v1/audio/speech', async route => {
@@ -114,7 +118,9 @@ test('buffered interruption context waits for synthesis and follows the paused n
     expect(pending.context).toContain('about 0%');
     expect(pending.context).toContain(`Already spoken approximately: "". Not yet spoken approximately: "${text}"`);
     release();
-    await expect.poll(() => page.evaluate(() => !document.getElementById('audio').paused)).toBe(true);
+    // play() clears paused before metadata is available; wait for native
+    // playback to start before pausing and seeking its actual media clock.
+    await expect.poll(() => page.evaluate(() => window.__bufferedPlaying)).toBe(true);
     const paused = await page.evaluate(async () => {
       const audio = document.getElementById('audio');
       audio.pause();
