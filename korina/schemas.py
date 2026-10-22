@@ -24,6 +24,10 @@ def _validate_turn(turn: dict[str, str]) -> dict[str, str]:
         raise ValueError("Unsupported conversation role")
     if len(turn["content"]) > MAX_TEXT_LENGTH:
         raise ValueError(f"Turn content exceeds {MAX_TEXT_LENGTH} characters")
+    try:
+        turn["content"].encode('utf-8', errors='strict')
+    except UnicodeError as exc:
+        raise ValueError('Turn content must contain valid Unicode') from exc
     return turn
 
 
