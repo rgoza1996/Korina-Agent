@@ -347,7 +347,7 @@ function wireSettingsInputs() {
   const ttsDeviceEl = $('ttsDevice');
   if (ttsDeviceEl) ttsDeviceEl.onchange = () => { status($('ttsStatus'), `TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
   [
-    'ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmBaseUrl','llmApiKeyEnv',
+    'ttsProvider','ttsPort','ttsBaseUrl','ttsHealthUrl','ttsModel','llmBaseUrl','llmApiKeyEnv',
     'sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider',
     'agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens',
     'agentFirstDeliveryMode',

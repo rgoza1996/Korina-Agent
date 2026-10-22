@@ -63,6 +63,7 @@ export function collectConfig() {
     tts_provider: ttsProvider(),
     tts_port: ttsPort(),
     tts_base_url: String($('ttsBaseUrl')?.value || '').trim(),
+    tts_health_url: String($('ttsHealthUrl')?.value || '').trim(),
     tts_model: ttsModel(),
     llm_provider: llmProvider(),
     llm_base_url: llmBaseUrl(),
@@ -121,7 +122,17 @@ export function applyConfig(c = {}) {
   }
   if (c.lm_model && $('lmModel')) { if (!$('lmModel').querySelector(`option[value="${CSS.escape(c.lm_model)}"]`)) { const o = document.createElement('option'); o.value = c.lm_model; o.textContent = prettyModelLabel(c.lm_model); $('lmModel').appendChild(o); } $('lmModel').value = c.lm_model; }
   if (c.tts_device && $('ttsDevice')) $('ttsDevice').value = c.tts_device;
-  if (c.tts_provider && $('ttsProvider')) $('ttsProvider').value = c.tts_provider;
+  if (c.tts_provider && $('ttsProvider')) {
+    const select = $('ttsProvider');
+    if (!Array.from(select.options).some(option => option.value === c.tts_provider)) {
+      const option = document.createElement('option');
+      option.value = c.tts_provider;
+      option.textContent = `Saved provider: ${c.tts_provider} (Kokoro protocol required)`;
+      select.appendChild(option);
+    }
+    select.value = c.tts_provider;
+  }
+  if (c.tts_health_url !== undefined && $('ttsHealthUrl')) $('ttsHealthUrl').value = c.tts_health_url || '';
   if (c.tts_port && $('ttsPort')) $('ttsPort').value = c.tts_port;
   if (c.tts_base_url !== undefined && $('ttsBaseUrl')) $('ttsBaseUrl').value = c.tts_base_url || '';
   if (c.tts_model && $('ttsModel')) $('ttsModel').value = c.tts_model;

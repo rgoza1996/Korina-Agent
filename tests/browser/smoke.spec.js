@@ -195,6 +195,24 @@ test('unverified custom TTS has a warning pill and no runtime errors', async ({ 
   expect(errors).toEqual([]);
 });
 
+test('speech settings preserve a saved provider and round trip its custom health URL', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.tts_provider = 'saved-compatible-service';
+  scenario.config.tts_health_url = 'http://tts.example/old-health';
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#ttsProvider')).toHaveValue('saved-compatible-service');
+  await expect(page.locator('#ttsHealthUrl')).toHaveValue('http://tts.example/old-health');
+  await page.locator('#ttsHealthUrl').fill('http://tts.example/status');
+  await page.locator('#closeSettingsBtn').click();
+  await expect.poll(() => scenario.config.tts_health_url).toBe('http://tts.example/status');
+  expect(scenario.config.tts_provider).toBe('saved-compatible-service');
+  expect(scenario.activations).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
 test('changing voice with acknowledgements disabled does not enqueue synthesis', async ({ page, request }) => {
   const scenario = await mockProviders(page, request);
   await page.goto('/'); await waitForBoot(page);

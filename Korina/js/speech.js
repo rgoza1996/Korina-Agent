@@ -6,6 +6,9 @@ import { stripTranscriptLabels } from "./history.js";
 import { markActivity, ttsBaseUrl, ttsDevice, ttsModel, ttsProvider } from "./settings-ui.js";
 import { startBargeInCapture } from "./barge-in.js";
 
+let bufferedPlayback = null;
+let speechVersion = 0;
+
 // Audio context lifecycle
 export function ensureAudio() {
   if (!state.audioCtx) {
@@ -19,6 +22,7 @@ export function ensureAudio() {
 // TTS abort
 export function stopTtsNow() {
   if (state.controller) { try { state.controller.abort(); } catch {} state.controller = null; }
+  bufferedPlayback?.cancel();
   for (const s of state.activeSources) { try { s.stop(); } catch {} }
   state.activeSources = [];
   state.nextPlayTime = 0;
@@ -44,6 +48,7 @@ export async function schedulePcm(b64, sr = 24000) {
   const bin = atob(b64);
   const u8 = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  if (!u8.length) return 0;
   const i16 = new Int16Array(u8.buffer);
   const f32 = new Float32Array(i16.length);
   for (let i = 0; i < i16.length; i++) f32[i] = Math.max(-1, Math.min(1, i16[i] / 32768));
@@ -58,6 +63,7 @@ export async function schedulePcm(b64, sr = 24000) {
   src.onended = () => { state.activeSources = state.activeSources.filter(x => x !== src); };
   state.nextPlayTime = when + f32.length / sr;
   state.currentTtsEstimatedEnd = Math.max(state.currentTtsEstimatedEnd, state.nextPlayTime);
+  return f32.length;
 }
 
 // Streaming SSE speak
@@ -84,41 +90,95 @@ export async function speakSSE(text) {
     for (const line of lines) {
       if (!line.startsWith('data: ')) continue;
       const ev = JSON.parse(line.slice(6));
-      await schedulePcm(ev.audio, ev.sample_rate || 24000);
+      if (typeof ev.audio !== 'string') throw new Error('TTS stream chunk is missing PCM audio.');
+      const frames = await schedulePcm(ev.audio, ev.sample_rate || 24000);
+      if (!frames) continue;
       chunks++;
-      samples += ev.samples || 0;
+      samples += frames;
       const elapsed = (performance.now() - start) / 1000;
       $('progress').style.width = Math.min(99, 10 + chunks * 12) + '%';
       $('chunkInfo').textContent = `${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`;
     }
   }
+  if (!samples) throw new Error('TTS stream returned no audio samples.');
   $('progress').style.width = '100%';
   status($('ttsStatus'), `Done · ${chunks} chunks`, 'good');
 }
 
 // Buffered WAV speak
+function playBufferedAudio(blob, signal) {
+  signal.throwIfAborted();
+  const audio = $('audio');
+  const url = URL.createObjectURL(blob);
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const finish = (error) => {
+      if (finished) return;
+      finished = true;
+      audio.removeEventListener('ended', ended);
+      audio.removeEventListener('error', failed);
+      audio.removeEventListener('playing', playing);
+      signal.removeEventListener('abort', aborted);
+      if (bufferedPlayback?.url === url) bufferedPlayback = null;
+      try {
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+      if (error) reject(error);
+      else resolve();
+    };
+    const ended = () => finish();
+    const failed = () => finish(new Error(audio.error?.message || 'Buffered audio playback failed.'));
+    const aborted = () => finish(new DOMException('Speech playback interrupted.', 'AbortError'));
+    const playing = () => {
+      if (state.audioCtx && Number.isFinite(audio.duration)) {
+        state.currentTtsStartedAt = state.audioCtx.currentTime;
+        state.currentTtsEstimatedEnd = state.currentTtsStartedAt + audio.duration;
+      }
+    };
+    bufferedPlayback = { url, cancel: aborted };
+    audio.addEventListener('ended', ended);
+    audio.addEventListener('error', failed);
+    audio.addEventListener('playing', playing);
+    signal.addEventListener('abort', aborted, { once: true });
+    audio.src = url;
+    try {
+      Promise.resolve(audio.play()).catch(finish);
+    } catch (error) {
+      finish(error);
+    }
+  });
+}
+
 export async function speakBuffered(text) {
-  state.controller = new AbortController();
+  bufferedPlayback?.cancel();
+  const controller = new AbortController();
+  state.controller = controller;
   status($('ttsStatus'), 'Synthesizing full WAV…', 'warn');
   $('progress').style.width = '10%';
   const r = await fetch(`${ttsBaseUrl()}/v1/audio/speech`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ input: text, voice: $('voice').value, speed: parseFloat($('speed').value), device: ttsDevice(), model: ttsModel(), provider: ttsProvider() }),
-    signal: state.controller.signal
+    signal: controller.signal
   });
   if (!r.ok) throw new Error(await r.text());
   const blob = await r.blob();
-  $('audio').src = URL.createObjectURL(blob);
-  $('audio').play().catch(() => {});
+  controller.signal.throwIfAborted();
+  status($('ttsStatus'), 'Playing buffered WAV…', 'warn');
+  await playBufferedAudio(blob, controller.signal);
   $('progress').style.width = '100%';
-  status($('ttsStatus'), 'Done · buffered WAV ready', 'good');
+  status($('ttsStatus'), 'Done · buffered playback complete', 'good');
 }
 
 // Speak entrypoint
 export async function speakText(text, wait = false) {
   text = stripTranscriptLabels(text);
   if (!text.trim()) return;
+  const version = ++speechVersion;
   markActivity('korina-speech-start');
   $('playBtn').disabled = true;
   $('stopBtn').disabled = false;
@@ -136,23 +196,25 @@ export async function speakText(text, wait = false) {
     if (wait && state.mode === 'sse') await waitForScheduledAudio();
   } catch (e) {
     if (e.name === 'AbortError') {
-      status($('ttsStatus'), 'Interrupted');
+      if (version === speechVersion) status($('ttsStatus'), 'Interrupted');
       return;
     } else {
-      status($('ttsStatus'), 'Error: ' + e.message, 'bad');
+      if (version === speechVersion) status($('ttsStatus'), 'Error: ' + e.message, 'bad');
       throw e;
     }
   } finally {
-    if (!state.handlingBarge) {
-      state.ttsSpeaking = false;
-      if (state.bargeLoopId) cancelAnimationFrame(state.bargeLoopId);
-      state.bargeLoopId = null;
-      if (state.bargeRecorder && state.bargeRecorder.state !== 'inactive') state.bargeRecorder.stop();
+    if (version === speechVersion) {
+      if (!state.handlingBarge) {
+        state.ttsSpeaking = false;
+        if (state.bargeLoopId) cancelAnimationFrame(state.bargeLoopId);
+        state.bargeLoopId = null;
+        if (state.bargeRecorder && state.bargeRecorder.state !== 'inactive') state.bargeRecorder.stop();
+      }
+      markActivity('korina-speech-end');
+      $('playBtn').disabled = false;
+      $('stopBtn').disabled = true;
+      state.controller = null;
     }
-    markActivity('korina-speech-end');
-    $('playBtn').disabled = false;
-    $('stopBtn').disabled = true;
-    state.controller = null;
   }
 }
 

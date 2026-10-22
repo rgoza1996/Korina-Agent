@@ -89,9 +89,11 @@
           <div class="settingsGroupBody">
             <p class="sectionLead">Current TTS controls stay the same. The slider below controls how much continuous speech counts as a real turn before Korina answers.</p>
             <div><label for="ttsDevice">Text-to-speech device</label><select id="ttsDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
-            <div><label for="ttsProvider">TTS provider</label><select id="ttsProvider"><option value="kokoro" selected>Kokoro-compatible</option><option value="openai-compatible">OpenAI-compatible / cloud</option><option value="custom">Custom compatible endpoint</option></select></div>
+            <div><label for="ttsProvider">Speech service</label><select id="ttsProvider"><option value="kokoro" selected>Kokoro service</option><option value="custom">Custom Kokoro-compatible service</option></select></div>
             <div><label for="ttsPort">TTS port</label><input id="ttsPort" type="number" min="1" max="65535" value="8880"></div>
-            <div><label for="ttsBaseUrl">TTS base URL override</label><input id="ttsBaseUrl" type="text" placeholder="blank = this host + TTS port"></div>
+            <div><label for="ttsBaseUrl">Speech service root URL (without /v1)</label><input id="ttsBaseUrl" type="text" placeholder="http://127.0.0.1:8880"></div>
+            <p class="fieldHint">Use a Kokoro-compatible service with browser access enabled. Authenticated cloud speech services are not supported.</p>
+            <div><label for="ttsHealthUrl">Optional service health URL</label><input id="ttsHealthUrl" type="text" placeholder="blank = /health for Kokoro"><div class="fieldHint">Custom services stay unverified until a working health URL is configured.</div></div>
             <div><label for="ttsModel">TTS model / engine</label><input id="ttsModel" type="text" value="kokoro" placeholder="kokoro, gpt-4o-mini-tts, etc."></div>
             <div>
               <label for="minSpeechMs">Minimum continuous speech before accepting voice input</label>

@@ -18,7 +18,7 @@ npm run test:browser
 
 The Python suite uses a temporary runtime tree and fake provider/model boundaries. It needs no Whisper/Kokoro weights, GPU, external LLM, or working systemd session. JavaScript tests execute native modules under Node and exercise health failure recovery, agent delivery, and pending-report handling. Playwright serves the actual app in Chromium and checks boot, settings persistence/failure, independent providers, and channel selection; ESLint rejects undefined references across the frontend.
 
-CI runs Python 3.10–3.13, coverage artifacts, JavaScript lint/tests on Node 22, Python lint/type checks, real Chromium smoke, and source/wheel builds. An isolated wheel check verifies that installed UI assets exist outside the source checkout. Tests are hosted on Linux; process management and user services are Linux-specific. Foreground API operation does not require systemd.
+CI runs Python 3.10–3.13, coverage artifacts, JavaScript lint/tests on Node 22, Python lint/type checks, real Chromium smoke, and source/wheel builds. An isolated wheel check verifies that installed UI assets exist outside the source checkout. Hosted jobs pin Ubuntu 24.04 for a stable native-runtime base; process management and user services are Linux-specific. Foreground API operation does not require systemd.
 
 ## Current verification checkpoint
 

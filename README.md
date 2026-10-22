@@ -34,6 +34,8 @@ Kokoro loads its pipeline on first speech. Its dependencies may download model w
 
 Browser microphone access needs localhost or a secure context. For a remote demo, serve the UI over HTTPS and configure the browser-visible TTS URL and allowed origins. The local control API assumes a trusted environment; provider activation can manage local processes. Do not expose it directly to the public internet.
 
+Browser speech uses the Kokoro service protocol: PCM SSE at `/stream/speech` and WAV at `/v1/audio/speech`, relative to the service root. Custom services must support those endpoints, browser CORS, and unauthenticated access. Authenticated cloud TTS is not implemented. Settings includes an optional health URL for compatible custom services.
+
 ## Install a built wheel
 
 ```bash
