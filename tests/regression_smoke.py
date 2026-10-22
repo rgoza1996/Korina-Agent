@@ -31,7 +31,6 @@ import argparse
 import json
 import os
 import sys
-import time
 import urllib.error
 import urllib.request
 import wave
@@ -545,7 +544,7 @@ def test_frontend_uses_capabilities():
         print(f"  [FAIL] frontend uses capabilities: {type(e).__name__}: {e}")
         _FAILURES[0] += 1
         return
-    print(f"  [PASS] frontend uses capabilities: loadCapabilities + helpers present, legacy constant removed")
+    print("  [PASS] frontend uses capabilities: loadCapabilities + helpers present, legacy constant removed")
 
 
 def test_frontend_set_base_url_editability_for_agent():
@@ -569,7 +568,7 @@ def test_frontend_set_base_url_editability_for_agent():
         print(f"  [FAIL] frontend setBaseUrlEditability for agent: {type(e).__name__}: {e}")
         _FAILURES[0] += 1
         return
-    print(f"  [PASS] frontend setBaseUrlEditability for agent: agentBaseUrl wired, getAgentProviderCaps present")
+    print("  [PASS] frontend setBaseUrlEditability for agent: agentBaseUrl wired, getAgentProviderCaps present")
 
 
 def test_frontend_initial_sync_uses_capabilities():
@@ -601,7 +600,7 @@ def test_frontend_initial_sync_uses_capabilities():
         print(f"  [FAIL] frontend initial sync uses capabilities: {type(e).__name__}: {e}")
         _FAILURES[0] += 1
         return
-    print(f"  [PASS] frontend initial sync uses capabilities: top-level loadCapabilities().then() present, initApp untouched")
+    print("  [PASS] frontend initial sync uses capabilities: top-level loadCapabilities().then() present, initApp untouched")
 
 def test_capabilities_anthropic_default_and_editability():
     """Phase 2.3.2 -- pin the editable_base_url contract across all providers.
@@ -1047,7 +1046,6 @@ def test_frontend_multimodal_stt_filter() -> bool:
     served providers-ui.js must import from capability-filter.js.
     Returns True on success.
     """
-    import re
 
     # 1. Toggle in index.html.
     try:

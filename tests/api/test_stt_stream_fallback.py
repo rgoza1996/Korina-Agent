@@ -6,7 +6,6 @@ from types import SimpleNamespace
 def _sse_events(text: str):
     """Parse the simple SSE shape emitted by korina.services.whisper_service.sse_event."""
     events = []
-    current = {}
     for block in text.strip().split("\n\n"):
         if not block.strip():
             continue
