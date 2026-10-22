@@ -223,8 +223,15 @@ def test_builtin_timeout_does_not_deliver_prior_worker_report_to_next_turn(confi
     agent_service.shutdown_agent_worker()
     monkeypatch.setattr(gateway, '_active', KorinaAgentAdapter())
     ch = korina_channel.KorinaConverseChannel()
-    started, release = threading.Event(), threading.Event()
+    started, release, drained = threading.Event(), threading.Event(), threading.Event()
     calls = []
+    drain = agent_service._drain_transcript_jobs
+
+    def track_drain(*args):
+        try:
+            return drain(*args)
+        finally:
+            drained.set()
 
     def report(req, **kwargs):
         text = req.transcript[-1]['content']
@@ -235,6 +242,7 @@ def test_builtin_timeout_does_not_deliver_prior_worker_report_to_next_turn(confi
         return 'Priority: normal\nReport for ' + text
 
     monkeypatch.setattr(agent_service, 'generate_agent_state_report', report)
+    monkeypatch.setattr(agent_service, '_drain_transcript_jobs', track_drain)
 
     async def exercise():
         assert (await ch.send(request('first'))).error == 'timeout'
@@ -242,7 +250,13 @@ def test_builtin_timeout_does_not_deliver_prior_worker_report_to_next_turn(confi
         assert 'recovery required' in (await ch.send(request('second'))).error
         assert agent_service._queued_prompt is None
         await ch.cancel()
+        rejected = await ch.send(request('still draining'))
+        assert 'submit rejected' in rejected.error and 'busy' in rejected.error
+        assert calls == ['first']
+        assert agent_service._queued_prompt is None
         release.set()
+        assert await asyncio.to_thread(drained.wait, 2), 'the retired worker must finish before retry'
+        assert agent_service._worker_running is False
         monkeypatch.setattr(korina_channel, '_MAX_POLL_SECONDS', 1)
         response = await ch.send(request('fresh'))
         assert response.text == 'Priority: normal\nReport for fresh'

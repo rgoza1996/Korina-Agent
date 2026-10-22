@@ -49,7 +49,9 @@ def test_queued_suffix_matches_original_json_list_exactly(size):
 
 
 def test_invalid_unicode_is_a_bounded_error_without_echoing_input():
-    req = AgentStateRequest(transcript=[{'role': 'user', 'content': 'private-\ud800'}])
+    # HTTP/ordinary constructors reject this already; exercise the builder's
+    # defensive guard against an invalid internal instance explicitly.
+    req = AgentStateRequest.model_construct(transcript=[{'role': 'user', 'content': 'private-\ud800'}])
     with pytest.raises(ValueError, match='valid Unicode') as caught:
         build_agent_context(req, {})
     assert 'private' not in str(caught.value)
