@@ -19,7 +19,7 @@ export function llmProvider() { return $('llmProvider')?.value || 'llama.cpp' }
 export function llmBaseUrl() { return $('llmBaseUrl')?.value || 'http://127.0.0.1:8080/v1' }
 export function sttModel() { return $('sttModel')?.value || 'base.en' }
 export function sttBackend() { return $('sttBackend')?.value || 'whisper' }
-export function lmModel() { return $('lmModel')?.value || 'qwen3.5-2b-uncensored-hauhaucs-aggressive' }
+export function lmModel() { return $('lmModel')?.value || '' }
 export function sttLlmProvider() { return String($('sttLlmProvider')?.value || '').trim() }
 export function sttLlmBaseUrl() { return String($('sttLlmBaseUrl')?.value || '').trim() }
 export function sttLlmApiKeyEnv() { return String($('sttLlmApiKeyEnv')?.value || '').trim() }
@@ -211,6 +211,7 @@ export function applyConfig(c = {}) {
     llm_provider: c.llm_provider,
     lm_model: c.lm_model,
     llm_base_url: c.llm_base_url,
+    llm_reasoning: c.llm_reasoning || 'off',
     stt_llm_provider: c.stt_llm_provider,
     stt_llm_base_url: c.stt_llm_base_url,
     stt_llm_model: c.stt_llm_model,
@@ -244,8 +245,7 @@ export function nextIdleDelayMs() {
 // Populates the Channel dropdown in the Settings modal from
 // GET /api/converse/channels. Switching is a POST to
 // /api/converse/channel/{name}. The active state is in-process; it does
-// NOT persist across service restarts (the registry is re-seeded with
-// the default "korina" channel on startup).
+// persisted to config.json and restored on service startup.
 //
 // Returns a Promise. Callers MUST attach `.catch(...)` or `await` it
 // inside try/catch — fire-and-forget invocations swallow rejection
@@ -332,7 +332,7 @@ export async function populateChannelTab() {
 
   if (hint) {
     hint.textContent = active
-      ? `Active: ${active}. Restart resets to "korina".`
+      ? `Active: ${active}. Selection is saved for the next restart.`
       : `Default: ${channels[0]}. Switch the active channel by selecting another.`;
   }
 }
@@ -344,7 +344,7 @@ export async function saveChannelSelection() {
   try {
     const r = await fetch(`/api/converse/channel/${encodeURIComponent(select.value)}`, { method: "POST" });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    if (hint) hint.textContent = `Switched to: ${select.value}. In-process; resets to "korina" on restart.`;
+    if (hint) hint.textContent = `Switched to: ${select.value}. Selection is saved for the next restart.`;
     await populateChannelTab();
   } catch (err) {
     if (hint) hint.textContent = `Switch failed: ${err.message}`;
@@ -367,7 +367,7 @@ export function syncConverseSettingsUI() {
   $('llmResponseSection')?.classList.toggle('settingsDisabled', multimodal);
   if ($('llmResponseSection')) $('llmResponseSection').open = !multimodal;
   syncReasoningHints();
-  $('settingsInfo').textContent = multimodal
+  $('modelOptionsStatus').textContent = multimodal
     ? `Multimodal STT selected. STT model endpoint resolves to ${effectiveSttLlmBaseUrl() || 'the LLM Response base URL'} and falls back to the LLM Response section when STT-specific fields are blank.`
     : 'Whisper is built into Korina. Open a model picker to query its current /v1/models endpoint or the local llama.cpp model catalog.';
 }

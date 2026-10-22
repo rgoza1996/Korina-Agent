@@ -101,6 +101,8 @@ def test_apply_config_snapshot_uses_parameter_not_undefined_var():
         # Skip if the line is itself a nested object opening (no key).
         if not key.replace("_", "").isidentifier():
             continue
+        # String literals are values, not free identifiers (for example 'off').
+        rhs = re.sub(r"'([^'\\]|\\.)*'|\"([^\"\\]|\\.)*\"", "", rhs)
         # Extract identifiers from the RHS only.
         for ident in re.findall(r"\b([a-zA-Z_$][\w$]*)\b", rhs):
             if ident in safe_globals:

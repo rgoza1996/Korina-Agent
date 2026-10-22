@@ -2,7 +2,7 @@ import globals from 'globals';
 
 export default [
   {
-    files: ['Korina/js/**/*.js', 'tests/js/**/*.mjs'],
+    files: ['Korina/js/**/*.js', 'tests/js/**/*.mjs', 'tests/browser/**/*.js', 'playwright.config.js'],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',

@@ -2,14 +2,14 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
 import {
-  askLM, deliverTranscriptToAgent, handleAgentEvent, pollAgentEvents,
+  askLM, askAndSpeak, deliverTranscriptToAgent, handleAgentEvent, pollAgentEvents,
 } from '../../Korina/js/agent-ui.js';
 
 const elements = new Map();
 globalThis.document = { getElementById(id) {
-  if (!elements.has(id)) elements.set(id, { value: '', checked: false, textContent: '', className: '' });
+  if (!elements.has(id)) elements.set(id, { value: '', checked: false, textContent: '', className: '', appendChild() {} });
   return elements.get(id);
-} };
+}, createElement: () => ({}) };
 const element = id => document.getElementById(id);
 
 beforeEach(() => {
@@ -87,7 +87,7 @@ test('event polling advances the active cursor and stores the next report', asyn
   state.agentEventCursor = 7;
   globalThis.fetch = async url => {
     assert.equal(url, '/api/agent/events?after=7');
-    return { json: async () => ({ events: [
+    return { ok: true, json: async () => ({ events: [
       { id: 8, type: 'agent_status', busy: false },
       { id: 9, type: 'state_report', priority: 'normal', report: 'Ready for the next turn.' },
     ] }) };
@@ -194,4 +194,65 @@ test('a newer report arriving during a chat request is preserved even if its tex
   finish({ ok: true, json: async () => ({ reply: 'Understood.' }) });
   assert.equal(await pending, 'Understood.');
   assert.equal(state.pendingAgentStateReport, 'Latest status.');
+});
+
+test('agent injection stays within the message limit without truncating the user turn', async () => {
+  state.pendingAgentStateReport = 'r'.repeat(8192);
+  const userMessage = 'u'.repeat(8100);
+  let payload;
+  globalThis.fetch = async (url, options) => {
+    payload = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ reply: 'Understood.' }) };
+  };
+  await askLM(userMessage);
+  assert.equal([...payload.message].length, 8192);
+  assert.equal(payload.message.endsWith(userMessage), true);
+  assert.match(payload.message, /^Injection:/);
+});
+
+test('a full-length user turn keeps an agent report queued when no injection space remains', async () => {
+  state.pendingAgentStateReport = 'Keep this for a shorter turn.';
+  const userMessage = 'u'.repeat(8192);
+  let payload;
+  globalThis.fetch = async (url, options) => {
+    payload = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ reply: 'Understood.' }) };
+  };
+  await askLM(userMessage);
+  assert.equal(payload.message, userMessage);
+  assert.equal(state.pendingAgentStateReport, 'Keep this for a shorter turn.');
+});
+
+test('overlapping event polls cannot deliver old events into a cleared session', async () => {
+  let finish;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return new Promise(resolve => { finish = resolve; }); };
+  const pending = pollAgentEvents();
+  await pollAgentEvents();
+  state.agentSession++;
+  state.agentEventCursor = 0;
+  state.pendingAgentStateReport = '';
+  finish({ ok: true, json: async () => ({ events: [
+    { id: 99, type: 'state_report', priority: 'normal', report: 'Old session report.' },
+  ] }) });
+  await pending;
+  assert.equal(calls, 1);
+  assert.equal(state.agentEventCursor, 0);
+  assert.equal(state.pendingAgentStateReport, '');
+});
+
+test('a chat response from a cleared session cannot append or speak its reply', async () => {
+  let finish;
+  const requests = [];
+  globalThis.fetch = async url => { requests.push(url); return new Promise(resolve => { finish = resolve; }); };
+  const pending = askAndSpeak('Old user turn.');
+  await new Promise(setImmediate);
+  state.agentSession++;
+  state.history = [];
+  element('text').value = '';
+  finish({ ok: true, json: async () => ({ reply: 'Old reply must be ignored.' }) });
+  assert.equal(await pending, null);
+  assert.deepEqual(state.history, []);
+  assert.equal(element('text').value, '');
+  assert.deepEqual(requests, ['/api/chat']);
 });

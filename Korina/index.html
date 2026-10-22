@@ -59,7 +59,7 @@
             <p class="sectionLead">Standard response model settings for Korina Converse.</p>
             <p class="small mono" id="llmReasoningHint">Reasoning: off.</p>
             <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
-            <div><label for="lmModel">Model</label><select id="lmModel"><option value="qwen3.5-2b-uncensored-hauhaucs-aggressive">qwen3.5-2b-uncensored-hauhaucs-aggressive</option></select></div>
+            <div><label for="lmModel">Model</label><select id="lmModel"><option value="">Select a response model</option></select></div>
             <div><label for="llmBaseUrl">Base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:8080/v1"></div>
             <div><label for="llmApiKeyEnv">API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
             <div class="secretNote"><label>Advanced</label><div class="toggleLine"><input id="llmReasoningEnabled" type="checkbox"><span>Allow response model reasoning / thinking</span></div></div>
@@ -106,7 +106,7 @@
         <details class="settingsGroup" open>
           <summary>Converse Channel</summary>
           <div class="settingsGroupBody">
-            <p class="sectionLead">Select which ConverseChannel adapter serves traffic. The default <code>korina</code> is the in-process Korina Agent. Switches are in-process and do not persist across restarts.</p>
+            <p class="sectionLead">Select which ConverseChannel adapter serves traffic. The default <code>korina</code> is the in-process Korina Agent. The selected channel is saved and restored when Korina restarts.</p>
             <div><label for="channelSelect">Active channel</label><select id="channelSelect"></select></div>
             <p class="small mono" id="channelSelectHint">Loading registered channels&hellip;</p>
           </div>
@@ -152,7 +152,11 @@
         <div><label for="agentEnableSkillCommands">Skill commands</label><select id="agentEnableSkillCommands"><option value="on" selected>On</option><option value="off">Off</option></select></div>
         <div><label for="agentBlockImages">Block images</label><select id="agentBlockImages"><option value="off" selected>Off</option><option value="on">On</option></select></div>
       </div>
-      <p class="small mono" id="settingsInfo">Model pickers query the currently configured /v1/models endpoints when you open them. Endpoint and timing settings save to config.json. <span id="settingsLiveStatus"></span></p>
+      <p class="small mono"><span id="settingsInfo">Loading saved settings…</span><br>
+        <span id="settingsLiveStatus"></span><br>
+        <span id="modelOptionsStatus"></span><br>
+        <span id="settingsActionStatus" role="status" aria-live="polite"></span>
+      </p>
       <button id="clearProbeBtn" style="display:none;">Clear audio probe and retry</button>
       <div class="actions"><button id="saveSettingsBtn">Done</button></div>
     </div>
@@ -203,7 +207,7 @@
 
   <section class="card">
     <label for="text">3. Reply / text to speak</label>
-    <textarea id="text" placeholder="Korina's latest reply or text to speak appears here.">Hello, this is Kokoro running through the Roggoz FastAPI streaming server.</textarea>
+    <textarea id="text" placeholder="Korina's latest reply or text to speak appears here.">Hello, I’m Korina. I’m ready to help with your next idea.</textarea>
     <div class="grid" style="margin-top:12px">
       <div><label for="voice">Voice</label><select id="voice"><option selected>af_heart</option><option>af_bella</option><option>af_nicole</option><option>af_sarah</option><option>af_sky</option><option>am_adam</option><option>am_michael</option><option>bf_emma</option><option>bf_george</option></select></div>
       <div><label for="speed">Speed <span id="speedDisplay">1.0×</span></label><input id="speed" type="range" min="0.5" max="2" step="0.1" value="1"></div>

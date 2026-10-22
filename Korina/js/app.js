@@ -16,7 +16,7 @@ import {
   sttDevice, sttModel, sttBackend,
   llmProvider, llmBaseUrl, lmModel,
   sttLlmModel, effectiveSttLlmModel, effectiveSttLlmBaseUrl, effectiveSttLlmProvider,
-  finalSttMode, endpointMode, minSpeechMs, partialWindowMsSetting,
+  finalSttMode, endpointMode, minSpeechMs, partialWindowMsSetting, llmReasoningEnabled,
 } from "./settings-ui.js";
 import {
   loadCapabilities, getResponseLlmProviderCaps, getAgentProviderCaps,
@@ -102,69 +102,44 @@ function closeSettings() {
   void _closeSettingsImpl().catch(e => {
     console.error('closeSettings background apply failed:', e);
     try {
-      $('settingsInfo').textContent = 'Settings apply failed: ' + (e.message || e);
+      $('settingsActionStatus').textContent = 'Settings apply failed: ' + (e.message || e);
       status($('sttStatus'), 'Settings apply failed: ' + (e.message || e), 'bad');
     } catch (_) {}
   });
 }
 
+let settingsApplyInFlight = null;
+let settingsApplyQueued = false;
+
 async function _closeSettingsImpl() {
-  // Persist any unsaved field changes first. saveConfigNow() is a no-op
-  // if the form values already match what's on disk; the activation
-  // diff below is what we actually care about.
-  try {
-    await saveConfigNow();
-  } catch (e) {
-    console.warn('saveConfigNow failed during modal close:', e);
-  }
-
-  // Compare provider-affecting form fields against the last-loaded
-  // config snapshot. If anything that changes which server / model is
-  // serving requests has changed, run /api/llm/provider/activate so the
-  // running backend reflects the new choice.
-  const snap = state.appConfigSnapshot || {};
-  const llmChanged =
-    llmProvider() !== (snap.llm_provider || '') ||
-    lmModel() !== (snap.lm_model || '') ||
-    llmBaseUrl() !== (snap.llm_base_url || '');
-  const sttChanged =
-    effectiveSttLlmProvider() !== (snap.stt_llm_provider || '') ||
-    effectiveSttLlmBaseUrl() !== (snap.stt_llm_base_url || '') ||
-    sttLlmModel() !== (snap.stt_llm_model || '');
-
-  if (llmChanged || sttChanged) {
-    try {
-      const provider = sttChanged && !llmChanged ? effectiveSttLlmProvider() : llmProvider();
-      const model = sttChanged && !llmChanged ? effectiveSttLlmModel() : lmModel();
-      status($('sttStatus'), `Applying settings: activating ${provider}…`, 'warn');
-      const j = await activateSelectedProvider(provider, model);
-      $('settingsInfo').textContent = `Activated ${j.activation.provider}. Started ${j.activation.started.join(', ') || 'nothing'}; stopped ${j.activation.stopped.join(', ') || 'nothing'}.`;
-      // Refresh the snapshot so subsequent closes don't re-activate
-      // the same change.
-      state.appConfigSnapshot = {
-        llm_provider: llmProvider(),
-        lm_model: lmModel(),
-        llm_base_url: llmBaseUrl(),
-        stt_llm_provider: effectiveSttLlmProvider(),
-        stt_llm_base_url: effectiveSttLlmBaseUrl(),
-        stt_llm_model: sttLlmModel(),
-        tts_provider: ttsProvider(),
-        tts_base_url: String($('ttsBaseUrl')?.value || '').trim(),
-        tts_port: ttsPort(),
-        tts_model: ttsModel(),
+  settingsApplyQueued = true;
+  if (settingsApplyInFlight) return settingsApplyInFlight;
+  settingsApplyInFlight = (async () => {
+    do {
+      settingsApplyQueued = false;
+      await saveConfigNow(); // A failed save must prevent provider side effects.
+      const response = {
+        llm_provider: llmProvider(), lm_model: lmModel(), llm_base_url: llmBaseUrl(),
+        llm_reasoning: llmReasoningEnabled(),
       };
-    } catch (e) {
-      $('settingsInfo').textContent = 'Provider activation failed: ' + e.message;
-      status($('sttStatus'), 'Provider activation failed: ' + e.message, 'bad');
-      console.warn('activateSelectedProvider failed during modal close:', e);
-    }
-  }
-
-  // Refresh the debug strip so the pills reflect the new state.
-  // Wrapped in its own try so a health() failure cannot escape the
-  // inner function and prevent the outer closeSettings from hiding
-  // the modal.
-  try { await health(); } catch (e) { console.warn('health refresh failed:', e); }
+      const snap = state.appConfigSnapshot || {};
+      const changed = Object.keys(response).some(key => String(response[key] || 'off') !== String(snap[key] || 'off'));
+      if (changed) {
+        try {
+          status($('sttStatus'), `Applying settings: activating ${response.llm_provider}…`, 'warn');
+          const result = await activateSelectedProvider(response.llm_provider, response.lm_model);
+          const activation = result.activation;
+          $('settingsActionStatus').textContent = `Activated ${activation.provider}. Started ${(activation.started || []).join(', ') || 'nothing'}; stopped ${(activation.stopped || []).join(', ') || 'nothing'}.`;
+          state.appConfigSnapshot = { ...snap, ...response };
+        } catch (e) {
+          throw new Error('Provider activation failed: ' + e.message);
+        }
+      }
+      // STT-only changes are saved without repurposing the response LLM endpoint.
+      await health();
+    } while (settingsApplyQueued);
+  })().finally(() => { settingsApplyInFlight = null; });
+  return settingsApplyInFlight;
 }
 
 async function openSettings() {
@@ -319,7 +294,7 @@ function wireSettingsInputs() {
       : 'Built-in Whisper selected.';
     syncConverseSettingsUI();
     status($('sttStatus'), msg, 'warn');
-    $('settingsInfo').textContent = msg;
+    $('modelOptionsStatus').textContent = msg;
     health();
     saveConfigSoon();
   };
@@ -328,37 +303,20 @@ function wireSettingsInputs() {
     maybeApplyProviderPreset('llmProvider', 'llmBaseUrl');
     await setBaseUrlEditability();
     syncConverseSettingsUI();
-    status($('sttStatus'), `Switching response provider to ${llmProvider()}…`, 'warn');
-    await saveConfigNow();
-    try {
-      const j = await activateSelectedProvider(llmProvider(), lmModel());
-      $('settingsInfo').textContent = `Activated ${j.activation.provider}. Started ${j.activation.started.join(', ') || 'nothing'}; stopped ${j.activation.stopped.join(', ') || 'nothing'}.`;
-    } catch (e) {
-      $('settingsInfo').textContent = 'Provider activation failed: ' + e.message;
-      status($('sttStatus'), 'Provider activation failed: ' + e.message, 'bad');
-    }
-    await loadModelOptions(true);
-    await loadAgentModelOptions();
-    health();
+    status($('sttStatus'), 'Response provider will be activated when settings close.', 'warn');
     saveConfigSoon();
+    await loadModelOptions(true);
   };
   const lmModelEl = $('lmModel');
-  if (lmModelEl) lmModelEl.onchange = async () => {
-    if (!sttLlmModel()) syncConverseSettingsUI();
-    status($('sttStatus'), `LLM response model set to ${prettyModelLabel(lmModel())}.`, 'warn');
-    await saveConfigNow();
-    if (llmProvider() === 'llama.cpp') {
-      try {
-        const j = await activateSelectedProvider('llama.cpp', lmModel());
-        $('settingsInfo').textContent = `Reloaded llama.cpp with ${prettyModelLabel(j.activation.model)}.`;
-        await loadModelOptions(true);
-      } catch (e) {
-        $('settingsInfo').textContent = 'llama.cpp reload failed: ' + e.message;
-        status($('sttStatus'), 'llama.cpp reload failed: ' + e.message, 'bad');
-      }
-    }
+  if (lmModelEl) lmModelEl.onchange = () => {
+    syncConverseSettingsUI();
+    status($('sttStatus'), `Response model set to ${prettyModelLabel(lmModel())}; apply by closing settings.`, 'warn');
     saveConfigSoon();
   };
+  for (const id of ['llmReasoningEnabled', 'sttLlmReasoningEnabled']) {
+    const control = $(id);
+    if (control) control.onchange = () => { syncConverseSettingsUI(); saveConfigSoon(); };
+  }
   const sttLlmModelEl = $('sttLlmModel');
   if (sttLlmModelEl) sttLlmModelEl.onchange = () => { status($('sttStatus'), `Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
   const sttLlmProviderEl = $('sttLlmProvider');
@@ -397,15 +355,21 @@ function wireSettingsInputs() {
     state.ackFiles = [];
     state.ackBuffers = [];
     state.ackBuffersByTag = {};
-    status($('sttStatus'), `Voice changed to ${voice.value}. Clearing old ack cache and queueing fresh acks for this voice…`, 'warn');
-    try {
-      const r = await fetch('/api/acks/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voice: voice.value, clear: true }) });
-      const j = await r.json();
-      $('transcriptInfo').textContent = `Ack rebuild for ${j.voice}: removed ${j.removed}, missing/queued ${j.queued_or_missing}.`;
-    } catch (e) { console.warn('ack rebuild failed', e); }
+    const acksEnabled = $('ackEnabled').value === 'on';
+    if (acksEnabled) {
+      status($('sttStatus'), `Voice changed to ${voice.value}. Rebuilding acknowledgement phrases…`, 'warn');
+      try {
+        const response = await fetch('/api/acks/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voice: voice.value, clear: true }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+        $('transcriptInfo').textContent = `Ack rebuild for ${result.voice}: removed ${result.removed}, missing/queued ${result.queued_or_missing}.`;
+      } catch (error) { console.warn('ack rebuild failed', error); }
+      setTimeout(() => loadAcks('global'), 1500);
+    } else {
+      status($('sttStatus'), `Voice changed to ${voice.value}. Acknowledgement phrases are disabled.`, 'good');
+    }
     saveConfigSoon();
     markActivity('voice-change');
-    setTimeout(() => loadAcks('global'), 1500);
   };
   const finalSttModeEl = $('finalSttMode');
   if (finalSttModeEl) finalSttModeEl.onchange = () => { status($('sttStatus'), `Finalization mode: ${finalSttMode() === 'chunks' ? 'live chunks only' : 'full utterance final pass'}.`, 'warn'); saveConfigSoon(); };
@@ -425,7 +389,7 @@ function wireUiHandlers() {
   bindClick('endpointsBtn', openEndpoints);
   bindClick('closeEndpointsBtn', closeEndpoints);
   bindClick('refreshEndpointsBtn', () => populateEndpoints().catch(e => console.warn('populateEndpoints failed:', e)));
-  bindClick('refreshAgentModelsBtn', () => loadAgentModelOptions());
+  bindClick('refreshAgentModelsBtn', () => saveConfigNow().then(() => loadAgentModelOptions()).catch(error => { $('settingsActionStatus').textContent = `Settings save failed: ${error.message}`; }));
   bindClick('clearSessionBtn', () => clearSession());
   bindClick('recBtn', () => startRecording());
   bindClick('stopRecBtn', stopRecording);

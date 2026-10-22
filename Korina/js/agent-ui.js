@@ -7,8 +7,11 @@ import { agentEnabled, lmModel, llmReasoningEnabled } from "./settings-ui.js";
 import { speakText, stopTtsNow } from "./speech.js";
 
 // Priority lookup table.
+// Keep this ceiling aligned with ChatRequest.message on the backend.
+const MAX_CHAT_MESSAGE_CHARS = 8192;
 const priorityRank = { low: 0, normal: 1, important: 2, critical: 3 };
 let deliveryInFlight = false;
+let eventPollInFlight = false;
 
 function queueAgentReport(report) {
   state.pendingAgentStateReport = report;
@@ -122,15 +125,24 @@ export function maybeDeliverTranscriptToAgent(reason = 'timer') {
 
 // Event polling
 export async function pollAgentEvents() {
-  if (agentEnabled() !== 'on') return;
+  if (agentEnabled() !== 'on' || eventPollInFlight) return;
+  eventPollInFlight = true;
+  const session = state.agentSession;
   try {
-    const j = await (await fetch(`/api/agent/events?after=${state.agentEventCursor}`)).json();
-    for (const ev of (j.events || [])) {
-      state.agentEventCursor = Math.max(state.agentEventCursor, ev.id || 0);
-      agentDebug(`Agent event ${ev.type || ''} #${ev.id || ''}`, ev);
-      handleAgentEvent(ev);
+    const response = await fetch(`/api/agent/events?after=${state.agentEventCursor}`);
+    if (!response.ok) throw new Error(`Agent events HTTP ${response.status}`);
+    const result = await response.json();
+    if (session !== state.agentSession || agentEnabled() !== 'on') return;
+    for (const event of (result.events || [])) {
+      state.agentEventCursor = Math.max(state.agentEventCursor, event.id || 0);
+      agentDebug(`Agent event ${event.type || ''} #${event.id || ''}`, event);
+      handleAgentEvent(event);
     }
-  } catch (e) { console.warn('agent event poll failed', e); }
+  } catch (error) {
+    if (session === state.agentSession) console.warn('agent event poll failed', error);
+  } finally {
+    eventPollInFlight = false;
+  }
 }
 
 // Concise message helper
@@ -183,6 +195,7 @@ export function interruptConverse(text, hard = false) {
 
 // Permission answer detection
 export async function handlePermissionAnswerIfAny(message) {
+  const session = state.agentSession;
   if (!state.awaitingAgentPermission) return false;
   const m = message.trim().toLowerCase();
   const yes = /^(yes|yeah|yep|approve|allow|go ahead|do it)\b/.test(m);
@@ -196,6 +209,7 @@ export async function handlePermissionAnswerIfAny(message) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ request_id: String(req.id || ''), answer, transcript: agentTranscriptSlice() })
   }).catch(e => console.warn('permission answer failed', e));
+  if (session !== state.agentSession) return true;
   const reply = answer === 'yes' ? 'Okay. I told Korina Agent it has permission.' : 'Okay. I told Korina Agent not to proceed.';
   $('text').value = reply; log('Korina', reply); state.history.push({ role: 'assistant', content: reply });
   state.agentTurnCount++;
@@ -206,50 +220,65 @@ export async function handlePermissionAnswerIfAny(message) {
 
 // LLM call
 export async function askLM(message) {
+  const session = state.agentSession;
   const report = state.pendingAgentStateReport;
   const reportVersion = state.pendingAgentReportVersion;
-  const injection = report ? `Injection: Korina Agent state report for this next reply:
-${report}
-
-` : '';
+  const userMessage = stripTranscriptLabels(message);
+  const userLength = [...userMessage].length;
+  if (userLength > MAX_CHAT_MESSAGE_CHARS) throw new Error('Your message is too long. Split it into shorter turns.');
+  const prefix = 'Injection: Korina Agent state report for this next reply:\n';
+  const reportBudget = Math.max(0, MAX_CHAT_MESSAGE_CHARS - userLength - prefix.length - 2);
+  const includedReport = [...stripTranscriptLabels(report)].slice(0, reportBudget).join('');
+  const injection = includedReport ? `${prefix}${includedReport}\n\n` : '';
   status($('sttStatus'), 'Sending transcript to configured LLM…', 'warn');
-  const r = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message: stripTranscriptLabels(injection + message),
-      history: cleanHistoryForModel(),
-      max_tokens: 180,
-      temperature: 0.7,
-      model: lmModel(),
-      reasoning: llmReasoningEnabled()
-    })
-  });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j?.detail || JSON.stringify(j));
-  if (typeof j?.reply !== 'string') throw new Error('The response LLM returned an invalid reply.');
-  if (j.reply.trim() && state.pendingAgentReportVersion === reportVersion && state.pendingAgentStateReport === report) {
-    state.pendingAgentStateReport = '';
+  try {
+    const r = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: injection + userMessage,
+        history: cleanHistoryForModel(),
+        max_tokens: 180,
+        temperature: 0.7,
+        model: lmModel(),
+        reasoning: llmReasoningEnabled()
+      })
+    });
+    const j = await r.json();
+    if (session !== state.agentSession) return null;
+    if (!r.ok) throw new Error(j?.detail || JSON.stringify(j));
+    if (typeof j?.reply !== 'string') throw new Error('The response LLM returned an invalid reply.');
+    if (j.reply.trim() && includedReport && state.pendingAgentReportVersion === reportVersion && state.pendingAgentStateReport === report) {
+      state.pendingAgentStateReport = '';
+    }
+    return j.reply;
+  } catch (error) {
+    if (session !== state.agentSession) return null;
+    throw error;
   }
-  return j.reply;
 }
 
 // LM round-trip + speak + post-speak interrupt drain
 export async function askAndSpeak(message, context = '') {
+  const session = state.agentSession;
   log('You', message);
-  if (await handlePermissionAnswerIfAny(message)) return;
+  if (await handlePermissionAnswerIfAny(message)) return null;
+  if (session !== state.agentSession) return null;
   state.history.push({ role: 'user', content: stripTranscriptLabels(message) });
   const lmMessage = context
     ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}`
     : stripTranscriptLabels(message);
 
-  const reply = stripTranscriptLabels(await askLM(lmMessage));
+  const rawReply = await askLM(lmMessage);
+  if (session !== state.agentSession || rawReply === null) return null;
+  const reply = stripTranscriptLabels(rawReply);
   $('text').value = reply; log('Korina', reply);
   state.history.push({ role: 'assistant', content: reply });
   state.history = state.history.slice(-20);
   state.agentTurnCount++;
   status($('sttStatus'), `LLM replied ${reply ? 'ok' : 'empty'}; speaking…`, 'good');
   await speakText(reply, true);
+  if (session !== state.agentSession) return null;
   if (state.pendingImportantAgentMessage && !state.ttsSpeaking) {
     const msg = state.pendingImportantAgentMessage; state.pendingImportantAgentMessage = '';
     addTranscriptEntry('Korina Agent Interrupt', msg, { includeInHistory: false });

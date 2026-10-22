@@ -204,6 +204,7 @@ export async function handleLiveTurn(session = state.liveSession) {
     }
     try {
       const replyText = await askAndSpeak(text);
+      if (replyText === null) { preserveStatus = true; return; }
       // askAndSpeak() routes through speakText() which already clears
       // ttsSpeaking in its `finally` block. An empty string here usually means
       // the LLM replied with whitespace or no content; surface that loudly so

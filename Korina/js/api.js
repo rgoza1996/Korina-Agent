@@ -2,7 +2,7 @@
 
 import { state } from './state.js';
 import { ttsProviderLabel, llmProviderLabel } from './labels.js';
-import { $, setDot } from './dom.js';
+import { $, setDot, status } from './dom.js';
 import {
   applyConfig, ttsProvider, collectConfig, syncConverseSettingsUI,
   sttBackend,
@@ -24,7 +24,7 @@ export async function activateSelectedProvider(provider, model = '') {
   });
   const j = await r.json();
   if (!r.ok) throw new Error(j.detail || JSON.stringify(j));
-  if (j.saved) applyConfig(j.saved);
+  if (j.saved) state.appConfig = { ...state.appConfig, ...j.saved };
   // Signal a pending provider switch so the readiness pill flips to
   // "loading" until /api/health confirms the new model is loaded.
   state.providerPending = true;
@@ -39,23 +39,56 @@ export async function loadConfig() {
     syncConverseSettingsUI();
     $('settingsInfo').textContent = 'Loaded saved config.json settings.';
   } catch (e) {
+    $('settingsActionStatus').textContent = `Settings load failed: ${e.message}`;
+    status($('sttStatus'), `Settings load failed: ${e.message}`, 'bad');
     console.warn('config load failed', e);
   }
 }
 
-// Save immediately or debounce repeated settings edits.
+let saveInFlight = null;
+let queuedConfig = null;
+
+// Serialize saves and coalesce rapid edits into the latest form snapshot.
 export function saveConfigNow() {
-  const cfg = collectConfig();
-  return fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(cfg),
-  }).catch((e) => console.warn('config save failed', e));
+  clearTimeout(state.saveConfigTimer);
+  state.saveConfigTimer = null;
+  queuedConfig = collectConfig();
+  if (!saveInFlight) {
+    saveInFlight = (async () => {
+      while (queuedConfig) {
+        const config = queuedConfig;
+        queuedConfig = null;
+        if (!Object.keys(config).some(key => JSON.stringify(config[key]) !== JSON.stringify(state.appConfig[key]))) continue;
+        const response = await fetch('/api/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result?.detail || `Settings save failed: HTTP ${response.status}`);
+        const saved = result?.saved || result;
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved) || saved.ok === false) {
+          throw new Error('The server returned an invalid settings response.');
+        }
+        state.appConfig = { ...state.appConfig, ...saved };
+      }
+      return state.appConfig;
+    })().finally(() => {
+      saveInFlight = null;
+      if (queuedConfig) return saveConfigNow();
+    });
+  }
+  return saveInFlight;
 }
 
 export function saveConfigSoon() {
   clearTimeout(state.saveConfigTimer);
-  state.saveConfigTimer = setTimeout(saveConfigNow, 250);
+  state.saveConfigTimer = setTimeout(() => {
+    saveConfigNow().catch(error => {
+      $('settingsActionStatus').textContent = `Settings save failed: ${error.message}`;
+      status($('sttStatus'), `Settings save failed: ${error.message}`, 'bad');
+      console.warn('config save failed', error);
+    });
+  }, 250);
 }
 
 // health — refactored for Commit 2 of the debug-strip audit.

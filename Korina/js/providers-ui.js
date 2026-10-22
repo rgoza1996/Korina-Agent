@@ -263,21 +263,25 @@ export async function loadModelOptions(force=false){
       }
     }
     syncConverseSettingsUI();
-    $("settingsInfo").textContent=`Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo}`.trim();
-  }catch(e){ $("settingsInfo").textContent="Model list load failed: "+e.message; }
+    $("modelOptionsStatus").textContent=`Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo}`.trim();
+  }catch(e){ $("modelOptionsStatus").textContent="Model list load failed: "+e.message; }
 }
 
 export async function loadAgentModelOptions(){
   try{
-    await saveConfigNow();
     const current=$("agentModel")?.value||"";
     const j=await (await fetch("/api/agent/models")).json();
     if($("agentModel")){
       $("agentModel").innerHTML="";
       const blank=document.createElement("option"); blank.value=""; blank.textContent="Use Korina Converse model"; $("agentModel").appendChild(blank);
       for(const m of (j.models||[])){ const o=document.createElement("option"); o.value=m; o.textContent=prettyModelLabel(m); $("agentModel").appendChild(o); }
-      $("agentModel").value=[...$("agentModel").options].some(o=>o.value===current)?current:"";
+      if (current && ![...$("agentModel").options].some(option => option.value === current)) {
+        const saved = document.createElement('option');
+        saved.value = current; saved.textContent = prettyModelLabel(current) + ' (saved)';
+        $("agentModel").appendChild(saved);
+      }
+      $("agentModel").value = current;
     }
-    $("settingsInfo").textContent=`Loaded ${(j.models||[]).length} Korina Agent models from ${j.provider}. ${j.error?("Error: "+j.error):""}`;
-  }catch(e){ $("settingsInfo").textContent="Agent model list load failed: "+e.message; }
+    $("modelOptionsStatus").textContent=`Loaded ${(j.models||[]).length} Korina Agent models from ${j.provider}. ${j.error?("Error: "+j.error):""}`;
+  }catch(e){ $("modelOptionsStatus").textContent="Agent model list load failed: "+e.message; }
 }

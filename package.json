@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "eslint Korina/js tests/js",
-    "test": "node --test tests/js/*.mjs"
+    "lint": "eslint Korina/js tests/js tests/browser playwright.config.js",
+    "test": "node --test tests/js/*.mjs",
+    "test:browser": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
