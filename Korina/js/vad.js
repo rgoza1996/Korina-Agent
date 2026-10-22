@@ -1,34 +1,14 @@
-// js/vad.js
-//
-// Frontend voice-activity detection (VAD) helpers — wave meter draw,
-// RMS level measurement, and adaptive noise floor calibration —
-// extracted verbatim from the original inline <script> in
-// Korina/index.html (lines 960–1003 at commit bdda3cc).
-//
-// Bare top-level globals (analyser, raf, vadNoiseFloor, vadNoiseSamples,
-// vadIdleNoiseSamples, vadCalibratingUntil, vadLastIdleRecalibrationAt,
-// vadSpeechFrames, vadSilenceFrames, vadSpeechThreshold,
-// vadSilenceThreshold) have been migrated to the consolidated `state`
-// object (see state.js). The original `clamp` helper defined on
-// index.html:962 is now imported from dom.js (extracted in 3.2.1).
-// The `VAD_BASE_SPEECH_THRESHOLD` / `VAD_BASE_SILENCE_THRESHOLD`
-// constants from index.html:325 are reproduced as local module-scoped
-// constants here — they are the only consumers of those values and
-// hoisting them avoids a cross-cutting edit to state.js.
-//
-// Consumers import the named exports below.
+// Wave meter, audio level measurement, and adaptive voice activity detection.
 
 import { state } from "./state.js";
 import { $, clamp } from "./dom.js";
 
-// VAD base thresholds (verbatim from index.html:325). Kept local to
+// VAD base thresholds. Kept local to
 // this module since no other extracted module references them.
 const VAD_BASE_SPEECH_THRESHOLD = 0.035;
 const VAD_BASE_SILENCE_THRESHOLD = 0.022;
 
-// --- Waveform meter (verbatim from index.html:960) ---
-//
-// Bare globals `analyser`, `raf` -> `state.analyser`, `state.raf`.
+// Waveform meter
 export function drawWave() {
   if (!state.analyser) return;
   const data = new Uint8Array(state.analyser.frequencyBinCount);
@@ -50,9 +30,7 @@ export function drawWave() {
   state.raf = requestAnimationFrame(drawWave);
 }
 
-// --- RMS level (verbatim from index.html:961) ---
-//
-// Bare global `analyser` -> `state.analyser`.
+// RMS level
 export function rmsLevel() {
   if (!state.analyser) return 0;
   const data = new Uint8Array(state.analyser.fftSize);
@@ -65,13 +43,7 @@ export function rmsLevel() {
   return Math.sqrt(sum / data.length);
 }
 
-// --- Adaptive VAD reset (verbatim from index.html:963-973) ---
-//
-// Bare globals `vadNoiseFloor`, `vadNoiseSamples`, `vadIdleNoiseSamples`,
-// `vadCalibratingUntil`, `vadLastIdleRecalibrationAt`, `vadSpeechFrames`,
-// `vadSilenceFrames`, `vadSpeechThreshold`, `vadSilenceThreshold` ->
-// `state.*`. `VAD_BASE_SPEECH_THRESHOLD` / `VAD_BASE_SILENCE_THRESHOLD`
-// are local module constants.
+// Adaptive VAD reset
 export function resetAdaptiveVad() {
   state.vadNoiseFloor = 0.012;
   state.vadNoiseSamples = [];
@@ -84,13 +56,7 @@ export function resetAdaptiveVad() {
   state.vadSilenceThreshold = VAD_BASE_SILENCE_THRESHOLD;
 }
 
-// --- Adaptive VAD update (verbatim from index.html:974-1003) ---
-//
-// Bare globals `vadNoiseFloor`, `vadNoiseSamples`, `vadIdleNoiseSamples`,
-// `vadCalibratingUntil`, `vadLastIdleRecalibrationAt`, `vadSpeechThreshold`,
-// `vadSilenceThreshold` -> `state.*`. `liveSpeechStart`, `liveBusy`,
-// `ttsSpeaking`, `audioCtx`, `ackPlayingUntil`, `suppressAckUntil` are
-// read from `state.*`. `clamp` is imported from dom.js.
+// Adaptive VAD update
 export function updateAdaptiveVad(level, now) {
   // Initial room/mic calibration runs when Live starts. After that, recalibrate at intervals only during true idle.
   if (!state.liveSpeechStart && now < state.vadCalibratingUntil) {

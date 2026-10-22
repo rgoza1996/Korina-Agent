@@ -1,37 +1,15 @@
-// js/barge-in.js
-//
-// Frontend barge-in helpers — capture during TTS playback, RMS-based
-// speech/silence monitoring, and after-interrupt turn handling —
-// extracted verbatim from the original inline <script> in
-// Korina/index.html (lines 1137–1219 at commit bdda3cc).
-//
-// Bare top-level globals (bargeRecorder, bargeChunks, bargeLoopId,
-// bargeSpeechStart, bargeSilenceStart, handlingBarge, live, stream,
-// ttsSpeaking, interruptContext, vadSpeechThreshold, vadSilenceThreshold,
-// endSilenceMs) have been migrated to the consolidated `state` object
-// (see state.js). `status` and `log` are imported from dom.js.
-// `stopTtsNow` and `interruptedSpeechContext` are imported from
-// speech.js (3.2.8, already merged into beta). `rmsLevel` and
-// `updateAdaptiveVad` are imported from vad.js (3.2.9, already merged
-// into beta). `endpointMode` is imported from settings-ui.js (3.2.4,
-// already merged into beta). `EventBus` is imported from state.js
-// (extracted in 3.1.1, already merged). `transcribeBlob` is from
-// recorder.js (3.2.10, same batch) — referenced as a bare call so it
-// resolves at call time once recorder.js lands in beta alongside this
-// module. `askAndSpeak`, `startLiveRecorder`, `liveMonitor`,
-// `currentConfig` remain bare globals — they belong to modules that
-// have not yet been extracted and will resolve at call time when the
-// bootstrap wires them up.
-//
-// Consumers import the named exports below.
+// Capture speech during playback and resume the conversation after an interruption.
 
-import { state, EventBus } from "./state.js";
+import { state } from "./state.js";
 import { $, status, log } from "./dom.js";
 import { stopTtsNow, interruptedSpeechContext } from "./speech.js";
 import { rmsLevel, updateAdaptiveVad } from "./vad.js";
 import { endpointMode } from "./settings-ui.js";
+import { transcribeBlob } from "./recorder.js";
+import { askAndSpeak } from "./agent-ui.js";
+import { startLiveRecorder, liveMonitor } from "./live.js";
 
-// --- Start barge-in capture during TTS (verbatim from index.html:1137–1149) ---
+// Start barge-in capture during TTS
 export function startBargeInCapture() {
   if (!state.live || !state.stream || !state.ttsSpeaking || state.handlingBarge) return;
   try {
@@ -46,7 +24,7 @@ export function startBargeInCapture() {
   } catch (e) { console.warn('barge recorder failed', e); }
 }
 
-// --- Monitor for user speech during TTS (verbatim from index.html:1150–1168) ---
+// Monitor for user speech during TTS
 export function monitorBargeIn() {
   if (!state.live || !state.ttsSpeaking || state.handlingBarge) return;
   const level = rmsLevel(); const now = performance.now();
@@ -67,7 +45,7 @@ export function monitorBargeIn() {
   state.bargeLoopId = requestAnimationFrame(monitorBargeIn);
 }
 
-// --- Monitor for end of user interruption speech (verbatim from index.html:1169–1182) ---
+// Monitor for end of user interruption speech
 export function monitorBargeSpeechEnd() {
   if (!state.live || !state.handlingBarge) return;
   const level = rmsLevel(); const now = performance.now();
@@ -83,7 +61,7 @@ export function monitorBargeSpeechEnd() {
   state.bargeLoopId = requestAnimationFrame(monitorBargeSpeechEnd);
 }
 
-// --- Handle completed barge recording (verbatim from index.html:1183–1219) ---
+// Handle completed barge recording
 export async function handleBargeRecording() {
   if (!state.handlingBarge) return;
   let secondBargeStarted = false;
@@ -114,7 +92,7 @@ export async function handleBargeRecording() {
     // do not clobber its state or restart the normal live loop underneath it.
     if (state.handlingBarge || secondBargeStarted) return;
     state.ttsSpeaking = false;
-    if (state.live) { state.liveBusy = false; status($('sttStatus'), `Live mode armed (${endpointMode()}, ${state.endSilenceMs}ms endpoint). Start speaking…`, 'warn'); EventBus.reset(); EventBus.updateConfig(currentConfig); EventBus._startFirstDeliveryTimer();
+    if (state.live) { state.liveBusy = false; status($('sttStatus'), `Live mode armed (${endpointMode()}, ${state.endSilenceMs}ms endpoint). Start speaking…`, 'warn');
       startLiveRecorder(); liveMonitor(); }
   }
 }

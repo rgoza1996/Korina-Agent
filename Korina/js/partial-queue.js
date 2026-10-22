@@ -1,25 +1,10 @@
-// js/partial-queue.js
-//
-// Frontend partial-window STT queue — bounded WebM window recorder,
-// FIFO transcription queue, lifecycle start/idle-wait/stop helpers —
-// extracted verbatim from the original inline <script> in
-// Korina/index.html (lines 1067–1136 at commit bdda3cc).
-//
-// Bare top-level globals (partialTimer, partialSeq, partialWindowIndex,
-// latestPartialText, latestPartialAt, partialRecorder, partialChunks,
-// partialQueueProcessing, partialInFlight, partialQueue, partialController)
-// have been migrated to the consolidated `state` object
-// (see state.js). `live`, `liveBusy`, `stream`, `liveSpeechStart` are
-// also state.X reads. `transcribePartialBlob` is from recorder.js (3.2.10,
-// same batch) — referenced as a bare call so it resolves at call time
-// once recorder.js lands in beta alongside this module.
-//
-// Consumers import the named exports below.
+// Queue rolling audio windows for partial transcription and manage recorder cleanup.
 
 import { state } from "./state.js";
 import { $ } from "./dom.js";
+import { transcribePartialBlob } from "./recorder.js";
 
-// --- Start partial transcription loop (verbatim from index.html:1067–1073) ---
+// Start partial transcription loop
 export function startPartialTranscriptionLoop() {
   stopPartialTranscriptionLoop(false);
   state.partialSeq++;
@@ -28,7 +13,7 @@ export function startPartialTranscriptionLoop() {
   startPartialWindowRecorder();
 }
 
-// --- Bounded partial WebM window recorder (verbatim from index.html:1074–1101) ---
+// Bounded partial WebM window recorder
 export function startPartialWindowRecorder() {
   if (!state.live || state.liveBusy || !state.stream) return;
   try {
@@ -58,7 +43,7 @@ export function startPartialWindowRecorder() {
   } catch (e) { console.warn('partial recorder failed', e); }
 }
 
-// --- Drain the partial transcription queue (verbatim from index.html:1102–1118) ---
+// Drain the partial transcription queue
 export async function processPartialQueue() {
   if (state.partialQueueProcessing) return;
   state.partialQueueProcessing = true;
@@ -77,14 +62,14 @@ export async function processPartialQueue() {
   }
 }
 
-// --- Wait until the partial queue drains (verbatim from index.html:1119–1123) ---
+// Wait until the partial queue drains
 export async function waitForPartialQueueIdle() {
   while (state.partialQueueProcessing || state.partialQueue.length) {
     await new Promise(r => setTimeout(r, 150));
   }
 }
 
-// --- Stop partial transcription loop (verbatim from index.html:1124–1136) ---
+// Stop partial transcription loop
 export function stopPartialTranscriptionLoop(abort = true) {
   if (state.partialTimer) clearTimeout(state.partialTimer);
   state.partialTimer = null;

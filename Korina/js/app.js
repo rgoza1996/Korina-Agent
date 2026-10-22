@@ -1,24 +1,6 @@
-// js/app.js
-//
-// Frontend entrypoint. Loaded by index.html via <script type="module">.
-// Imports every extracted Phase-3 module and re-exports the most-used
-// symbols on window so inline onclick handlers (e.g.
-// <button onclick="startLive()">) continue to work after extraction.
-//
-// Phase 3 / Task 3.2.15: this is the final wire-up step. After this
-// commit lands, the page should be functional again — loadConfig()
-// runs, intervals start, the user can interact with Live Conversation,
-// recordings, TTS, and the Korina Agent driver.
-//
-// Boot order:
-//   1. await loadCapabilities().then(() => setBaseUrlEditability())
-//      (matches the documented Phase 3 plan; initApp() also runs
-//      loadConfig internally so the sequence is consistent.)
-//   2. initApp()  (in api.js — does loadConfig, loadAgentModelOptions,
-//      loadAcks, health, markActivity, and starts the polling
-//      intervals for agent events.)
+// Browser entrypoint: settings, recording controls, event wiring, and startup.
 
-import { state, EventBus } from "./state.js";
+import { state } from "./state.js";
 import { $, status, setDot, log, setSectionHidden, clamp } from "./dom.js";
 import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from "./labels.js";
 import {
@@ -44,7 +26,7 @@ import {
 import { setCapabilityFilterOverride } from "./capability-filter.js";
 import { loadAcks, preloadAckBuffers, playRandomAck } from "./acks.js";
 import { drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad } from "./vad.js";
-import { setupMic, makeRecorder, transcribeBlob, transcribePartialBlob } from "./recorder.js";
+import { setupMic, releaseMic, makeRecorder, transcribeBlob, transcribePartialBlob } from "./recorder.js";
 import {
   startPartialTranscriptionLoop, stopPartialTranscriptionLoop,
   processPartialQueue, waitForPartialQueueIdle,
@@ -68,10 +50,9 @@ import {
 } from "./agent-ui.js";
 import { openEndpoints, closeEndpoints, populateEndpoints } from "./endpoints.js";
 
-// Re-export the most common symbols on window so HTML inline event
-// handlers and DevTools debugging keep working.
+// Expose controls for browser debugging; UI events are bound below.
 Object.assign(window, {
-  state, EventBus, $, status, setDot, log, setSectionHidden, clamp,
+  state, $, status, setDot, log, setSectionHidden, clamp,
   prettyModelLabel,
   loadConfig, saveConfigNow, saveConfigSoon, health, activateSelectedProvider, initApp,
   listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl,
@@ -82,7 +63,7 @@ Object.assign(window, {
   setCapabilityFilterOverride,
   loadAcks, preloadAckBuffers, playRandomAck,
   drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad,
-  setupMic, makeRecorder, transcribeBlob, transcribePartialBlob,
+  setupMic, releaseMic, makeRecorder, transcribeBlob, transcribePartialBlob,
   startPartialTranscriptionLoop, stopPartialTranscriptionLoop,
   processPartialQueue, waitForPartialQueueIdle,
   ensureAudio, stopTtsNow, schedulePcm, speakSSE, speakBuffered, speakText,
@@ -99,11 +80,7 @@ Object.assign(window, {
 });
 
 
-// --- UI event wiring ---
-// Phase 3 extracted the inline script into ES modules. The functions were
-// re-exported on window, but the static HTML no longer has inline onclick
-// attributes. Bind the controls explicitly so clicks work in normal browsers
-// and in headless Playwright tests.
+// Bind each UI control explicitly.
 function bindClick(id, handler) {
   const el = $(id);
   if (!el) return;
@@ -204,15 +181,14 @@ function saveSettings() {
 }
 
 async function startRecording() {
+  if (state.live || $('recBtn').disabled) return;
+  $('recBtn').disabled = true;
+  $('stopRecBtn').disabled = false;
   try {
-    await setupMic();
+    if (!await setupMic()) return;
     makeRecorder(async () => {
       try {
-        if (state.raf) cancelAnimationFrame(state.raf);
-        if (state.stream) {
-          state.stream.getTracks().forEach(t => t.stop());
-          state.stream = null;
-        }
+        releaseMic();
         status($('sttStatus'), 'Uploading to faster-whisper streaming STT…', 'warn');
         const blob = new Blob(state.recChunks, { type: state.recChunks[0]?.type || 'audio/webm' });
         const j = await transcribeBlob(blob);
@@ -231,6 +207,9 @@ async function startRecording() {
     $('stopRecBtn').disabled = false;
     status($('sttStatus'), 'Recording…', 'warn');
   } catch (e) {
+    releaseMic();
+    $('recBtn').disabled = false;
+    $('stopRecBtn').disabled = true;
     status($('sttStatus'), 'Mic error: ' + e.message, 'bad');
   }
 }
@@ -238,6 +217,11 @@ async function startRecording() {
 function stopRecording() {
   if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
     state.mediaRecorder.stop();
+  } else {
+    releaseMic();
+    $('recBtn').disabled = false;
+    $('stopRecBtn').disabled = true;
+    status($('sttStatus'), 'Recording cancelled.');
   }
 }
 
@@ -247,7 +231,6 @@ function toggleLive() {
     return;
   }
   startLive().catch(e => {
-    stopLive();
     status($('sttStatus'), 'Live mode error: ' + e.message, 'bad');
   });
 }
@@ -277,6 +260,8 @@ async function clearSession() {
   state.agentStateReport = '';
   state.agentLastTranscriptHash = '';
   state.pendingAgentStateReport = '';
+  state.pendingAgentReportVersion++;
+  state.agentSession++;
   state.pendingImportantAgentMessage = '';
   state.awaitingAgentPermission = null;
   state.agentEventCursor = 0;

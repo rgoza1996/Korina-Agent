@@ -1,20 +1,4 @@
-// js/recorder.js
-//
-// Frontend recorder helpers — microphone setup, MediaRecorder factory,
-// and streaming/partial STT transcription — extracted verbatim from
-// the original inline <script> in Korina/index.html (lines 1004, 1005,
-// 1006–1045, 1046–1066 at commit bdda3cc).
-//
-// Bare top-level globals (stream, meterAudioCtx, analyser, mediaRecorder,
-// recChunks, partialController, partialSeq, latestPartialText,
-// latestPartialAt) have been migrated to the consolidated `state`
-// object (see state.js). `status` is imported from dom.js.
-// `resetAdaptiveVad` and `drawWave` are imported from vad.js (3.2.9,
-// already merged into beta). `sttDevice`, `sttModel`, `sttBackend`,
-// `effectiveSttLlmModel` are imported from settings-ui.js (3.2.4,
-// already merged into beta).
-//
-// Consumers import the named exports below.
+// Microphone setup, audio recording, and buffered or streaming STT requests.
 
 import { state } from "./state.js";
 import { $, status } from "./dom.js";
@@ -22,41 +6,104 @@ import { resetAdaptiveVad, drawWave } from "./vad.js";
 import { sttDevice, sttModel, sttBackend, effectiveSttLlmModel } from "./settings-ui.js";
 import { recordSttBackend } from "./api.js";
 
-// --- Microphone + meter setup (verbatim from index.html:1004) ---
-export async function setupMic() {
-  // Dogfood pass 2026-06-26: detect missing mediaDevices up-front so the
-  // user gets a readable explanation instead of the raw TypeError
-  // "Cannot read properties of undefined (reading 'getUserMedia')".
-  // mediaDevices is undefined in headless / non-secure-context / older
-  // browsers; we want to point the user at the actual cause.
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    const secure = window.isSecureContext ? 'secure context (HTTPS or localhost)' : 'non-secure context';
-    throw new Error(
-      `Microphone unavailable: this browser does not expose navigator.mediaDevices (${secure}). ` +
-      `Open Korina in a recent Chrome/Edge/Firefox over HTTPS or http://localhost.`
-    );
+let microphoneGeneration = 0;
+let microphoneSetup = null;
+
+function stopTracks(stream) {
+  stream?.getTracks().forEach(track => track.stop());
+}
+
+function closeMeter(context) {
+  if (context && context.state !== 'closed') {
+    try { Promise.resolve(context.close()).catch(() => {}); } catch {}
   }
-  state.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  state.meterAudioCtx = new AudioContext();
-  const src = state.meterAudioCtx.createMediaStreamSource(state.stream);
-  state.analyser = state.meterAudioCtx.createAnalyser();
-  state.analyser.fftSize = 512;
-  src.connect(state.analyser);
-  resetAdaptiveVad();
-  drawWave();
 }
 
-// --- MediaRecorder factory (verbatim from index.html:1005) ---
+export function releaseMic() {
+  microphoneGeneration++;
+  microphoneSetup = null;
+  const stream = state.stream;
+  const meter = state.meterAudioCtx;
+  state.stream = null;
+  state.meterAudioCtx = null;
+  state.analyser = null;
+  if (state.raf) cancelAnimationFrame(state.raf);
+  state.raf = null;
+  stopTracks(stream);
+  closeMeter(meter);
+}
+
+function microphoneError(error) {
+  const messages = {
+    NotAllowedError: 'Microphone permission denied. Allow microphone access in your browser and try again.',
+    SecurityError: 'Microphone access is blocked. Open Korina over HTTPS or localhost and allow microphone access.',
+    NotFoundError: 'No microphone was found. Connect a microphone and try again.',
+    NotReadableError: 'The microphone is unavailable or in use. Close other recording apps and try again.',
+    OverconstrainedError: 'The microphone does not support the requested audio settings. Try another device.',
+  };
+  return new Error(messages[error.name] || error.message || 'Microphone setup failed. Please try again.');
+}
+
+// Share one pending permission request and discard streams from cancelled starts.
+export function setupMic() {
+  if (microphoneSetup) return microphoneSetup;
+  if (state.stream?.active && state.meterAudioCtx && state.meterAudioCtx.state !== 'closed') return Promise.resolve(true);
+  releaseMic();
+  const generation = microphoneGeneration;
+  let pending;
+  pending = (async () => {
+    let stream, context;
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Microphone unavailable. Open Korina in a recent browser over HTTPS or http://localhost.');
+      }
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      if (generation !== microphoneGeneration) { stopTracks(stream); return false; }
+      const Context = window.AudioContext || window.webkitAudioContext;
+      if (!Context) throw new Error('Microphone audio processing is unavailable in this browser.');
+      context = new Context();
+      if (context.state === 'suspended') await context.resume();
+      if (generation !== microphoneGeneration) { stopTracks(stream); closeMeter(context); return false; }
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      state.stream = stream;
+      state.meterAudioCtx = context;
+      state.analyser = analyser;
+      resetAdaptiveVad();
+      drawWave();
+      return true;
+    } catch (error) {
+      stopTracks(stream);
+      closeMeter(context);
+      const cancelled = generation !== microphoneGeneration;
+      if (state.stream === stream) releaseMic();
+      if (cancelled) return false;
+      throw microphoneError(error);
+    }
+  })().finally(() => { if (microphoneSetup === pending) microphoneSetup = null; });
+  microphoneSetup = pending;
+  return pending;
+}
+
+// Each recorder owns its chunks; starting twice cannot replace an active capture.
 export function makeRecorder(onstop, timeslice = 0) {
-  state.recChunks = [];
+  if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
+    throw new Error('The microphone is already recording.');
+  }
+  if (!state.stream) throw new Error('The microphone is not ready. Try starting the recording again.');
+  const chunks = [];
   const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
-  state.mediaRecorder = new MediaRecorder(state.stream, { mimeType: mime });
-  state.mediaRecorder.ondataavailable = e => { if (e.data.size) state.recChunks.push(e.data); };
-  state.mediaRecorder.onstop = onstop;
-  state.mediaRecorder.start(timeslice || undefined);
+  const recorder = new MediaRecorder(state.stream, { mimeType: mime });
+  recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+  recorder.onstop = onstop;
+  state.recChunks = chunks;
+  state.mediaRecorder = recorder;
+  recorder.start(timeslice || undefined);
 }
 
-// --- Streaming STT transcription (verbatim from index.html:1006–1045) ---
+// Streaming STT transcription
 export async function transcribeBlob(blob) {
   const fd = new FormData();
   fd.append('audio', blob, 'recording.webm');
@@ -106,7 +153,7 @@ export async function transcribeBlob(blob) {
   return final;
 }
 
-// --- Partial window STT transcription (verbatim from index.html:1046–1066) ---
+// Partial window STT transcription
 export async function transcribePartialBlob(blob, seq, meta = {}) {
   const fd = new FormData();
   fd.append('audio', blob, 'partial.webm');

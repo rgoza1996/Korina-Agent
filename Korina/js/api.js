@@ -1,26 +1,10 @@
-// js/api.js
-//
-// Frontend API client + bootstrap. Provides the canonical wrappers
-// for the page server's HTTP endpoints (`/api/config`, `/api/health`,
-// `/api/llm/provider/activate`) and the application entrypoint
-// `initApp()` that wires up the rest of the page once DOM modules
-// have been extracted.
-//
-// Forward-reference imports: `settings-ui.js` (lands in 3.2.4) and
-// `providers-ui.js` (lands in 3.2.6) are imported statically. Until
-// those modules exist, importing this file will fail to load — this
-// is intentional per the Phase 3 plan and will be resolved by the
-// time `app.js` actually imports this module.
-//
-// Dynamic imports for `acks.js`, `live.js`, and `agent-ui.js` keep
-// this file loadable before those modules land; they are replaced
-// with static imports in Task 3.2.15 (cleanup).
+// Backend API client, runtime health rendering, and application bootstrap.
 
 import { state } from './state.js';
 import { ttsProviderLabel, llmProviderLabel } from './labels.js';
 import { $, setDot } from './dom.js';
 import {
-  applyConfig, ttsProvider,
+  applyConfig, ttsProvider, collectConfig, syncConverseSettingsUI,
   sttBackend,
   sttDevice, sttModel,
   effectiveSttLlmModel, effectiveSttLlmBaseUrl,
@@ -30,7 +14,7 @@ import {
   partialWindowMsSetting,
   markActivity,
 } from './settings-ui.js';
-import { loadAgentModelOptions } from './providers-ui.js';   // lands in 3.2.6
+import { loadAgentModelOptions } from './providers-ui.js';
 
 export async function activateSelectedProvider(provider, model = '') {
   const r = await fetch('/api/llm/provider/activate', {
@@ -47,7 +31,7 @@ export async function activateSelectedProvider(provider, model = '') {
   return j;
 }
 
-// loadConfig — moved verbatim from index.html:583
+// Load saved settings into the UI.
 export async function loadConfig() {
   try {
     const c = await (await fetch('/api/config')).json();
@@ -59,7 +43,7 @@ export async function loadConfig() {
   }
 }
 
-// saveConfigNow + saveConfigSoon — moved verbatim from index.html:587-591
+// Save immediately or debounce repeated settings edits.
 export function saveConfigNow() {
   const cfg = collectConfig();
   return fetch('/api/config', {
@@ -81,17 +65,20 @@ export function saveConfigSoon() {
 // - pageHealth flips red only after 2-3 consecutive poll failures
 //   (state.healthFailures), so a single 5s blip does not alarm.
 // - hostInfo is owned here (every 5s), not in form change handlers.
-// - settingsLiveStatus is updated from j.llm_error and j.stt_llm_error
-//   so the user can see which downstream service is failing.
+// - settingsLiveStatus reads the runtime provider load blocks.
 const HEALTH_FAIL_GRACE = 3; // consecutive misses before flipping pageDot red
 
 export async function health() {
   let j = null;
   let pageFailed = false;
   try {
-    j = await (await fetch('/api/health')).json();
+    const response = await fetch('/api/health');
+    if (!response.ok) throw new Error(`Health check failed: HTTP ${response.status}`);
+    j = await response.json();
+    if (!j || typeof j !== 'object' || j.ok !== true) throw new Error('Invalid health response');
     state.healthFailures = 0;
   } catch (e) {
+    j = null;
     pageFailed = true;
     state.healthFailures = (state.healthFailures || 0) + 1;
   }
@@ -102,19 +89,21 @@ export async function health() {
       ? `multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()} (${sttLlmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`
       : `built-in Whisper ${sttDevice()}/${sttModel()}`;
     const responseSummary = `${j.response_llm_provider || llmProvider()} ${j.response_llm_model || lmModel()} (${llmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`;
-    $('pageHealth').textContent = `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
+    $('pageHealth').textContent = `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || state.partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
 
     // hostInfo (Bug C / #19): server-resolved URLs only.
     const llmBase = j.response_llm_base_url || '';
     const ttsBase = (j.tts && j.tts.base_url) || j.tts_base_url || '';
     $('hostInfo').textContent = `${location.host} → LLM (${llmProviderLabel(j.response_llm_provider || '')}) ${llmBase} → TTS (${ttsProviderLabel((j.tts && j.tts.provider) || j.tts_provider || '')}) ${ttsBase}`;
 
-    // settingsLiveStatus (Bug D / #21): live LLM/STT health from j.{llm_error,stt_llm_error}.
-    const llmOk = !j.llm_error;
-    const sttOk = !j.stt_llm_error;
+    // Live LLM/STT health uses server-resolved provider load blocks.
+    const llmOk = !!(j.response_llm_load?.ok && j.response_llm_load?.loaded);
+    const sttOk = j.stt_backend === 'llm'
+      ? !!(j.multimodal_stt_load?.ok && j.multimodal_stt_load?.loaded)
+      : !!j.whisper_available;
     const parts = [];
-    parts.push(`LLM ${llmOk ? 'up' : 'down'}${llmOk ? '' : ' (' + j.llm_error + ')'}`);
-    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + j.stt_llm_error + ')'}`);
+    parts.push(`LLM ${llmOk ? 'up' : 'down'}${llmOk ? '' : ' (' + (j.response_llm_load?.error || 'model not loaded') + ')'}`);
+    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + (j.multimodal_stt_load?.error || 'speech runtime unavailable') + ')'}`);
     const liveEl = $('settingsLiveStatus');
     if (liveEl) liveEl.textContent = parts.join(' · ');
   } else {
@@ -131,7 +120,10 @@ export async function health() {
   if (j && j.tts) {
     const tts = j.tts;
     const ttsProviderName = tts.provider || j.tts_provider || '';
-    if (tts.ok && tts.loaded) {
+    if (tts.status === 'unverified' || tts.probe_supported === false) {
+      setDot('ttsDot', 'warn');
+      $('ttsHealth').textContent = `${ttsProviderLabel(ttsProviderName)} health unverified · ${tts.base_url}`;
+    } else if (tts.ok && tts.loaded) {
       setDot('ttsDot', 'good');
       $('ttsHealth').textContent = `${ttsProviderLabel(ttsProviderName)} ready · ${tts.base_url} · last ${tts.device || 'none'} · CUDA ${tts.cuda_available ? 'yes' : 'no'}`;
     } else if (tts.ok && !tts.loaded) {
@@ -148,7 +140,7 @@ export async function health() {
   // Provider / model readiness pill (drives off server truth).
   const ready = $('providerReady');
   const readyDot = $('providerReadyDot');
-  if (ready && readyDot) {
+  if (ready && readyDot && j) {
     const rll = j && j.response_llm_load;
     const pending = !!state.providerPending;
     if (pending && !(rll && rll.ok && rll.loaded)) {
@@ -231,11 +223,7 @@ export function recordSttBackend(payload, errorMsg) {
   setDot('sttBackendDot', STT_BACKEND_DOTS[backend] || 'bad');
 }
 
-// initApp — moved from index.html:743-755 with dynamic imports for the
-// not-yet-extracted modules (`acks.js`, `live.js`, `agent-ui.js`).
-// Note: the setInterval callbacks must be `async` because the dynamic
-// `import()` calls inside them require an async context. setInterval
-// ignores the returned Promise, so this is a safe no-op for the timer.
+// Load configuration before starting periodic health and agent updates.
 export async function initApp() {
   await loadConfig();
   await loadAgentModelOptions();

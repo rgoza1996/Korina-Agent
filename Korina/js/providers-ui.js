@@ -1,7 +1,4 @@
-// js/providers-ui.js
-//
-// Frontend provider-capability and model-options helpers extracted
-// from the original inline script and adapted for red warning states.
+// Provider capabilities, model discovery, and model-picker rendering.
 
 import { state } from "./state.js";
 import { $ } from "./dom.js";

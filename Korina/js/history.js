@@ -1,20 +1,9 @@
-// js/history.js
-//
-// Frontend conversation-history helpers — transcript label stripping,
-// history sanitization for model input, transcript entry recording,
-// and transcript fingerprinting for agent dedup — extracted verbatim
-// from the original inline <script> in Korina/index.html (lines 414,
-// 426–431, 432, 818 at commit bdda3cc). The bare top-level `history`
-// global from the inline script has been migrated to the consolidated
-// `state.history` array (see state.js). `addTranscriptEntry` continues
-// to call `log()` for DOM append, which now lives in dom.js.
-//
-// Consumers import the named exports below.
+// Sanitize conversation history and transcript labels before model or agent delivery.
 
 import { state } from "./state.js";
 import { log } from "./dom.js";
 
-// --- Transcript label stripping (verbatim from index.html:414) ---
+// Transcript label stripping
 
 export function stripTranscriptLabels(text){
   return String(text||"")
@@ -29,9 +18,8 @@ export function stripTranscriptLabels(text){
     .trim();
 }
 
-// --- History sanitization for model input (verbatim from index.html:426-431) ---
+// History sanitization for model input
 //
-// Bare global `history` -> `state.history`.
 
 export function cleanHistoryForModel(){
   return state.history
@@ -40,16 +28,15 @@ export function cleanHistoryForModel(){
     .filter(m=>m.content);
 }
 
-// --- Transcript entry recording (verbatim from index.html:432) ---
+// Transcript entry recording
 //
-// Bare global `history` -> `state.history`.
 
 export function addTranscriptEntry(role,text,{includeInHistory=false}={}){
   if(includeInHistory) state.history.push({role:"assistant",content:`[${role}] ${text}`});
   log(role,text);
 }
 
-// --- Transcript fingerprint for agent dedup (verbatim from index.html:818) ---
+// Transcript fingerprint for agent dedup
 
 export function transcriptHash(turns){
   return JSON.stringify(turns.map(m=>[m.role,m.content])).slice(-4000);

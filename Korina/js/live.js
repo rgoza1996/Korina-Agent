@@ -1,92 +1,66 @@
-// js/live.js
-//
-// Frontend live-conversation controller — start/stop armed microphone,
-// adaptive-VAD silence monitor, end-of-speech endpointing, and the
-// per-turn STT→LM→TTS handoff — extracted verbatim from the original
-// inline <script> in Korina/index.html (lines 1220–1302 at commit
-// bdda3cc).
-//
-// Bare top-level globals (live, liveBusy, liveSilenceStart,
-// liveSpeechStart, liveLastVoice, liveLoopId, history, mediaRecorder,
-// recChunks, analyser, stream, meterAudioCtx, mode, controller,
-// nextPlayTime, ttsSpeaking, currentKorinaText, interruptContext,
-// idleAckCount, endSilenceMs, ackSource, ackPlayingUntil,
-// lastActivityAt, vadSpeechFrames, vadSilenceFrames, vadNoiseFloor,
-// vadSpeechThreshold, vadSilenceThreshold, partialWindowIndex,
-// latestPartialText, handlingBarge, bargeRecorder, bargeLoopId, raf,
-// audioCtx) have been migrated to the consolidated `state` object
-// (see state.js). `setupMic`, `makeRecorder` are imported from
-// recorder.js (3.2.10, already merged). `startPartialTranscriptionLoop`
-// and `stopPartialTranscriptionLoop` are from partial-queue.js
-// (3.2.11, already merged). `preloadAckBuffers`, `playRandomAck` are
-// from acks.js (3.2.7, already merged). `markActivity`,
-// `nextIdleDelayMs` are from settings-ui.js (3.2.4, already merged).
-// `minSpeechMs`, `finalSttMode`, `endpointMode` are from settings-ui.js.
-// `waitForPartialQueueIdle` is from partial-queue.js. `transcribeBlob`
-// is from recorder.js. `stopTtsNow` is from speech.js (3.2.8, already
-// merged). `rmsLevel`, `updateAdaptiveVad` are from vad.js (3.2.9,
-// already merged). `EventBus` is from state.js (3.1.1, already merged).
-// `status` and `$` are imported from dom.js (3.2.1, already merged).
-//
-// `askAndSpeak` is a forward reference — it lives in agent-ui.js
-// (3.2.14, same batch) — referenced as a bare call so it resolves at
-// call time once agent-ui.js lands in beta alongside this module.
-//
-// Consumers import the named exports below.
+// Live microphone lifecycle, adaptive endpointing, and the STT → LLM → TTS loop.
 
-import { state, EventBus } from "./state.js";
+import { state } from "./state.js";
+import { askAndSpeak } from "./agent-ui.js";
 import { $, status } from "./dom.js";
 import { markActivity, nextIdleDelayMs, minSpeechMs, finalSttMode, endpointMode } from "./settings-ui.js";
 import { preloadAckBuffers, playRandomAck } from "./acks.js";
-import { setupMic, makeRecorder, transcribeBlob } from "./recorder.js";
+import { setupMic, releaseMic, makeRecorder, transcribeBlob } from "./recorder.js";
 import { startPartialTranscriptionLoop, stopPartialTranscriptionLoop, waitForPartialQueueIdle } from "./partial-queue.js";
 import { stopTtsNow } from "./speech.js";
 import { rmsLevel, updateAdaptiveVad } from "./vad.js";
 
-// VAD frame thresholds (top-level const at bdda3cc:325).
+// VAD frame thresholds.
 const VAD_SPEECH_FRAMES = 8;
 const VAD_SILENCE_FRAMES = 10;
 
-// --- Response-LLM reachability preflight (added for live-loop visibility) ---
-// Phase 5/visibility fix: instead of letting acks play and then going silent
-// when the configured response LLM is unreachable, do a fast preflight before
-// `askAndSpeak()` and surface a specific "bad" status so the user understands
-// why no reply is coming.
-async function responseLlmPreflight() {
+// Confirm the selected response model, using the server's runtime load block.
+export async function responseLlmPreflight() {
   try {
-    const r = await fetch('/api/health');
-    if (!r.ok) return { ok: false, reason: `/api/health HTTP ${r.status}` };
-    const j = await r.json();
-    // /api/health returns `llm_error` if llama-server etc. is unreachable, but
-    // does not include it on /api/capabilities. We only need to know whether
-    // the response LLM (not the page server) is up.
-    if (j && j.llm_error) return { ok: false, reason: j.llm_error };
-    if (j && j.ok === false) return { ok: false, reason: 'korina-voice-lab reports not ok' };
+    const response = await fetch('/api/health');
+    if (!response.ok) return { ok: false, reason: `/api/health HTTP ${response.status}` };
+    const health = await response.json();
+    if (health?.ok !== true) return { ok: false, reason: 'The page server is not ready.' };
+    const provider = health.response_llm_load;
+    if (!provider?.ok) return { ok: false, reason: provider?.error || 'The response LLM endpoint is unavailable.' };
+    if (!provider.loaded) return { ok: false, reason: provider.error || 'The selected response model is not loaded.' };
     return { ok: true };
-  } catch (e) {
-    return { ok: false, reason: `health fetch failed: ${e.message}` };
+  } catch (error) {
+    return { ok: false, reason: `Health check failed: ${error.message}` };
   }
 }
 
-// --- Start live conversation (verbatim from index.html:1220) ---
+// Start live conversation; stopping while permission is pending cancels this session.
 export async function startLive() {
-  state.live = true; state.liveBusy = false;
+  if (state.live) return;
+  const session = ++state.liveSession;
+  state.live = true;
+  state.liveBusy = false;
   $('liveBtn').classList.add('on');
   $('liveBtn').textContent = 'Stop Live Conversation';
   $('recBtn').disabled = true;
   $('stopRecBtn').disabled = true;
   status($('sttStatus'), 'Preloading ack phrases + arming mic…', 'warn');
-  await setupMic();
-  await preloadAckBuffers('global');
-  await preloadAckBuffers('idle');
-  markActivity('live-start');
-  status($('sttStatus'), `Live mode armed (${endpointMode()}, ${state.endSilenceMs}ms endpoint). Start speaking…`, 'warn');
-  startLiveRecorder();
-  liveMonitor();
+  try {
+    if (!await setupMic() || session !== state.liveSession || !state.live) return;
+    await preloadAckBuffers('global');
+    await preloadAckBuffers('idle');
+    if (session !== state.liveSession || !state.live) return;
+    markActivity('live-start');
+    status($('sttStatus'), `Live mode armed (${endpointMode()}, ${state.endSilenceMs}ms endpoint). Start speaking…`, 'warn');
+    startLiveRecorder();
+    liveMonitor();
+  } catch (error) {
+    if (session !== state.liveSession) return;
+    stopLive();
+    status($('sttStatus'), error.message, 'bad');
+    throw error;
+  }
 }
 
-// --- Stop live conversation (verbatim from index.html:1221) ---
+// Stop live conversation
 export function stopLive() {
+  state.liveSession++;
   state.live = false; state.liveBusy = false;
   stopPartialTranscriptionLoop(true);
   $('liveBtn').classList.remove('on');
@@ -97,11 +71,9 @@ export function stopLive() {
   if (state.bargeLoopId) cancelAnimationFrame(state.bargeLoopId);
   state.liveLoopId = null;
   state.bargeLoopId = null;
-  if (EventBus.firstDeliveryTimer) clearTimeout(EventBus.firstDeliveryTimer);
   if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') state.mediaRecorder.stop();
   if (state.bargeRecorder && state.bargeRecorder.state !== 'inactive') state.bargeRecorder.stop();
-  if (state.stream) state.stream.getTracks().forEach(t => t.stop());
-  if (state.raf) cancelAnimationFrame(state.raf);
+  releaseMic();
   stopTtsNow();
   if (state.ackSource) { try { state.ackSource.stop(); } catch {} state.ackSource = null; }
   state.ackPlayingUntil = 0;
@@ -109,9 +81,10 @@ export function stopLive() {
   status($('sttStatus'), 'Live mode stopped.');
 }
 
-// --- Start the live recorder (verbatim from index.html:1222) ---
+// Start the live recorder
 export function startLiveRecorder() {
-  if (!state.live || !state.stream) return;
+  if (!state.live || !state.stream || (state.mediaRecorder && state.mediaRecorder.state !== 'inactive')) return;
+  const session = state.liveSession;
   state.liveSpeechStart = 0;
   state.liveSilenceStart = 0;
   state.liveLastVoice = 0;
@@ -120,14 +93,16 @@ export function startLiveRecorder() {
   state.partialWindowIndex = 0;
   state.latestPartialText = '';
   makeRecorder(async () => {
-    if (!state.live) return;
-    await handleLiveTurn();
+    if (!state.live || session !== state.liveSession) return;
+    await handleLiveTurn(session);
   }, 500);
   startPartialTranscriptionLoop();
 }
 
-// --- Adaptive-VAD silence monitor (verbatim from index.html:1223–1276) ---
+// Adaptive-VAD silence monitor
 export function liveMonitor() {
+  if (state.liveLoopId) cancelAnimationFrame(state.liveLoopId);
+  state.liveLoopId = null;
   if (!state.live || state.liveBusy) return;
   const level = rmsLevel();
   const now = performance.now();
@@ -182,19 +157,19 @@ export function liveMonitor() {
   state.liveLoopId = requestAnimationFrame(liveMonitor);
 }
 
-// --- Per-turn STT→LM→TTS handoff (verbatim from index.html:1277–1302) ---
-export async function handleLiveTurn() {
+// Per-turn STT→LM→TTS handoff
+export async function handleLiveTurn(session = state.liveSession) {
+  let preserveStatus = false;
   stopPartialTranscriptionLoop(false);
   try {
     const blob = new Blob(state.recChunks, { type: state.recChunks[0]?.type || 'audio/webm' });
     if (blob.size < 2500) {
       status($('sttStatus'), 'Ignored tiny/no-speech clip. Listening…', 'warn');
-      state.liveBusy = false;
-      startLiveRecorder();
-      liveMonitor();
+      preserveStatus = true;
       return;
     }
     await waitForPartialQueueIdle();
+    if (!state.live || session !== state.liveSession) return;
     let text = '';
     if (finalSttMode() === 'chunks' && state.latestPartialText.trim()) {
       text = state.latestPartialText.trim();
@@ -202,6 +177,7 @@ export async function handleLiveTurn() {
       status($('sttStatus'), `Using queued live chunk transcript (${text.length} chars); no full-utterance STT pass.`, 'good');
     } else {
       const j = await transcribeBlob(blob);
+      if (!state.live || session !== state.liveSession) return;
       text = (j.text || '').trim();
       if (text) {
         const existing = String($('transcript').value).trim();
@@ -215,18 +191,15 @@ export async function handleLiveTurn() {
     }
     if (!text) {
       status($('sttStatus'), 'No transcript. Listening…', 'warn');
-      state.liveBusy = false;
-      startLiveRecorder();
-      liveMonitor();
+      preserveStatus = true;
       return;
     }
     const pre = await responseLlmPreflight();
+    if (!state.live || session !== state.liveSession) return;
     if (!pre.ok) {
-      status($('sttStatus'), `Live mode: response LLM unreachable (${pre.reason}). Acks are still playing but no reply will come until llama.cpp / LM Studio is running.`, 'bad');
+      status($('sttStatus'), `Live mode: ${pre.reason} Check the response LLM in Settings, then try speaking again.`, 'bad');
       // Don't break the live loop — keep listening so the user can talk again.
-      state.liveBusy = false;
-      startLiveRecorder();
-      liveMonitor();
+      preserveStatus = true;
       return;
     }
     try {
@@ -236,21 +209,27 @@ export async function handleLiveTurn() {
       // the LLM replied with whitespace or no content; surface that loudly so
       // the user knows it's not a stalled TTS.
       if (!replyText || !String(replyText).trim()) {
+        preserveStatus = true;
         status($('sttStatus'), 'Live mode: response LLM returned an empty reply. The model may need a longer context or different prompt.', 'bad');
       }
     } catch (e) {
-      // askAndSpeak already swallowed the error into TTS status; do not
-      // double-throw, but make sure the live loop's status is also updated.
+      preserveStatus = true;
       status($('sttStatus'), `Live mode: askAndSpeak failed: ${e && e.message ? e.message : e}`, 'bad');
     }
   } catch (e) {
+    preserveStatus = true;
     status($('sttStatus'), 'Live loop error: ' + e.message, 'bad');
   } finally {
-    if (state.live && !state.handlingBarge) {
+    if (state.live && session === state.liveSession && !state.handlingBarge) {
       state.liveBusy = false;
-      status($('sttStatus'), `Live mode armed (${endpointMode()}, ${state.endSilenceMs}ms endpoint). Start speaking…`, 'warn');
-      startLiveRecorder();
-      liveMonitor();
+      if (!preserveStatus) status($('sttStatus'), `Live mode armed (${endpointMode()}, ${state.endSilenceMs}ms endpoint). Start speaking…`, 'warn');
+      try {
+        startLiveRecorder();
+        liveMonitor();
+      } catch (error) {
+        stopLive();
+        status($('sttStatus'), `Microphone restart failed: ${error.message} Try starting live mode again.`, 'bad');
+      }
     }
   }
 }

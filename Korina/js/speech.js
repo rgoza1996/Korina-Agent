@@ -1,35 +1,12 @@
-// js/speech.js
-//
-// Frontend TTS / speech-synthesis helpers — audio context lifecycle,
-// PCM chunk scheduling, streaming/buffered speak entrypoints, and
-// interrupt-context capture for the agent — extracted verbatim from
-// the original inline <script> in Korina/index.html (lines 775, 795,
-// 796–803, 804–813, 814, 815, 816, 817 at commit bdda3cc).
-//
-// Bare top-level globals (mode, controller, audioCtx, gain,
-// nextPlayTime, activeSources, ttsSpeaking, currentKorinaText,
-// currentTtsStartedAt, currentTtsEstimatedEnd, interruptContext,
-// ackPlayingUntil, live, bargeLoopId, bargeRecorder, handlingBarge)
-// have been migrated to the consolidated `state` object
-// (see state.js). `status` is now imported from dom.js,
-// `stripTranscriptLabels` from history.js, and `markActivity` from
-// settings-ui.js. `ttsBaseUrl`, `ttsDevice`, `ttsModel`,
-// `ttsProvider`, and `startBargeInCapture` remain bare globals —
-// they belong to modules that have not yet been extracted (3.2.10+).
-// They resolve at call time when this module is loaded by the
-// bootstrap that wires the remaining inline-script helpers into
-// their respective modules.
-//
-// Consumers import the named exports below.
+// Streaming and buffered speech playback, audio scheduling, and interruption context.
 
 import { state } from "./state.js";
 import { $, status } from "./dom.js";
 import { stripTranscriptLabels } from "./history.js";
 import { markActivity, ttsBaseUrl, ttsDevice, ttsModel, ttsProvider } from "./settings-ui.js";
+import { startBargeInCapture } from "./barge-in.js";
 
-// --- Audio context lifecycle (verbatim from index.html:775) ---
-//
-// Bare globals `audioCtx`, `gain` -> `state.audioCtx`, `state.gain`.
+// Audio context lifecycle
 export function ensureAudio() {
   if (!state.audioCtx) {
     state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -39,10 +16,7 @@ export function ensureAudio() {
   if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
 }
 
-// --- TTS abort (verbatim from index.html:796-803) ---
-//
-// Bare globals `controller`, `activeSources`, `nextPlayTime`,
-// `ackPlayingUntil`, `ttsSpeaking` -> `state.*`.
+// TTS abort
 export function stopTtsNow() {
   if (state.controller) { try { state.controller.abort(); } catch {} state.controller = null; }
   for (const s of state.activeSources) { try { s.stop(); } catch {} }
@@ -52,10 +26,7 @@ export function stopTtsNow() {
   state.ttsSpeaking = false;
 }
 
-// --- Interrupt context (verbatim from index.html:804-813) ---
-//
-// Bare globals `audioCtx`, `currentKorinaText`, `currentTtsStartedAt`,
-// `currentTtsEstimatedEnd` -> `state.*`.
+// Interrupt context
 export function interruptedSpeechContext() {
   if (!state.audioCtx || !state.currentKorinaText) return '';
   const elapsed = Math.max(0, state.audioCtx.currentTime - state.currentTtsStartedAt);
@@ -67,11 +38,7 @@ export function interruptedSpeechContext() {
   return `The user interrupted Korina about ${(ratio * 100).toFixed(0)}% through her previous spoken reply. Already spoken approximately: "${before}". Not yet spoken approximately: "${after}".`;
 }
 
-// --- PCM chunk scheduling (verbatim from index.html:814) ---
-//
-// Bare globals `audioCtx`, `gain`, `nextPlayTime`, `ackPlayingUntil`,
-// `activeSources`, `currentTtsEstimatedEnd` -> `state.*`.
-// `ensureAudio` is a self-call within this module.
+// PCM chunk scheduling
 export async function schedulePcm(b64, sr = 24000) {
   ensureAudio();
   const bin = atob(b64);
@@ -93,11 +60,7 @@ export async function schedulePcm(b64, sr = 24000) {
   state.currentTtsEstimatedEnd = Math.max(state.currentTtsEstimatedEnd, state.nextPlayTime);
 }
 
-// --- Streaming SSE speak (verbatim from index.html:815) ---
-//
-// Bare global `controller`, `nextPlayTime` -> `state.*`.
-// `schedulePcm` is a self-call. `ttsBaseUrl`, `ttsDevice`, `ttsModel`,
-// `ttsProvider` are bare globals pending extraction in 3.2.10+.
+// Streaming SSE speak
 export async function speakSSE(text) {
   state.controller = new AbortController();
   state.nextPlayTime = 0;
@@ -133,11 +96,7 @@ export async function speakSSE(text) {
   status($('ttsStatus'), `Done · ${chunks} chunks`, 'good');
 }
 
-// --- Buffered WAV speak (verbatim from index.html:816) ---
-//
-// Bare global `controller` -> `state.controller`.
-// `ttsBaseUrl`, `ttsDevice`, `ttsModel`, `ttsProvider` are bare
-// globals pending extraction in 3.2.10+.
+// Buffered WAV speak
 export async function speakBuffered(text) {
   state.controller = new AbortController();
   status($('ttsStatus'), 'Synthesizing full WAV…', 'warn');
@@ -156,15 +115,7 @@ export async function speakBuffered(text) {
   status($('ttsStatus'), 'Done · buffered WAV ready', 'good');
 }
 
-// --- Speak entrypoint (verbatim from index.html:817) ---
-//
-// Bare globals `mode`, `activeSources`, `ttsSpeaking`, `currentKorinaText`,
-// `currentTtsStartedAt`, `currentTtsEstimatedEnd`, `bargeLoopId`,
-// `bargeRecorder`, `handlingBarge`, `live`, `controller` -> `state.*`.
-// `stripTranscriptLabels` is imported from history.js. `markActivity` is
-// imported from settings-ui.js. `ensureAudio`, `speakSSE`, `speakBuffered`,
-// `waitForScheduledAudio` are self-calls. `startBargeInCapture` is a bare
-// global pending extraction in 3.2.10+.
+// Speak entrypoint
 export async function speakText(text, wait = false) {
   text = stripTranscriptLabels(text);
   if (!text.trim()) return;
@@ -205,9 +156,7 @@ export async function speakText(text, wait = false) {
   }
 }
 
-// --- Wait for scheduled audio to finish (verbatim from index.html:795) ---
-//
-// Bare globals `audioCtx`, `nextPlayTime` -> `state.*`.
+// Wait for scheduled audio to finish
 export async function waitForScheduledAudio() {
   if (!state.audioCtx) return;
   const ms = Math.max(0, (state.nextPlayTime - state.audioCtx.currentTime) * 1000) + 150;

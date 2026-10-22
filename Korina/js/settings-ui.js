@@ -1,20 +1,10 @@
-// js/settings-ui.js
-//
-// Frontend settings UI — getters, config I/O, and settings-related
-// sync helpers extracted verbatim from the original inline <script>
-// in Korina/index.html (lines 311–354, 435–505, 506–582, 587–591,
-// 607–612, 613–623 at commit bdda3cc). Bare top-level globals from
-// the inline script have been migrated to the consolidated `state`
-// object (see state.js): `mode`, `partialWindowMs`, `endSilenceMs`,
-// `appConfig`, `lastActivityAt`, `idleAckCount`.
-//
-// Consumers (e.g. api.js) import the named exports below.
+// Settings form access, saved configuration, and channel selection.
 
 import { state } from './state.js';
 import { $ } from './dom.js';
 import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from './labels.js';
 
-// --- Settings getters (verbatim from index.html:311-354) ---
+// Settings getters
 
 export function ttsPort() { return parseInt($('ttsPort')?.value || '8880', 10) || 8880 }
 export function ttsBaseUrl() {
@@ -52,7 +42,7 @@ export function agentModel() { return $('agentModel')?.value || lmModel() }
 export function finalSttMode() { return $('finalSttMode')?.value || 'chunks' }
 export function endpointMode() { return $('endpointMode')?.value || 'reading' }
 
-// --- collectConfig (verbatim from index.html:435-505) ---
+// collectConfig
 
 export function collectConfig() {
   return {
@@ -126,7 +116,7 @@ export function collectConfig() {
   };
 }
 
-// --- applyConfig (verbatim from index.html:506-582) ---
+// applyConfig
 
 export function applyConfig(c = {}) {
   state.appConfig = { ...state.appConfig, ...c };
@@ -231,7 +221,7 @@ export function applyConfig(c = {}) {
   };
 }
 
-// --- Idle activity tracking (verbatim from index.html:587-591) ---
+// Idle activity tracking
 
 export function markActivity(reason = 'activity') {
   state.lastActivityAt = performance.now();
@@ -361,7 +351,7 @@ export async function saveChannelSelection() {
   }
 }
 
-// --- Reasoning/converse sync helpers (verbatim from index.html:607-623) ---
+// Reasoning/converse sync helpers
 
 export function syncReasoningHints() {
   if ($('llmReasoningHint')) $('llmReasoningHint').textContent = `Reasoning: ${llmReasoningEnabled() === 'on' ? 'on' : 'off'}.`;
