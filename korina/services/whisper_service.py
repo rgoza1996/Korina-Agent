@@ -254,12 +254,12 @@ def whisper_payload(parts, info, *, metadata: dict, started: float,
     }
 
 
-def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, device: Optional[str] = None, model_id: Optional[str] = None, backend: str = 'whisper', llm_model: Optional[str] = None,
+def transcribe_upload_file(audio_file, *, vad_filter: bool = True, device: Optional[str] = None, model_id: Optional[str] = None, backend: str = 'whisper', llm_model: Optional[str] = None,
                            is_current: Callable[[], bool] | None = None) -> dict:
     check_current(is_current)
     with tempfile.TemporaryDirectory(prefix='korina-stt-') as td:
         td_path = Path(td)
-        src = td_path / f'input{suffix}'
+        src = td_path / 'input.audio'
         wav = td_path / 'input-16k.wav'
         with src.open('wb') as f:
             shutil.copyfileobj(audio_file, f)

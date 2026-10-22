@@ -150,11 +150,11 @@ def _multimodal_payload(wav: Path, *, device, model, llm_model, started, metadat
     }
 
 
-def _stream_events(audio_file, suffix: str, *, device, model, backend, llm_model,
+def _stream_events(audio_file, *, device, model, backend, llm_model,
                    is_current: Callable[[], bool] | None = None):
     """Run blocking decoding/inference in StreamingResponse's worker iterator."""
     with tempfile.TemporaryDirectory(prefix='korina-stt-stream-') as directory:
-        src = Path(directory) / f'input{suffix}'
+        src = Path(directory) / 'input.audio'
         wav = Path(directory) / 'input-16k.wav'
         started = time.time()
         try:
@@ -204,10 +204,9 @@ async def transcribe(
     llm_model: Optional[str] = Query(None),
 ):
     # Keep decoding/inference in the existing pool while observing disconnect.
-    suffix = Path(audio.filename or 'recording.webm').suffix or '.webm'
     try:
         return JSONResponse(await _owned_transcription(request,
-            audio.file, suffix, vad_filter=True,
+            audio.file, vad_filter=True,
             device=device, model_id=model, backend=backend, llm_model=llm_model,
         ))
     except AudioDurationLimitError as exc:
@@ -230,10 +229,9 @@ async def transcribe_partial(
     llm_model: Optional[str] = Query(None),
 ):
     """Transcribe a rolling snapshot of the current utterance off the event loop."""
-    suffix = Path(audio.filename or 'partial.webm').suffix or '.webm'
     try:
         result = await _owned_transcription(request,
-            audio.file, suffix, vad_filter=False,
+            audio.file, vad_filter=False,
             device=device, model_id=model, backend=backend, llm_model=llm_model,
         )
         result.update(partial=True, stable=False)
@@ -266,10 +264,9 @@ async def transcribe_stream(
     backend: str = Query('whisper'),
     llm_model: Optional[str] = Query(None),
 ):
-    suffix = Path(audio.filename or 'recording.webm').suffix or '.webm'
     owner = RequestOwner()
     return SttStreamResponse(
-        _stream_events(audio.file, suffix, device=device, model=model,
+        _stream_events(audio.file, device=device, model=model,
                        backend=backend, llm_model=llm_model, is_current=owner.is_current),
         owner=owner,
         media_type='text/event-stream',

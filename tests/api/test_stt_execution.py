@@ -113,7 +113,7 @@ def test_stream_reports_upload_read_failure_as_sse():
             raise OSError('upload unreadable')
 
     events = list(_stream_events(
-        BrokenUpload(), '.wav', device=None, model=None,
+        BrokenUpload(), device=None, model=None,
         backend='whisper', llm_model=None,
     ))
     assert len(events) == 1

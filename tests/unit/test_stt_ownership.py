@@ -102,7 +102,7 @@ def test_stream_retired_after_status_does_not_admit_native_model(monkeypatch):
     monkeypatch.setattr(stt, 'convert_to_16k_wav', lambda *args: None)
     monkeypatch.setattr(stt, 'audio_metadata', lambda wav: {'samples': 16000, 'sample_rate': 16000, 'duration': 1})
     monkeypatch.setattr(stt, 'transcribe_wav_segments', lambda *args, **kwargs: admitted.append(True))
-    stream = stt._stream_events(io.BytesIO(b'fixture'), '.wav', device=None, model=None,
+    stream = stt._stream_events(io.BytesIO(b'fixture'), device=None, model=None,
                                 backend='whisper', llm_model=None, is_current=lambda: current)
     assert 'converting' in next(stream)
     assert 'transcribing' in next(stream)
@@ -115,7 +115,7 @@ def test_stream_retired_after_converting_status_does_not_start_decoder(monkeypat
     current = True
     decoded = []
     monkeypatch.setattr(stt, 'convert_to_16k_wav', lambda *args: decoded.append(True))
-    stream = stt._stream_events(io.BytesIO(b'fixture'), '.wav', device=None, model=None,
+    stream = stt._stream_events(io.BytesIO(b'fixture'), device=None, model=None,
                                 backend='whisper', llm_model=None, is_current=lambda: current)
     assert 'converting' in next(stream)
     current = False
@@ -136,7 +136,7 @@ def test_buffered_upload_retired_during_copy_does_not_start_decoder(monkeypatch)
     monkeypatch.setattr(whisper_service.shutil, 'copyfileobj', copied)
     monkeypatch.setattr(whisper_service, 'convert_to_16k_wav', lambda *args: decoded.append(True))
     with pytest.raises(RequestCancelledError):
-        whisper_service.transcribe_upload_file(io.BytesIO(b'fixture'), '.wav', is_current=lambda: current)
+        whisper_service.transcribe_upload_file(io.BytesIO(b'fixture'), is_current=lambda: current)
     assert decoded == []
 
 
@@ -189,7 +189,7 @@ def test_buffered_and_partial_stop_before_later_native_steps(monkeypatch, backen
 
     monkeypatch.setattr(whisper_service, 'lmstudio_transcribe_wav', unavailable)
     with pytest.raises(RequestCancelledError):
-        whisper_service.transcribe_upload_file(io.BytesIO(b'fixture'), '.wav', backend=backend,
+        whisper_service.transcribe_upload_file(io.BytesIO(b'fixture'), backend=backend,
                                                vad_filter=vad_filter, is_current=lambda: current)
     assert calls == ['native step', 'closed']
 

@@ -49,7 +49,7 @@ def test_buffered_transcription_falls_back_on_network_timeout(monkeypatch):
         [SimpleNamespace(text='Hello.', start=0, end=1)],
         SimpleNamespace(language='en', language_probability=1),
     ))
-    result = whisper_service.transcribe_upload_file(io.BytesIO(b'audio'), '.wav', backend='llm')
+    result = whisper_service.transcribe_upload_file(io.BytesIO(b'audio'), backend='llm')
     assert result['text'] == 'Hello.'
     assert result['backend'] == 'whisper-fallback'
     assert result['warning'] == 'upstream timed out'
@@ -73,5 +73,5 @@ def test_empty_multimodal_result_does_not_retry_failed_whisper_fallback(monkeypa
 
     monkeypatch.setattr(whisper_service, 'transcribe_wav_segments', unavailable)
     with pytest.raises(RuntimeError, match='whisper unavailable'):
-        whisper_service.transcribe_upload_file(io.BytesIO(b'audio'), '.wav', backend='llm')
+        whisper_service.transcribe_upload_file(io.BytesIO(b'audio'), backend='llm')
     assert calls == ['whisper']

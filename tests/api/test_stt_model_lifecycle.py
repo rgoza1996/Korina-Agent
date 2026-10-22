@@ -59,7 +59,7 @@ def test_stream_disconnect_after_first_segment_releases_model_and_audio_files(mo
     from korina.routes import stt
 
     response = stt.SttStreamResponse(stt._stream_events(
-        io.BytesIO(b'fixture'), '.wav', device='cpu', model='first', backend='whisper', llm_model=None,
+        io.BytesIO(b'fixture'), device='cpu', model='first', backend='whisper', llm_model=None,
     ))
     seen_segment = []
 
