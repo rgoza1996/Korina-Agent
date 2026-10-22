@@ -52,6 +52,10 @@ class ProviderRoleConflict(RuntimeError):
     """A provider change would interrupt another active role's service."""
 
 
+class InvalidLocalModelPath(ValueError):
+    """A candidate local path cannot be inspected before provider admission."""
+
+
 @dataclass
 class LifecycleActions:
     started: list[str] = field(default_factory=list)
@@ -428,6 +432,22 @@ def _resolve_llama_cpp_model_id(value: str) -> str:
             return g
     return v
 
+
+def _local_model_file(value: str) -> Path | None:
+    """Inspect only the candidate path, with a bounded public diagnostic.
+
+    This does not catch executable, service, discovery, or startup failures.
+    Resolve here too so path admission finishes before settings are saved.
+    """
+    try:
+        if '\x00' in value:
+            raise ValueError('path contains NUL')
+        path = Path(value)
+        return path.resolve() if path.is_file() else None
+    except (OSError, ValueError) as exc:
+        raise InvalidLocalModelPath('Invalid or unreadable local model path') from exc
+
+
 @dataclass(frozen=True)
 class _LocalRole:
     name: str
@@ -513,9 +533,10 @@ def _activation_model(provider: str, model: Optional[str], config: dict) -> str:
         if not selected:
             discovered = discover_local_gguf_models()
             selected = discovered[0] if discovered else ''
-        if not selected or not Path(selected).is_file():
+        selected_path = _local_model_file(selected) if selected else None
+        if selected_path is None:
             raise RuntimeError(f'Requested llama.cpp model not found: {model or config.get("lm_model") or "no local GGUF models"}')
-        selected = str(Path(selected).resolve())
+        selected = str(selected_path)
         _require_executable(LLAMA_SERVER_BIN, 'llama-server')
         if shutil.which('systemctl') is None:
             raise RuntimeError('Managed llama.cpp requires systemd; run an external endpoint on this host')
@@ -665,7 +686,6 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
       - openai-compatible: always allow (user-provided endpoint)
       - anthropic: always allow (user-provided endpoint)
     """
-    from pathlib import Path
     from korina.services.model_catalog import (
         discover_lmstudio_catalog_models,
     )
@@ -686,12 +706,16 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
             return (False, "llama.cpp requires a model id (local GGUF path)")
         if not mid.endswith(".gguf"):
             return (False, f"llama.cpp does not support endpoint-loaded ids; got '{mid}'")
-        if not Path(mid).exists():
+        try:
+            model_file = _local_model_file(mid)
+        except InvalidLocalModelPath as exc:
+            return (False, str(exc))
+        if model_file is None:
             return (False, f"llama.cpp model file not found: {mid}")
         # NOTE: do NOT call `discover_local_gguf_models()` here. That walks
         # `LOCAL_MODEL_ROOTS` + `LMSTUDIO_HUB_ROOT` via `rglob('*.gguf')`
         # on every activate request -- a non-trivial filesystem scan on
-        # hosts with many GGUFs. The user-provided path existing on disk
+        # hosts with many GGUFs. The user-provided file existing on disk
         # is sufficient evidence of legitimacy; the llama-server will
         # reject it with a clear error if it's actually broken.
         return (True, "local_gguf")
