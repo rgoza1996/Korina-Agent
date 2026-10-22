@@ -180,8 +180,14 @@ def request_json(
     def reject_constant(value: str) -> None:
         raise ValueError(f'provider JSON contains an invalid numeric constant: {value}')
 
+    def finite_float(value: str) -> float:
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError('provider JSON contains a non-finite number')
+        return number
+
     try:
-        body = json.loads(data.decode('utf-8'), parse_constant=reject_constant)
+        body = json.loads(data.decode('utf-8'), parse_constant=reject_constant, parse_float=finite_float)
     except RecursionError as exc:
         raise ValueError('provider JSON exceeded the supported nesting depth') from exc
     if time.monotonic() - started >= timeout:

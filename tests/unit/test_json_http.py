@@ -245,6 +245,7 @@ def test_binary_response_and_invalid_json_have_explicit_results():
     (b'{"loaded":NaN}', 'invalid numeric constant'),
     (b'{"loaded":Infinity}', 'invalid numeric constant'),
     (b'{"loaded":-Infinity}', 'invalid numeric constant'),
+    (b'{"loaded":1e999}', 'non-finite number'),
 ])
 def test_invalid_json_values_degrade_real_health_and_readiness(client, monkeypatch, invalid_body, error):
     from korina.routes import health
