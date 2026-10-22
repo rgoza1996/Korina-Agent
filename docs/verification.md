@@ -14,6 +14,18 @@ Backend tests include role-aware provider retention, protected refresh/config co
 
 GitHub Actions jobs did not start because the account payment/spending limit blocked them. These local results do not claim a passing hosted run. The earlier fully passing `fb996a1` checkpoint and actual model observations below remain historical evidence for their stated snapshots.
 
+## Actual model pipeline at `96a8d5c`
+
+This archived source used actual Whisper tiny.en CPU/int8, SmolLM2-135M-Instruct pinned to `12fd25f77366fa6b3b4b768ec3050bf629380bac`, and Kokoro 0.9.4 with `af_heart`. Python 3.12.3, Torch 2.14.1+cpu, Transformers 5.20.2, and four CPU threads ran cached weights offline without fixture model replies or paid inference. Chromium 156.0.8078.4 / Playwright 1.64.1 used a generated fake-microphone input; physical audio remains separate. Native playback finished **36.608 seconds** after Live was clicked. Whisper handled 8.82 seconds / 141,120 samples in 3.241 seconds, returning “The Long World. This is a local speech test. The Blue Mysicle is beside the garden.” Both the opening and bicycle recognition differ from the intended speech. The response mostly repeated that input; its 218 prompt / 21 generated tokens took 8.443 seconds.
+
+Kokoro returned three real SSE chunks totaling 161,400 samples at 24 kHz, or 6.725 seconds of speech. All three native buffers had nonzero RMS and reached `ended`. The response and audio were longer than the earlier repeat, so these single observations do not establish a performance regression or improvement.
+
+Actual agent inference completed in 18.653 seconds (480 / 54 tokens), and its 235-character report entered the next actual response exactly once. That response took 8.125 seconds (331 / 21 tokens). Full read-only readiness passed with the agent enabled; no page/console errors occurred, Stop released capture, and all three disposable service ports closed.
+
+Two additional checks used the same running services. Buffered Kokoro returned HTTP 200 with valid mono 24 kHz, 16-bit WAV: 60,600 frames, nonzero RMS, 4.543 seconds generation. A separate in-process Python channel completed actual agent inference and returned a finished nonempty report without error in 13.687 seconds; its model call took 13.526 seconds (437 / 36 tokens). Its worker shut down afterward.
+
+The tiny model still echoed input and reporting instructions. This verifies actual inference, transport, completion ownership, and native playback. Useful presentation-model quality and physical audio still require rehearsal.
+
 ## Later focused probe and gateway checks
 
 After the complete `96a8d5c` checkpoint, `437283e`, `acca9fe`, and `98f8955` address probe ownership in the browser, explicit probe batches, and STT fallback. Real HTTP fixtures cover held response headers/bodies under disconnect, scope cancellation, and raw task cancellation: connected I/O closes, no later candidate or stale cache write starts, and the same sole pool worker serves a fresh request. Held settings-lock cases verify that cache reads and mutations recheck ownership after waiting. Browser socket cases exercise the five-second deadline, query/forced-refresh retirement, preserved failure state, and Reset completion independent of discovery. Targeted native picker, discovery, and boot checks passed. These are focused results; the complete checkpoint above retains its own source identity and counts.
@@ -107,7 +119,7 @@ The transcript retained the same known small-model recognition errors. Aborting 
 
 A repeat from an immutable archive of `64d74c7` exercised the bounded capture, strict SSE, shared HTTP transport, and leased Whisper cache together. Native playback reached its `ended` event **21.642 seconds** after Live was clicked. One partial request completed, the next was aborted, and final SSE handled 8.76 seconds of audio in 4.495 seconds. The local response fixture received the current user once; actual Kokoro returned 60,600 samples at 24 kHz, and the 2.525-second native buffer completed with nonzero RMS. The browser raised no page/console errors, and Stop released the microphone. This third timing is another single observation, not a controlled comparison.
 
-## Browser pipeline with real response and agent inference
+## Earlier browser pipeline with real response and agent inference
 
 Immutable `fb996a1` also completed a separate CPU run with actual response and agent inference. Both roles used [HuggingFaceTB/SmolLM2-135M-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-135M-Instruct), pinned to revision `12fd25f77366fa6b3b4b768ec3050bf629380bac`. A disposable local OpenAI-compatible wrapper loaded safetensors with `trust_remote_code=False` and `local_files_only=True`; it applied the model's chat template without rewriting Korina's messages or returning fixture replies. No paid inference service was used.
 
@@ -134,18 +146,6 @@ Immutable `d14a371` completed the same actual CPU model pipeline in **27.537 sec
 Final Whisper handled 8.82 seconds / 141,120 samples in 4.669 seconds and returned the same transcript and known opening-word error. Actual response inference took 5.491 seconds (217 prompt / 9 generated tokens). Kokoro produced 61,200 samples at 24 kHz; the 2.55-second native buffer had nonzero RMS and reached `ended`. Actual agent inference took 20.278 seconds (465 / 64 tokens), and its report appeared exactly once in the next actual response (328 / 10 tokens, 7.079 seconds inference). All six read-only smoke requests passed, including enabled-agent readiness. Stop released capture, no page/console errors occurred, and disposable services shut down.
 
 The response and agent still mostly echoed input. This repeat verifies the refactored transport, state, and playback together; it does not establish useful presentation-model quality or physical microphone/speaker performance.
-
-### Repeat at `96a8d5c`
-
-The same pinned CPU weights and fake-microphone input completed another actual-model run after the synthesis and channel ownership changes. Native playback finished **36.608 seconds** after Live was clicked. Whisper handled 8.82 seconds / 141,120 samples in 3.241 seconds, returning “The Long World. This is a local speech test. The Blue Mysicle is beside the garden.” Both the opening and bicycle recognition differ from the intended speech. The response mostly repeated that input; its 218 prompt / 21 generated tokens took 8.443 seconds.
-
-Kokoro returned three real SSE chunks totaling 161,400 samples at 24 kHz, or 6.725 seconds of speech. All three native buffers had nonzero RMS and reached `ended`. The response and audio were longer than the earlier repeat, so these single observations do not establish a performance regression or improvement.
-
-Actual agent inference completed in 18.653 seconds (480 / 54 tokens), and its 235-character report entered the next actual response exactly once. That response took 8.125 seconds (331 / 21 tokens). Full read-only readiness passed with the agent enabled; no page/console errors occurred, Stop released capture, and all three disposable service ports closed.
-
-Two additional checks used the same running services. Buffered Kokoro returned HTTP 200 with valid mono 24 kHz, 16-bit WAV: 60,600 frames, nonzero RMS, 4.543 seconds generation. A separate in-process Python channel completed actual agent inference and returned a finished nonempty report without error in 13.687 seconds; its model call took 13.526 seconds (437 / 36 tokens). Its worker shut down afterward.
-
-The tiny model still echoed input and reporting instructions. This verifies actual inference, transport, completion ownership, and native playback. Useful presentation-model quality and physical audio still require rehearsal.
 
 ## Agent and permission integration
 
