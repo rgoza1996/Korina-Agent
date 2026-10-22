@@ -108,7 +108,7 @@ def test_maybe_fallback_persists_silent_empty_to_audio_unsupported(tmp_path, mon
         captured['whisper_calls'] += 1
         return {'text': 'whisper transcript', 'engine': 'whisper'}
 
-    def fake_set(provider, base_url, model, reason, body):
+    def fake_set(provider, base_url, model, reason, body, *, is_current=None):
         captured['persist_calls'].append({
             'provider': provider, 'base_url': base_url, 'model': model,
             'reason': reason, 'body': body,

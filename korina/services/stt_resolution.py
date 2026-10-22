@@ -32,6 +32,7 @@ def resolve_multimodal_transcription(
             provider=provider, base_url=base, model=selected,
             stt_status_code=status, stt_response_body=body,
             whisper_fallback_fn=owned_fallback, finish_reason=finish_reason,
+            is_current=is_current,
         )
 
     def owned_fallback():

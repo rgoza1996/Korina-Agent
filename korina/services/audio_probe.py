@@ -25,7 +25,10 @@ Phase 5 silent-empty handling (2026-06-27):
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import Tuple
+
+from korina.runtime.request_owner import check_current
 
 
 # Patterns that indicate "this model/inference engine cannot accept
@@ -122,6 +125,7 @@ def maybe_fallback_to_whisper(
     stt_status_code: int, stt_response_body: str,
     whisper_fallback_fn,
     finish_reason: str = "",
+    *, is_current: Callable[[], bool] | None = None,
 ) -> tuple[bool, dict]:
     """Decide whether to fall back to whisper for this STT request.
 
@@ -137,20 +141,26 @@ def maybe_fallback_to_whisper(
       3. If False, return (False, {'error': ...}) for the caller to handle.
 
     finish_reason: see classify_failure. Forwarded so the same silent-empty
-    detection works at this layer.
+    detection works at this layer. Retired owners cannot publish a cache
+    result or enter Whisper after waiting for the configuration transaction.
     """
     from korina.config import (
         config_audio_unsupported,
         set_audio_unsupported,
     )
 
+    check_current(is_current)
     triple = triple_key(provider, base_url, model)
     cache = config_audio_unsupported()
+    check_current(is_current)
     cached = cache.get(triple)
     if cached:
         # Cache hit -- skip retry entirely.
+        check_current(is_current)
+        payload = whisper_fallback_fn()
+        check_current(is_current)
         return (True, {
-            **whisper_fallback_fn(),
+            **payload,
             "fallback_reason": cached.get("reason", "cached_audio_unsupported"),
             "audio_unsupported_since": cached.get("since", ""),
             "triple": triple,
@@ -160,13 +170,18 @@ def maybe_fallback_to_whisper(
         stt_status_code, stt_response_body, finish_reason=finish_reason,
     )
     if unsupported:
-        set_audio_unsupported(provider, base_url, model, reason, stt_response_body)
+        check_current(is_current)
+        set_audio_unsupported(provider, base_url, model, reason, stt_response_body, is_current=is_current)
+        check_current(is_current)
+        payload = whisper_fallback_fn()
+        check_current(is_current)
         return (True, {
-            **whisper_fallback_fn(),
+            **payload,
             "fallback_reason": reason,
             "triple": triple,
         })
 
+    check_current(is_current)
     return (False, {
         "error": "stt_failed",
         "status_code": stt_status_code,
