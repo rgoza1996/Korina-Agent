@@ -11,6 +11,7 @@ custom adapters own their state and may expose the optional legacy extension.
 
 from __future__ import annotations
 
+from threading import Lock
 from typing import Optional
 
 from korina.agents.base import AgentAdapter, LegacyAgentHttpAdapter
@@ -18,6 +19,7 @@ from korina.schemas import AgentPermissionAnswer, AgentTranscriptRequest, Permis
 
 # Module-level mutable singleton. Tests can swap this via :func:`register_adapter`.
 _active: Optional[AgentAdapter] = None
+_active_lock = Lock()
 
 
 def register_adapter(adapter: AgentAdapter) -> None:
@@ -26,23 +28,26 @@ def register_adapter(adapter: AgentAdapter) -> None:
     Typically called once at app startup (after config load) or in tests.
     """
     global _active
-    _active = adapter
+    with _active_lock:
+        _active = adapter
 
 
 def agent_gateway() -> AgentAdapter:
     """Return the currently active adapter.
 
-    Lazy-loads :class:`KorinaAgentAdapter` as the default if nothing has been
-    registered. The lazy import avoids a circular dependency: ``korina_adapter``
-    imports ``agent_service``, which itself imports ``schemas`` and
-    ``runtime.state``. Importing the adapter at module load would force
-    that whole chain to resolve before any consumer of the gateway runs.
+    Import and construct the default outside the publication lock. Explicit
+    registration during construction takes precedence over this candidate.
     """
     global _active
-    if _active is None:
-        from korina.agents.korina_adapter import KorinaAgentAdapter
-        _active = KorinaAgentAdapter()
-    return _active
+    with _active_lock:
+        if _active is not None:
+            return _active
+    from korina.agents.korina_adapter import KorinaAgentAdapter
+    candidate = KorinaAgentAdapter()
+    with _active_lock:
+        if _active is None:
+            _active = candidate
+        return _active
 
 class UnsupportedAgentOperation(ValueError):
     """An HTTP operation cannot be represented by the selected adapter."""
