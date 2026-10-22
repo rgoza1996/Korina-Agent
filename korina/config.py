@@ -180,8 +180,15 @@ def save_config(config: dict) -> dict:
 def update_config_values(payload: dict) -> dict:
     """Merge user settings while preserving server-owned probe cache state."""
     previous = load_config()
-    current = {**previous, **{key: value for key, value in payload.items()
-                             if key in CONFIG_KEYS and key != 'audio_unsupported'}}
+    updates = {key: value for key, value in payload.items()
+               if key in CONFIG_KEYS and key != 'audio_unsupported'}
+    if isinstance(updates.get('converse'), dict):
+        previous_converse = previous.get('converse')
+        updates['converse'] = {
+            **(previous_converse if isinstance(previous_converse, dict) else {}),
+            **updates['converse'],
+        }
+    current = {**previous, **updates}
     return save_config(synchronize_llm_dependents(current, previous))
 
 
