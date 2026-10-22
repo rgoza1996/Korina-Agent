@@ -206,7 +206,7 @@ python scripts/check_stack.py --base http://127.0.0.1:8001 --allow-degraded</cod
 <p>Event-specific Meta requirements have not been supplied. This preparation does not claim a particular Meta integration or hackathon eligibility.</p>
 <p>Deterministic tests cover backend contracts, fallback behavior, request limits, background-worker concurrency, frontend health behavior, module imports, portable paths, and packaging. Local checks and final CI results are recorded in <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a> and the <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">code review</a>.</p>
 <ul>
-<li>Actual CPU Whisper and Kokoro inference and native browser capture/playback scheduling passed locally with a fake microphone and local response fixture. Physical audio devices, the selected real response/agent LLMs, GPU execution, and provider activation on the demonstration hardware still require rehearsal.</li>
+<li>Actual CPU Whisper and Kokoro inference and native browser capture/playback scheduling passed locally with a fake microphone. A separate pinned local SmolLM2 run also completed actual response/agent inference and next-response injection. The tiny model mostly echoed input. Physical audio devices, useful presentation response/agent models, GPU execution, and provider activation on the demonstration hardware still require rehearsal.</li>
 <li>The agent currently produces reports and events. A complete tool-execution runtime, durable memory, and arbitrary third-party agent support remain separate roadmap work.</li>
 <li>This preview has not been promoted to <code>alpha</code> or <code>master</code>. A passing unit suite does not establish end-to-end demo readiness.</li>
 </ul>

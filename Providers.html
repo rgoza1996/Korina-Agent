@@ -152,4 +152,10 @@ Providers are OpenAI-compatible LLM endpoints: llama.cpp, LM Studio, Ollama, Ope
 
 Model catalog helpers handle endpoint-loaded models, local GGUFs, LM Studio catalogs, and mmproj sidecar detection.
 
+Local activation and refresh account for response, multimodal STT, and enabled agent roles before stopping or restarting services. Protected conflicts and unavailable prerequisites fail before teardown; uncertain stop results are reported rather than claimed as confirmed. Configuration selection is saved before activation and is not automatically rolled back on failure.
+
+Model-folder append/delete merges atomically with the latest settings. Removing the last folder preserves an explicit empty selection rather than silently restoring environment defaults.
+
+Candidate agent discovery accepts an explicit bounded POST body without saving settings or activating a provider. Credentials inherit only for the matching actual API base.
+
 See the full architecture report for the capability schema.</p></div></body></html>
