@@ -106,7 +106,7 @@
         <details class="settingsGroup" open>
           <summary>Converse Channel</summary>
           <div class="settingsGroupBody">
-            <p class="sectionLead">Select which ConverseChannel adapter serves traffic. The default <code>korina</code> is the in-process Korina Agent. The selected channel is saved and restored when Korina restarts.</p>
+            <p class="sectionLead">Select the channel used by Python integrations. The default <code>korina</code> connects to the in-process Korina Agent. Selection is saved across restarts. Browser voice replies use the response provider in Models &amp; Providers.</p>
             <div><label for="channelSelect">Active channel</label><select id="channelSelect"></select></div>
             <p class="small mono" id="channelSelectHint">Loading registered channels&hellip;</p>
           </div>
@@ -134,23 +134,7 @@
         <div><label for="agentInterruptCooldownPaddingMs">Interrupt cooldown padding ms</label><input id="agentInterruptCooldownPaddingMs" type="number" min="0" value="3000"></div>
         <div><label for="agentPermissionInterrupts">Permission interrupts</label><select id="agentPermissionInterrupts"><option value="on" selected>On</option><option value="off">Off</option></select></div>
         <div><label for="agentReportInjectionMode">Normal reports</label><select id="agentReportInjectionMode"><option value="next_reply" selected>Inject into next reply</option><option value="silent">Store silently</option></select></div>
-        <div class="secretNote"><label>Pi-style behavior</label><p class="small mono">These mirror Pi Coding Agent-style controls for trust, injection, compaction, thinking, transport, retries, and visual/tool behavior.</p></div>
-        <div class="secretNote"><label>YOLO / autonomous mode</label><div class="toggleLine"><input id="agentYoloMode" type="checkbox"><span>More decisive injection; trust Korina Agent to act without extra confirmation prompts where supported</span></div></div>
-        <div><label for="agentProjectTrust">Project trust</label><select id="agentProjectTrust"><option value="ask" selected>Ask</option><option value="always">Always trust</option><option value="never">Never trust</option></select></div>
-        <div><label for="agentThinkingLevel">Thinking level</label><select id="agentThinkingLevel"><option value="off">Off</option><option value="minimal">Minimal</option><option value="low" selected>Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select></div>
-        <div><label for="agentInjectionMode">Injection mode</label><select id="agentInjectionMode"><option value="one-at-a-time" selected>One at a time</option><option value="all">All queued injection</option></select></div>
-        <div><label for="agentFollowUpMode">Follow-up mode</label><select id="agentFollowUpMode"><option value="one-at-a-time" selected>One at a time</option><option value="all">All follow-ups</option></select></div>
-        <div><label for="agentTransport">Transport</label><select id="agentTransport"><option value="auto" selected>Auto</option><option value="responses">Responses API</option><option value="chat">Chat completions</option></select></div>
-        <div><label for="agentHttpIdleTimeoutMs">HTTP idle timeout ms</label><input id="agentHttpIdleTimeoutMs" type="number" min="0" value="0"></div>
-        <div><label for="agentAutoCompact">Auto compaction</label><select id="agentAutoCompact"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <div><label for="agentHideThinking">Hide thinking block</label><select id="agentHideThinking"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <div><label for="agentCompactionReserveTokens">Compaction reserve tokens</label><input id="agentCompactionReserveTokens" type="number" min="0" value="16384"></div>
-        <div><label for="agentCompactionKeepRecentTokens">Keep recent tokens</label><input id="agentCompactionKeepRecentTokens" type="number" min="0" value="20000"></div>
-        <div><label for="agentRetryEnabled">Retry</label><select id="agentRetryEnabled"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <div><label for="agentMaxRetries">Max retries</label><input id="agentMaxRetries" type="number" min="0" value="3"></div>
-        <div><label for="agentRetryBaseDelayMs">Retry base delay ms</label><input id="agentRetryBaseDelayMs" type="number" min="0" value="2000"></div>
-        <div><label for="agentEnableSkillCommands">Skill commands</label><select id="agentEnableSkillCommands"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <div><label for="agentBlockImages">Block images</label><select id="agentBlockImages"><option value="off" selected>Off</option><option value="on">On</option></select></div>
+        <p class="sectionLead">The agent writes reports and permission questions. Tool execution is planned for a future version.</p>
       </div>
       <p class="small mono"><span id="settingsInfo">Loading saved settings…</span><br>
         <span id="settingsLiveStatus"></span><br>

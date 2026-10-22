@@ -9,6 +9,7 @@ import { speakText, stopTtsNow } from "./speech.js";
 // Priority lookup table.
 // Keep this ceiling aligned with ChatRequest.message on the backend.
 const MAX_CHAT_MESSAGE_CHARS = 8192;
+const MAX_MODEL_HISTORY_TURNS = 12;
 const priorityRank = { low: 0, normal: 1, important: 2, critical: 3 };
 let deliveryInFlight = false;
 let eventPollInFlight = false;
@@ -124,6 +125,24 @@ export function maybeDeliverTranscriptToAgent(reason = 'timer') {
 }
 
 // Event polling
+function clearPreviousAgentSession() {
+  // A server reset/restart invalidates reports and work accepted by that session.
+  // Keep the conversation so the next delivery can establish the new agent context.
+  state.agentSession++;
+  state.pendingAgentReportVersion++;
+  state.agentStateReport = '';
+  state.pendingAgentStateReport = '';
+  state.pendingImportantAgentMessage = '';
+  state.awaitingAgentPermission = null;
+  state.deferredAgentInterrupt = null;
+  state.agentInterruptCooldownUntil = 0;
+  state.agentLastTranscriptHash = '';
+  state.agentFirstDelivered = false;
+  state.agentLastDeliveredTurn = 0;
+  state.agentLastDeliveryAt = 0;
+  state.agentStartedAt = performance.now();
+}
+
 export async function pollAgentEvents() {
   if (agentEnabled() !== 'on' || state.agentResetBlocked || eventPollInFlight) return;
   eventPollInFlight = true;
@@ -133,11 +152,15 @@ export async function pollAgentEvents() {
     if (!response.ok) throw new Error(`Agent events HTTP ${response.status}`);
     const result = await response.json();
     if (session !== state.agentSession || state.agentResetBlocked || agentEnabled() !== 'on') return;
+    const cursor = result.last_event_id;
+    const hasCursor = Number.isSafeInteger(cursor) && cursor >= 0;
+    if (hasCursor && cursor < state.agentEventCursor) clearPreviousAgentSession();
     for (const event of (result.events || [])) {
       state.agentEventCursor = Math.max(state.agentEventCursor, event.id || 0);
       agentDebug(`Agent event ${event.type || ''} #${event.id || ''}`, event);
       handleAgentEvent(event);
     }
+    if (hasCursor) state.agentEventCursor = cursor;
   } catch (error) {
     if (session === state.agentSession) console.warn('agent event poll failed', error);
   } finally {
@@ -219,8 +242,9 @@ export async function handlePermissionAnswerIfAny(message) {
   return true;
 }
 
-// LLM call
-export async function askLM(message) {
+// ChatRequest.history contains prior turns only; the backend appends message.
+// Explicit history lets callers record the visible current turn before awaiting I/O.
+export async function askLM(message, priorHistory = cleanHistoryForModel()) {
   const session = state.agentSession;
   const report = state.pendingAgentStateReport;
   const reportVersion = state.pendingAgentReportVersion;
@@ -238,7 +262,7 @@ export async function askLM(message) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: injection + userMessage,
-        history: cleanHistoryForModel(),
+        history: priorHistory.slice(-MAX_MODEL_HISTORY_TURNS),
         max_tokens: 180,
         temperature: 0.7,
         model: lmModel(),
@@ -265,12 +289,13 @@ export async function askAndSpeak(message, context = '') {
   log('You', message);
   if (await handlePermissionAnswerIfAny(message)) return null;
   if (session !== state.agentSession) return null;
+  const priorHistory = cleanHistoryForModel();
   state.history.push({ role: 'user', content: stripTranscriptLabels(message) });
   const lmMessage = context
     ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}`
     : stripTranscriptLabels(message);
 
-  const rawReply = await askLM(lmMessage);
+  const rawReply = await askLM(lmMessage, priorHistory);
   if (session !== state.agentSession || rawReply === null) return null;
   const reply = stripTranscriptLabels(rawReply);
   $('text').value = reply; log('Korina', reply);

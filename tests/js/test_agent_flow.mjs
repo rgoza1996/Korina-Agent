@@ -26,6 +26,7 @@ beforeEach(() => {
     agentFirstDelivered: false, agentLastDeliveryAt: 0,
     agentEventCursor: 0, pendingAgentStateReport: '', agentStateReport: '',
     pendingAgentReportVersion: 0, agentSession: 0, agentResetBlocked: false,
+    awaitingAgentPermission: null, pendingImportantAgentMessage: '', deferredAgentInterrupt: null,
   });
 });
 
@@ -83,6 +84,67 @@ test('agent reports are injected into one response without entering visible hist
   assert.deepEqual(state.history, [{ role: 'user', content: 'What needs attention?' }]);
 });
 
+test('a current chat turn is sent once while visible history keeps it and remains bounded', async () => {
+  element('agentEnabled').checked = false;
+  const prior = Array.from({ length: 20 }, (_, index) => ({
+    role: index % 2 ? 'assistant' : 'user', content: `Earlier turn ${index}.`,
+  }));
+  state.history = [...prior];
+  let payload;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/api/chat');
+    payload = JSON.parse(options.body);
+    assert.equal(state.history.at(-1).content, 'Current user turn.', 'record the visible turn before I/O');
+    return { ok: true, json: async () => ({ reply: '' }) };
+  };
+
+  await askAndSpeak('Current user turn.');
+
+  assert.equal(payload.message, 'Current user turn.');
+  assert.deepEqual(payload.history, prior.slice(-12));
+  assert.equal(payload.history.some(turn => turn.content === payload.message), false);
+  assert.deepEqual(state.history.at(-2), { role: 'user', content: 'Current user turn.' });
+  assert.equal(state.history.length, 20);
+});
+
+test('interruption context and agent injection do not duplicate or replace the raw user history', async () => {
+  element('agentEnabled').checked = false;
+  const prior = [{ role: 'assistant', content: 'An earlier spoken reply.' }];
+  state.history = [...prior];
+  state.pendingAgentStateReport = 'The background task is ready.';
+  let payload;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/api/chat');
+    payload = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ reply: '' }) };
+  };
+
+  await askAndSpeak('Please change direction.', 'The user interrupted halfway through the reply.');
+
+  assert.deepEqual(payload.history, prior);
+  assert.match(payload.message, /^Injection: Korina Agent state report/);
+  assert.match(payload.message, /The user interrupted halfway/);
+  assert.equal(payload.message.match(/Please change direction\./g).length, 1);
+  assert.deepEqual(state.history.at(-2), { role: 'user', content: 'Please change direction.' });
+  assert.equal(state.pendingAgentStateReport, 'The background task is ready.', 'an empty response retains the injection for retry');
+});
+
+test('direct LLM calls preserve a legitimate trailing prior user turn, including repeated text', async () => {
+  const prior = [{ role: 'user', content: 'Please continue.' }];
+  state.history = [...prior];
+  let payload;
+  globalThis.fetch = async (url, options) => {
+    payload = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ reply: 'Continuing.' }) };
+  };
+
+  await askLM('Please continue.');
+
+  assert.deepEqual(payload.history, prior, 'history is an explicit prior-turn contract, not text deduplication');
+  assert.equal(payload.message, 'Please continue.');
+  assert.deepEqual(state.history, prior);
+});
+
 test('event polling advances the active cursor and stores the next report', async () => {
   state.agentEventCursor = 7;
   globalThis.fetch = async url => {
@@ -95,6 +157,65 @@ test('event polling advances the active cursor and stores the next report', asyn
   await pollAgentEvents();
   assert.equal(state.agentEventCursor, 9);
   assert.equal(state.pendingAgentStateReport, 'Ready for the next turn.');
+});
+
+test('an authoritative lower cursor clears stale agent context and receives new events once', async () => {
+  state.agentEventCursor = 42;
+  state.agentFirstDelivered = true;
+  state.agentLastDeliveredTurn = 3;
+  state.agentStateReport = 'Old report.';
+  state.pendingAgentStateReport = 'Old injection.';
+  state.awaitingAgentPermission = { id: 41 };
+  state.pendingImportantAgentMessage = 'Old interrupt.';
+  state.deferredAgentInterrupt = { message: 'Old deferred interrupt.' };
+  state.history = [{ role: 'user', content: 'Keep the conversation.' }];
+  const urls = [];
+  const responses = [
+    { last_event_id: 0, events: [] },
+    { last_event_id: 1, events: [{ id: 1, type: 'state_report', priority: 'normal', report: 'New report.' }] },
+    { last_event_id: 1, events: [] },
+  ];
+  globalThis.fetch = async url => {
+    urls.push(url);
+    return { ok: true, json: async () => responses.shift() };
+  };
+
+  await pollAgentEvents();
+  assert.equal(state.agentEventCursor, 0);
+  assert.equal(state.agentSession, 1);
+  assert.equal(state.agentStateReport, '');
+  assert.equal(state.pendingAgentStateReport, '');
+  assert.equal(state.awaitingAgentPermission, null);
+  assert.equal(state.pendingImportantAgentMessage, '');
+  assert.equal(state.deferredAgentInterrupt, null);
+  assert.equal(state.agentFirstDelivered, false);
+  assert.equal(state.agentLastDeliveredTurn, 0);
+  assert.deepEqual(state.history, [{ role: 'user', content: 'Keep the conversation.' }]);
+
+  await pollAgentEvents();
+  const reportVersion = state.pendingAgentReportVersion;
+  await pollAgentEvents();
+  assert.deepEqual(urls, ['/api/agent/events?after=42', '/api/agent/events?after=0', '/api/agent/events?after=1']);
+  assert.equal(state.agentEventCursor, 1);
+  assert.equal(state.pendingAgentStateReport, 'New report.');
+  assert.equal(state.pendingAgentReportVersion, reportVersion, 'the new event was injected once');
+});
+
+test('a server session change prevents an old in-flight delivery from advancing the new session', async () => {
+  state.agentEventCursor = 42;
+  let finish;
+  globalThis.fetch = async url => {
+    if (url === '/api/agent/status') return { ok: true, json: async () => ({ busy: false }) };
+    if (url.startsWith('/api/agent/events')) return { ok: true, json: async () => ({ last_event_id: 0, events: [] }) };
+    return new Promise(resolve => { finish = resolve; });
+  };
+  const delivery = deliverTranscriptToAgent('old-session');
+  await new Promise(setImmediate);
+  await pollAgentEvents();
+  finish({ ok: true, json: async () => ({ accepted: true }) });
+  assert.equal(await delivery, false);
+  assert.equal(state.agentFirstDelivered, false);
+  assert.equal(state.agentLastDeliveredTurn, 0);
 });
 
 test('disabling the agent prevents transcript delivery and event polling', async () => {

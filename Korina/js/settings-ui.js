@@ -78,22 +78,6 @@ export function collectConfig() {
     agent_model: String($('agentModel')?.value || '').trim(),
     agent_max_turns: parseInt($('agentMaxTurns')?.value || '16', 10) || 16,
     agent_max_tokens: parseInt($('agentMaxTokens')?.value || '512', 10) || 512,
-    agent_yolo_mode: $('agentYoloMode')?.checked ? 'on' : 'off',
-    agent_project_trust: $('agentProjectTrust')?.value || 'ask',
-    agent_injection_mode: $('agentInjectionMode')?.value || 'one-at-a-time',
-    agent_follow_up_mode: $('agentFollowUpMode')?.value || 'one-at-a-time',
-    agent_thinking_level: $('agentThinkingLevel')?.value || 'low',
-    agent_auto_compact: $('agentAutoCompact')?.value || 'on',
-    agent_compaction_reserve_tokens: parseInt($('agentCompactionReserveTokens')?.value || '16384', 10) || 16384,
-    agent_compaction_keep_recent_tokens: parseInt($('agentCompactionKeepRecentTokens')?.value || '20000', 10) || 20000,
-    agent_hide_thinking: $('agentHideThinking')?.value || 'on',
-    agent_transport: $('agentTransport')?.value || 'auto',
-    agent_retry_enabled: $('agentRetryEnabled')?.value || 'on',
-    agent_max_retries: parseInt($('agentMaxRetries')?.value || '3', 10),
-    agent_retry_base_delay_ms: parseInt($('agentRetryBaseDelayMs')?.value || '2000', 10) || 2000,
-    agent_http_idle_timeout_ms: parseInt($('agentHttpIdleTimeoutMs')?.value || '0', 10),
-    agent_enable_skill_commands: $('agentEnableSkillCommands')?.value || 'on',
-    agent_block_images: $('agentBlockImages')?.value || 'off',
     agent_first_delivery_mode: $('agentFirstDeliveryMode')?.value || 'first_turn_or_timer',
     agent_first_delivery_seconds: parseInt($('agentFirstDeliverySeconds')?.value || '20', 10) || 20,
     agent_periodic_delivery_turns: parseInt($('agentPeriodicDeliveryTurns')?.value || '2', 10) || 2,
@@ -158,22 +142,6 @@ export function applyConfig(c = {}) {
   }
   if (c.agent_max_turns && $('agentMaxTurns')) $('agentMaxTurns').value = c.agent_max_turns;
   if (c.agent_max_tokens && $('agentMaxTokens')) $('agentMaxTokens').value = c.agent_max_tokens;
-  if (c.agent_yolo_mode && $('agentYoloMode')) $('agentYoloMode').checked = c.agent_yolo_mode === 'on';
-  if (c.agent_project_trust && $('agentProjectTrust')) $('agentProjectTrust').value = c.agent_project_trust;
-  if (c.agent_injection_mode && $('agentInjectionMode')) $('agentInjectionMode').value = c.agent_injection_mode;
-  if (c.agent_follow_up_mode && $('agentFollowUpMode')) $('agentFollowUpMode').value = c.agent_follow_up_mode;
-  if (c.agent_thinking_level && $('agentThinkingLevel')) $('agentThinkingLevel').value = c.agent_thinking_level;
-  if (c.agent_auto_compact && $('agentAutoCompact')) $('agentAutoCompact').value = c.agent_auto_compact;
-  if (c.agent_compaction_reserve_tokens !== undefined && $('agentCompactionReserveTokens')) $('agentCompactionReserveTokens').value = c.agent_compaction_reserve_tokens;
-  if (c.agent_compaction_keep_recent_tokens !== undefined && $('agentCompactionKeepRecentTokens')) $('agentCompactionKeepRecentTokens').value = c.agent_compaction_keep_recent_tokens;
-  if (c.agent_hide_thinking && $('agentHideThinking')) $('agentHideThinking').value = c.agent_hide_thinking;
-  if (c.agent_transport && $('agentTransport')) $('agentTransport').value = c.agent_transport;
-  if (c.agent_retry_enabled && $('agentRetryEnabled')) $('agentRetryEnabled').value = c.agent_retry_enabled;
-  if (c.agent_max_retries !== undefined && $('agentMaxRetries')) $('agentMaxRetries').value = c.agent_max_retries;
-  if (c.agent_retry_base_delay_ms !== undefined && $('agentRetryBaseDelayMs')) $('agentRetryBaseDelayMs').value = c.agent_retry_base_delay_ms;
-  if (c.agent_http_idle_timeout_ms !== undefined && $('agentHttpIdleTimeoutMs')) $('agentHttpIdleTimeoutMs').value = c.agent_http_idle_timeout_ms;
-  if (c.agent_enable_skill_commands && $('agentEnableSkillCommands')) $('agentEnableSkillCommands').value = c.agent_enable_skill_commands;
-  if (c.agent_block_images && $('agentBlockImages')) $('agentBlockImages').value = c.agent_block_images;
   if (c.agent_first_delivery_mode && $('agentFirstDeliveryMode')) $('agentFirstDeliveryMode').value = c.agent_first_delivery_mode;
   if (c.agent_first_delivery_seconds !== undefined && $('agentFirstDeliverySeconds')) $('agentFirstDeliverySeconds').value = c.agent_first_delivery_seconds;
   if (c.agent_periodic_delivery_turns !== undefined && $('agentPeriodicDeliveryTurns')) $('agentPeriodicDeliveryTurns').value = c.agent_periodic_delivery_turns;
