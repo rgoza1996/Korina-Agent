@@ -1,175 +1,62 @@
-# Provider & Model Capability Contract
+# Provider and model contracts
 
-Single source of truth for which provider the user has selected, what
-base URL is in play, which models the dropdown should show, and which
-fields the UI may edit. This contract is the canonical answer to
-"where does provider X's base URL come from?" — if you find yourself
-asking that, read this first.
+The backend registry in `korina/util/presets.py` describes provider defaults, editable fields, local process management, and model sources. The browser reads that registry through `GET /api/capabilities`; it caches a successful result for the page session and can refresh explicitly.
 
-## Endpoints
+## Provider registry
 
-- `GET /api/capabilities` — the registry. See `korina/schemas_capabilities.py`
-  for the wire format. Two sections:
-  - `providers` — valid for the response-LLM path. Today: `llama.cpp`,
-    `lmstudio`, `ollama`, `openai-compatible`.
-  - `agent_providers` — valid for the agent path. Today:
-    `openai-compatible`, `anthropic`.
+The response `providers` map contains `llama.cpp`, `lmstudio`, `ollama`, and `openai-compatible`. The `agent_providers` map contains `openai-compatible` and `anthropic`. Each entry declares `label`, `default_base_url`, `editable_base_url`, `manageable`, `model_sources`, `is_local`, `agent_only`, and `response_llm_only`.
 
-  Each entry has 8 fields: `label`, `default_base_url`, `editable_base_url`,
-  `manageable`, `model_sources`, `is_local`, `agent_only`, `response_llm_only`.
+| Response provider | Default API base | Editable URL | Managed locally | Model sources |
+| --- | --- | --- | --- | --- |
+| `llama.cpp` | `http://127.0.0.1:8080/v1` | No | Yes | Endpoint and local GGUFs |
+| `lmstudio` | `http://127.0.0.1:1234/v1` | No | Yes | Endpoint and catalog |
+| `ollama` | `http://127.0.0.1:11434/v1` | No | Yes | Endpoint |
+| `openai-compatible` | User supplied | Yes | No server started | Endpoint |
 
-- `POST /api/llm/provider/activate` — switches the local inference
-  server when the response-LLM provider is `manageable: true`. The
-  request body is `{provider, model}`; the response includes
-  `activation.started` and `activation.stopped` lists.
+Both agent endpoint types use editable URLs and externally supplied servers. Selecting an agent endpoint does not activate a local response-provider process.
 
-## Registry table (today)
+## Saving and activation
 
-Response-LLM providers (`providers`):
+`POST /api/config` validates and atomically saves settings. It does not activate providers. Independent STT and agent endpoints stay independent; settings saves cannot replace the server-owned audio-probe cache.
 
-| id                  | default_base_url            | editable | manageable | is_local | model_sources                  |
-|---------------------|-----------------------------|----------|------------|----------|--------------------------------|
-| `llama.cpp`         | `http://127.0.0.1:8080/v1`  | false    | true       | true     | `endpoint_loaded`, `local_gguf`|
-| `lmstudio`          | `http://127.0.0.1:1234/v1`  | false    | true       | true     | `endpoint_loaded`, `catalog`   |
-| `ollama`            | `http://127.0.0.1:11434/v1` | false    | true       | true     | `endpoint_loaded`              |
-| `openai-compatible` | (empty)                     | true     | false      | false    | `endpoint_loaded`              |
+During provider activation or refresh, changed effective response/STT/agent settings return HTTP 409 before any save or reset. This closes the gap between checking role ownership and restarting a service. Unrelated settings and identical full-form role values remain saveable. The browser keeps a failed explicit agent transition queued ahead of later saves until retried; its error leaves agent delivery paused.
 
-Agent providers (`agent_providers`):
+`POST /api/llm/provider/activate` accepts `{provider, model}`. Unsupported response providers are rejected before saving. It saves the response selection before activation; failures explicitly report that the selection remains saved without automatic rollback. A conflict with another active role returns HTTP 409. Other startup failures return HTTP 500.
 
-| id                  | default_base_url | editable | agent_only | is_local |
-|---------------------|------------------|----------|------------|----------|
-| `openai-compatible` | (empty)          | true     | false      | false    |
-| `anthropic`         | (empty)          | true     | true       | false    |
+Activation returns performed `started`/`stopped` actions, `retained` services with role/reason metadata, and any unconfirmed `stop_requested` actions or warnings. It preserves managed servers used by the selected generic response endpoint, active audio-model STT, or enabled agent. Retention follows actual loopback endpoints and listening process ownership, including generic provider labels. It does not start extra role models. Preflight validates models/executables before teardown and blocks protected single-model/port conflicts. Local process management remains Linux-specific. Generic activation starts no server; unused managed services may be stopped.
 
-The three response-LLM-only providers (`llama.cpp`, `lmstudio`, `ollama`)
-are filtered out of the agent section via `response_llm_only: true`.
-`anthropic` is filtered out of the response-LLM section via
-`agent_only: true`. The split happens in `capabilities_for_section()`
-in `korina/util/presets.py`.
+The settings modal closes immediately, then serializes its save/apply work. A failed save prevents activation. Changing only STT settings does not activate or repurpose the response provider. Reopening settings and making new edits cannot let an older activation response overwrite the new form.
 
-## Invariants
+Llama refresh shares activation admission and preflight, then merges only refresh-owned fields against current settings. It preserves unrelated settings/probe writes and rejects a provider/model selection that changed while discovery was running. Refresh refuses to restart a running llama service used by active STT or Agent, including a shared same-model or custom-port process. Failed prerequisites leave settings/cache/unit unchanged; a failure after the atomic merge explicitly reports what was saved. Refresh starts no unrelated provider.
 
-1. **The backend owns provider rules.** No JS file may hardcode
-   `"llama.cpp" → http://127.0.0.1:8080/v1` or
-   `"openai-compatible" → base URL is editable`. Both are derived from
-   `/api/capabilities`. The legacy `PROVIDER_BASE_URL_PRESETS`
-   constant in `Korina/index.html` was deleted in Phase 2.2.2.
+## Model discovery
 
-2. **A provider is editable iff `editable_base_url: true`.** The UI
-   disables the base-URL input otherwise. Today that means:
-   - `llama.cpp`, `lmstudio`, `ollama`: base URL is locked.
-   - `openai-compatible`, `anthropic`: base URL is editable.
+`GET /api/models` lists endpoint models and discovered local/catalog choices, with role-specific status and estimated capability metadata. Query parameters can select response/STT candidate URLs, provider types, and API-key environment-variable names before saving. Omitted auth can inherit saved credentials only for the matching saved API base; an explicit blank disables that inheritance.
 
-3. **`manageable` providers get a server lifecycle.** When the user
-   picks a `manageable: true` response-LLM provider, the UI must POST
-   `/api/llm/provider/activate` *after* saving the new config and
-   *before* refetching `/api/models`. The activation response includes
-   `{started, stopped}` so the UI can show what changed.
+`GET /api/agent/models` discovers models for saved agent settings. `POST /api/agent/models` accepts bounded candidate fields in JSON: `agent_provider`, `agent_base_url`, `agent_api_key`, `llm_base_url`, and `llm_api_key_env`. Candidate discovery resolves one in-memory configuration snapshot without saving settings or activating processes. Omitted fields retain saved values, except a saved direct agent key is not forwarded to a changed actual API URL unless the request explicitly supplies it. Normal same-response-base credential fallback still applies. Keys stay out of query strings and diagnostic responses; validation errors omit raw input. Both methods use the same model-list envelope.
 
-4. **Agent-only providers never appear in `providers`.** Today only
-   `anthropic` is agent-only. If a future agent-only provider is added
-   (e.g. `gemini-agent`), it goes in `agent_providers` only with
-   `agent_only: true`.
+The browser accepts picker/cache writes only from the latest request for the current settings query. Failed or partial discovery stays retryable. Late results cannot restore an old model selection or replace current options. Local refresh probes use the accepted STT/local model pool and its explicit credential scope.
 
-5. **`/api/capabilities` is fetch-once per page session unless forced.** The frontend caches the
-   response via `loadCapabilities()` in `Korina/js/providers-ui.js`. There is no
-   `/api/capabilities/refresh` endpoint; if the backend registry changes, the
-   user reloads the page or code calls `loadCapabilities(true)` as part of an
-   explicit provider/model refresh.
+`GET /api/models/roots` returns path/existence/directory diagnostics. `POST` replaces the configured list by default; `{roots:[...], append:true}` atomically appends, as used by Add Directory. `DELETE ?path=...` atomically removes against the latest list and always returns the same root metadata shape. New lists allow at most 128 directories, with paths of at most 4096 characters; invalid or unavailable new paths are rejected before saving. Historical omitted/default-empty lists still use environment roots. An explicit new empty list or deleting the final root records a server-owned override, keeping the configured list empty across reloads. Clients cannot unset that marker directly. The independent LM Studio hub catalog remains discoverable. Older invalid roots remain visible with diagnostics and are skipped during catalog scans without rewriting the saved file.
 
-6. **Capability keys are always snake_case in JSON.** `editable_base_url`
-   in the wire format, `editableBaseUrl` only in the JS object (no
-   current JS object — we read fields directly from the JSON).
+## Credentials and API paths
 
-7. **Capabilities warm before app init.** `Korina/js/app.js` calls
-   `await loadCapabilities().then(() => setBaseUrlEditability())` before
-   `initApp()`. `initApp()` still performs normal config/model loading in
-   `Korina/js/api.js`; the discipline is to keep capability warm-up explicit
-   so provider/base-URL UI state is correct before the rest of the page wiring runs.
+Response credentials come from the environment variable named by `llm_api_key_env`. STT can name its own `stt_llm_api_key_env`. Blank STT or agent credentials inherit the response key only when the actual normalized API base matches. Independent endpoints need explicit role credentials; the local `agent_api_key` setting remains a development convenience stored in runtime configuration.
 
-## Adding a new provider
+OpenAI-compatible chat uses `/chat/completions`; Anthropic-compatible agents use `/messages`. Agent chat, model discovery, health, and credential inheritance derive from one provider-aware API base. A full endpoint with the correct provider suffix is supported. A suffix belonging to another provider does not authorize borrowing response credentials or probing an unrelated base.
 
-1. Add an entry to `PROVIDER_CAPABILITIES` in `korina/util/presets.py`.
-   Pick the right section flag:
-   - Response-LLM only: set `response_llm_only: true`.
-   - Agent only: set `agent_only: true`.
-   - Both: leave both flags `false`.
-2. If the provider is local (`is_local: true`), set `manageable: true`
-   AND add a corresponding branch to `start_*/stop_*` in
-   `korina/services/provider_manager.py`.
-3. If the provider needs a non-default auth header, extend
-   `auth_headers_from_env` in `korina/runtime/http.py`. (Most don't.)
-4. Run `python3 tests/regression_smoke.py`. The capabilities check
-   (`test_capabilities_endpoint`) hard-codes the expected provider set;
-   update its assertion if you add or remove a provider.
-5. Commit on `beta`; do not touch `alpha` or `master` until release.
+Shared provider transport caps successful JSON at 2 MiB and error details at 16 KiB. Connected I/O and redirects share deadlines; cross-origin redirects discard credentials/cookies. Providers must honor identity response encoding. OS DNS resolver shutdown remains platform-dependent.
 
-## Provider switch user flow (response-LLM)
+## Estimated audio capability
 
-1. User picks a new provider in `#llmProvider`.
-2. UI:
-   - Calls `maybeApplyProviderPreset('llmProvider', 'llmBaseUrl')`
-     to set the base URL to the registry default.
-   - Calls `await setBaseUrlEditability()` to lock/unlock the base URL
-     (this also re-evaluates `sttLlmBaseUrl` and `agentBaseUrl`
-     because the same function owns all three editability decisions).
-   - Calls `syncConverseSettingsUI()` to refresh status pills.
-   - `await saveConfigNow()` to persist.
-   - `await activateSelectedProvider(llmProvider(), lmModel())` to
-     start/stop the local server (only matters if `manageable: true`).
-   - `await loadModelOptions(true)` to refresh the model dropdown.
-   - `await loadAgentModelOptions()` to refresh the agent dropdown.
-   - `health()` to refresh the status text.
-3. The user-visible text: "Activated llama.cpp. Started llama-server;
-   stopped nothing." (or similar; matches today's behavior).
+Model metadata, names, and local projection sidecars estimate audio support; they do not prove that a model can transcribe speech. The multimodal picker filters estimated text-only models unless the session’s All models override is enabled. Unusable choices remain visibly marked in red.
 
-## Provider switch user flow (agent)
+`POST /api/llm/probe-models` performs an explicit bounded audio request. Confirmed unsupported results enter the bounded persistent probe cache; transient failures are reported without becoming permanent unsupported claims. Local refresh triggers these probes deliberately; ordinary picker loading does not infer model quality from a model name or run a background probe loop.
 
-1. User picks a new agent provider in `#agentProvider`.
-2. UI:
-   - `maybeApplyProviderPreset('agentProvider', 'agentBaseUrl')`
-     uses `getAgentProviderCaps(provider)` (the `agent_providers`
-     section, not `providers`) to look up the default.
-   - `await setBaseUrlEditability()` (now also updates `agentBaseUrl`).
-   - `saveConfigSoon()`.
-3. There is no `activate_agent_provider` endpoint. The agent runs on
-   demand in `generate_agent_state_report`; the user only needs to
-   set the base URL and model. (Current behavior; Phase 2 preserves it.)
+`GET /api/audio-probe` reads that cache. `DELETE /api/audio-probe` clears a selected provider/base/model entry. Probe-cache presence is separate from response-provider activation and from successful end-to-end speech rehearsal.
 
-## Bug class this contract prevents
+## Health and verification
 
-The pre-Phase-2 bug the contract fixes: `setBaseUrlEditability()` in
-`Korina/index.html` had a hardcoded `llmProvider() === 'openai-compatible'`
-check that controlled only `#llmBaseUrl` and `#sttLlmBaseUrl`. The
-`#agentBaseUrl` field (added with the agent section in Phase 0) was
-**never wired to any editability logic** — so the user could edit
-the agent base URL freely, including for `manageable: true` local
-providers, even though those don't make sense to edit. The
-`/api/capabilities` contract forces every base-URL editability
-decision through one code path, so adding a new provider can't
-silently re-introduce this class of bug.
+`/api/health` reports server-resolved URLs and model load blocks. Matching actual models URL/model/credentials reuse one probe within a request, while each role retains its configured display URL. `/api/ready` combines frontend, audio limits, selected STT, response model, TTS, and enabled agent checks. A reachable lazy Kokoro service is available before warm-up; a custom service without a configured health contract remains unverified.
 
-## Verification
-
-- Backend: `GET /api/capabilities` returns 200 with both sections
-  populated. Covered by `tests/api/test_config_capabilities_models.py` and
-  the live `tests/regression_smoke.py` contract check.
-- Frontend wiring: `Korina/js/app.js` imports and runs capability warm-up,
-  `Korina/js/providers-ui.js` owns `loadCapabilities()` and base-URL
-  editability, and `Korina/js/capability-filter.js` consumes model capability
-  metadata for dropdown filtering. Covered by `tests/frontend/test_static_frontend.py`.
-- Per-provider fields: `editable_base_url`, `manageable`, `is_local`,
-  `agent_only`, and `response_llm_only` are typed and section-filtered by
-  the backend registry. API and unit coverage lives under `tests/api/` and
-  `tests/unit/test_provider_manager.py`.
-
-## Out of scope for Phase 2
-
-- Fully automatic/probe-backed model capability metadata. Phase 4 added the
-  first registry/probe layer, but persistent probe-backed metadata remains a
-  follow-up.
-- Live reload endpoint for `/api/capabilities`; current refresh is frontend-side
-  via page reload or explicit `loadCapabilities(true)`.
-- `/api/capabilities` filtering by user (all providers are returned
-  to all users; the current auth model is localhost-only, so this is
-  a non-issue today).
+Changes to the registry or provider behavior need API contract, URL/auth, discovery ownership, process ownership, and browser checks. Run the commands in [testing](testing.md), then rehearse actual services using the [hackathon guide](hackathon.md). [Observed verification](verification.md) distinguishes local software/model evidence from physical hardware and hosted CI.

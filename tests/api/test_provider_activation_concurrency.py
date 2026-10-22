@@ -46,7 +46,7 @@ def test_refresh_rejects_overlapping_activation_and_refresh(client, monkeypatch)
     release = threading.Event()
     monkeypatch.setattr(model_roots, '_resolve_llama_cpp_model_id', lambda model: model)
     monkeypatch.setattr(model_roots, 'discover_local_gguf_models', lambda: [])
-    monkeypatch.setattr(model_roots, 'write_llama_server_unit', lambda *args, **kwargs: None)
+    monkeypatch.setattr(model_roots, 'prepare_provider', lambda provider, config, model, **kwargs: (model, {}, []))
 
     def start(*args, **kwargs):
         entered.set()

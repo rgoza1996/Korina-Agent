@@ -26,11 +26,14 @@ Korina separates a responsive voice conversation from a background agent. The pr
 | Enable the agent | Transcript delivery appears in debug panel; cursor advances once |
 | Receive a report | Context is injected once into the next successful response |
 | Clear the session mid-report | Old in-flight output does not reappear in the new session |
+| Change an endpoint while model discovery is pending | Old results do not replace the current picker or model selection |
 | Stop the response provider | Live status identifies the failed provider; no silent success |
 | Restart the provider | One successful poll restores accurate readiness |
 | Speak again | Model, audio, and agent flow recover without a page reload |
 
 Record actual model IDs, device, first-turn and warm-turn timings, browser, and any unresolved failures in issue #23. The local CPU and browser smoke results are recorded in [verification](verification.md); the presentation hardware still needs this rehearsal.
+
+Keep spoken turns below the advertised server limit (five minutes by default). Korina stops a complete recording before its duration/byte budget, processes confirmed speech as one turn, and rotates silent idle captures. If a background tab delivers an oversized or late recording, the whole file is discarded with recovery text. Browser replies also have a ten-minute playback limit and bounded downloads.
 
 ## Current verification boundary
 

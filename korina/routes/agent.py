@@ -15,9 +15,7 @@ state operations. Phase 4 will internalize them into the adapter when
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from fastapi.routing import APIRoute
+from korina.routes.validation import SanitizedValidationRoute
 
 from korina.agents import AgentHttpBridge, LegacyAgentHttpAdapter, UnsupportedAgentOperation, agent_gateway
 from korina.config import agent_models_url, agent_provider, load_config
@@ -128,22 +126,6 @@ def _discover_agent_models(config: dict, *, candidate: bool = False):
         return {'ok': False, 'models': [], **result, 'error': error}
 
 
-class _CandidateModelsRoute(APIRoute):
-    def get_route_handler(self):
-        handler = super().get_route_handler()
-
-        async def validated(request):
-            try:
-                return await handler(request)
-            except RequestValidationError as exc:
-                # Pydantic's default response echoes inputs, including keys.
-                detail = [{key: error[key] for key in ('type', 'loc', 'msg')}
-                          for error in exc.errors()]
-                return JSONResponse({'detail': detail}, status_code=422)
-
-        return validated
-
-
 def agent_candidate_models(req: AgentModelDiscoveryRequest):
     """Discover without saving; omitted keys inherit only for the saved API URL."""
     saved = load_config()
@@ -155,7 +137,7 @@ def agent_candidate_models(req: AgentModelDiscoveryRequest):
 
 
 router.add_api_route('/api/agent/models', agent_candidate_models, methods=['POST'],
-                     route_class_override=_CandidateModelsRoute)
+                     route_class_override=SanitizedValidationRoute)
 
 
 @router.post('/api/agent/state-report')

@@ -182,4 +182,8 @@ def test_update_schema_is_visible_and_get_round_trip_still_works(client):
     before = client.get('/api/config').json()
     posted = client.post('/api/config', json=before)
     assert posted.status_code == 200
-    assert posted.json() == before
+    # Explicitly writing the roots list now records the caller's choice,
+    # including [] instead of silently restoring environment defaults.
+    expected = {**before, 'local_model_roots_explicit': True}
+    assert posted.json() == expected
+    assert client.get('/api/config').json() == expected

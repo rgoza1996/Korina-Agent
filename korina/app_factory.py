@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +24,7 @@ from korina.routes import providers as _providers_routes
 from korina.routes import stt as _stt_routes
 from korina.services.ack_service import cancel_ack_generation, enqueue_missing_acks
 from korina.runtime.limits import RequestSizeLimit
+from korina.routes.validation import sanitized_validation_error
 from korina.util.paths import ACK_DEFAULT_VOICE, ACK_DIR, APP_DIR
 
 # NOTE: `load_config` and `save_config` are deliberately NOT imported at
@@ -70,6 +72,7 @@ def create_app() -> FastAPI:
         title='Korina Voice Lab: Built-in Whisper, multimodal STT, llama.cpp, and Kokoro',
         lifespan=lifespan,
     )
+    app.add_exception_handler(RequestValidationError, sanitized_validation_error)
 
     cfg = _cfg.load_config()
     allowed_origins = _cfg.config_converse_allowed_origins(cfg)

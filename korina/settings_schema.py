@@ -9,7 +9,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from korina.model_roots import ModelRootList, validate_model_root_paths
 
 from korina.config import (
     DEFAULT_CONFIG,
@@ -131,8 +132,13 @@ class SettingsUpdate(_UpdateModel):
     partial_window_ms: Annotated[int, Field(ge=400, le=2_147_483_647)] = _setting('partial_window_ms')
     idle_ack_initial_ms: PositiveMilliseconds = _setting('idle_ack_initial_ms')
     idle_ack_step_ms: PositiveMilliseconds = _setting('idle_ack_step_ms')
-    local_model_roots: list[SettingText] = _setting('local_model_roots')
+    local_model_roots: ModelRootList = _setting('local_model_roots')
     converse: ConverseSettingsUpdate = Field(default_factory=ConverseSettingsUpdate)
+
+    @field_validator('local_model_roots')
+    @classmethod
+    def valid_model_roots(cls, value: list[str]) -> list[str]:
+        return validate_model_root_paths(value)
 
     @model_validator(mode='before')
     @classmethod

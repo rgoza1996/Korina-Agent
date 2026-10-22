@@ -1,7 +1,4 @@
-"""POST /api/llm/provider/activate — switch active LLM provider.
-
-Phase 1.9: inlined from the monolith's _route_activate_provider helper.
-"""
+"""Explicit response-provider activation and audio capability probes."""
 
 from __future__ import annotations
 
@@ -12,8 +9,13 @@ from pydantic import BaseModel, Field
 
 from korina.config import load_config, select_response_provider
 from korina.schemas import ProviderActivateRequest
-from korina.services.provider_manager import activate_llm_provider, provider_activation_lock
+from korina.services.provider_manager import (
+    ProviderRoleConflict,
+    activate_llm_provider,
+    provider_activation_lock,
+)
 from korina.services.active_probe import probe_audio_support
+from korina.util.presets import capabilities_for_section
 
 router = APIRouter()
 _activation_lock = provider_activation_lock
@@ -32,7 +34,8 @@ def activate_provider(req: ProviderActivateRequest):
 def _activate_provider(req: ProviderActivateRequest):
     config = load_config()
     provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip().lower()
-    # Phase 4.4: pre-flight provider/model compatibility check.
+    if provider not in capabilities_for_section('response_llm'):
+        raise HTTPException(status_code=400, detail='Unsupported response provider')
     if req.model:
         from korina.services.provider_manager import provider_supports_model
         supported, reason = provider_supports_model(provider, str(req.model).strip())
@@ -50,8 +53,16 @@ def _activate_provider(req: ProviderActivateRequest):
     try:
         result = activate_llm_provider(provider, saved, model=req.model)
         return {'ok': True, 'saved': saved, 'activation': result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ProviderRoleConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f'Selection was saved, but activation was blocked (no automatic rollback): {exc}',
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Selection was saved, but activation failed (no automatic rollback): {exc}',
+        ) from exc
 
 
 @router.get("/api/audio-probe")

@@ -8,12 +8,14 @@ from typing import Literal
 
 from anyio import CancelScope
 from fastapi import FastAPI, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import AliasChoices, BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from korina.runtime.limits import RequestSizeLimit
+from korina.routes.validation import sanitized_validation_error
 from korina.tts.runtime import SAMPLE_RATE, SynthesisBusy, SynthesisRuntime, SynthesisSession, wav_header
 
 VOICES = [
@@ -66,6 +68,7 @@ def wav_chunks(session: SynthesisSession):
 def create_app(runtime: SynthesisRuntime | None = None) -> FastAPI:
     runtime = runtime or SynthesisRuntime()
     app = FastAPI(title='Kokoro TTS Streaming Server')
+    app.add_exception_handler(RequestValidationError, sanitized_validation_error)
     app.state.synthesis = runtime
     app.add_middleware(RequestSizeLimit, json_bytes=2 * 1024 * 1024)
     origins = os.environ.get('KORINA_TTS_ALLOWED_ORIGINS', 'http://127.0.0.1:8001,http://localhost:8001')

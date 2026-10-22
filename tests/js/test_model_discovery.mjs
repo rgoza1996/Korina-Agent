@@ -213,3 +213,19 @@ test('a probe uses accepted discovery and cannot refresh or overwrite status aft
   assert.equal(pending.length, 5);
   assert.equal(element('localModelsStatus').textContent, 'Current endpoint');
 });
+
+test('Add Directory requests an atomic append instead of replacing all configured roots', async () => {
+  for (const id of ['addLocalModelRootBtn', 'newLocalModelRoot', 'localModelsStatus', 'localModelRootsList']) element(id);
+  wireLocalModelsUi(); await waitRequests(1);
+  pending[0].resolve(response({ roots: [{ path: '/first', exists: true, is_directory: true }] }));
+  await new Promise(resolve => setImmediate(resolve));
+  element('newLocalModelRoot').value = '/second';
+  const adding = element('addLocalModelRootBtn').listeners.click(); await waitRequests(2);
+  assert.equal(pending[1].url, '/api/models/roots');
+  assert.deepEqual(JSON.parse(pending[1].options.body), { roots: ['/second'], append: true });
+  pending[1].resolve(response({ ok: true })); await waitRequests(3);
+  pending[2].resolve(response({ roots: [{ path: '/first' }, { path: '/second' }] })); await waitRequests(4);
+  pending[3].resolve(response(payload('current'))); await adding;
+  assert.equal(element('localModelRootsList').children.length, 2);
+  assert.match(element('localModelsStatus').textContent, /Added \/second/);
+});

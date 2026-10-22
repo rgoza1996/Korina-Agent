@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -195,7 +195,11 @@ def test_custom_unit_is_linked_and_managed_by_its_actual_name(monkeypatch, tmp_p
     monkeypatch.setattr(manager, 'write_llama_server_unit', lambda *args, **kwargs: None)
     monkeypatch.setattr(manager, 'wait_for_llama_server_ready', lambda: None)
     calls = []
-    monkeypatch.setattr(manager, '_systemctl', lambda *args, **kwargs: calls.append(args))
+    def systemctl(*args, **kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(manager, '_systemctl', systemctl)
     manager.start_llama_server('demo.gguf')
     manager.stop_llama_server()
     assert ('link', str(unit)) in calls

@@ -17,6 +17,7 @@ from korina.util.paths import (
 
 from korina.util.presets import provider_preset_base_url
 from korina.runtime.http import api_key_from_config
+from korina.model_roots import MAX_MODEL_ROOTS, MAX_MODEL_ROOT_PATH_CHARS
 
 _CONFIG_LOCK = threading.RLock()
 _P = ParamSpec('_P')
@@ -105,6 +106,7 @@ DEFAULT_CONFIG = {
     'idle_ack_step_ms': 5000,
     'audio_unsupported': {},
     'local_model_roots': [],
+    'local_model_roots_explicit': False,
     'converse': {
         'channel': 'korina',
         'allowed_origins': ['http://127.0.0.1:8001', 'http://localhost:8001'],
@@ -176,12 +178,39 @@ def save_config(config: dict) -> dict:
     return merged
 
 
+class ProviderSettingsBusy(RuntimeError):
+    """A role change raced an active provider lifecycle operation."""
+
+
+def _provider_role_settings(config: dict) -> dict:
+    """Compare effective role settings, including equivalent blank inheritance."""
+    return {
+        'llm_provider': str(config.get('llm_provider') or '').strip().lower(),
+        'llm_base_url': config_llm_chat_url(config),
+        'lm_model': str(config.get('lm_model') or LMSTUDIO_MODEL).strip(),
+        'llm_reasoning': config_llm_reasoning(config),
+        'llm_api_key_env': str(config.get('llm_api_key_env') or '').strip(),
+        'stt_backend': str(config.get('stt_backend') or 'whisper').strip(),
+        'stt_llm_provider': config_stt_llm_provider(config),
+        'stt_llm_base_url': config_stt_llm_chat_url(config),
+        'stt_llm_model': config_stt_llm_model(config),
+        'stt_llm_api_key_env': config_stt_llm_api_env(config),
+        'agent_enabled': str(config.get('agent_enabled') or 'on').strip(),
+        'agent_provider': agent_provider(config),
+        'agent_base_url': agent_chat_url(config),
+        'agent_model': str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL).strip(),
+        'agent_api_key': str(config.get('agent_api_key') or '').strip(),
+    }
+
+
 @_config_transaction
-def update_config_values(payload: dict) -> dict:
+def update_config_values(payload: dict, *, reject_role_changes: bool = False) -> dict:
     """Merge user settings while preserving server-owned probe cache state."""
     previous = load_config()
     updates = {key: value for key, value in payload.items()
-               if key in CONFIG_KEYS and key != 'audio_unsupported'}
+               if key in CONFIG_KEYS and key not in {'audio_unsupported', 'local_model_roots_explicit'}}
+    if 'local_model_roots' in updates:
+        updates['local_model_roots_explicit'] = True
     if isinstance(updates.get('converse'), dict):
         previous_converse = previous.get('converse')
         updates['converse'] = {
@@ -189,7 +218,10 @@ def update_config_values(payload: dict) -> dict:
             **updates['converse'],
         }
     current = {**previous, **updates}
-    saved = save_config(synchronize_llm_dependents(current, previous))
+    current = synchronize_llm_dependents(current, previous)
+    if reject_role_changes and _provider_role_settings(current) != _provider_role_settings(previous):
+        raise ProviderSettingsBusy('Provider activation or refresh is busy; retry role settings after it finishes')
+    saved = save_config(current)
     if previous.get('agent_enabled') != 'off' and saved.get('agent_enabled') == 'off':
         # Only Korina's transient built-in work/context is retired here. A
         # custom adapter's reset may affect durable memory, so never call it.
@@ -283,10 +315,10 @@ def config_local_model_roots(config: Optional[dict] = None) -> list[str]:
       1. config['local_model_roots'] (always a list, possibly empty)
       2. KORINA_LOCAL_MODEL_ROOTS env var (split by os.pathsep)
     """
-    config = config or load_config()
+    config = config if config is not None else load_config()
     roots = config.get('local_model_roots')
     roots = _normalize_local_model_roots(roots)
-    if roots:
+    if roots or config.get('local_model_roots_explicit') is True:
         return roots
     from korina.util.paths import LOCAL_MODEL_ROOTS  # late import to avoid cycles
     return [str(p) for p in LOCAL_MODEL_ROOTS]
@@ -296,18 +328,44 @@ def config_local_model_roots(config: Optional[dict] = None) -> list[str]:
 def set_local_model_roots(roots) -> list[str]:
     """Persist a new local_model_roots list and return the normalized list."""
     normalized = _normalize_local_model_roots(roots)
+    _check_model_root_limits(normalized)
     cfg = load_config()
     cfg['local_model_roots'] = normalized
+    cfg['local_model_roots_explicit'] = True
     save_config(cfg)
     return normalized
 
 
 @_config_transaction
 def clear_local_model_roots() -> list[str]:
+    return set_local_model_roots([])
+
+
+def _check_model_root_limits(roots: list[str]) -> None:
+    if len(roots) > MAX_MODEL_ROOTS:
+        raise ValueError(f'at most {MAX_MODEL_ROOTS} model roots are allowed')
+    if any(not root or len(root) > MAX_MODEL_ROOT_PATH_CHARS or '\x00' in root for root in roots):
+        raise ValueError(f'model root paths must contain 1–{MAX_MODEL_ROOT_PATH_CHARS} characters without NUL')
+
+
+@_config_transaction
+def append_local_model_roots(roots: list[str]) -> list[str]:
+    current = config_local_model_roots(load_config())
+    return set_local_model_roots([*current, *roots])
+
+
+@_config_transaction
+def remove_local_model_root(target: str) -> tuple[int, list[str]]:
+    """Remove against the latest list, preserving concurrent settings/roots."""
     cfg = load_config()
-    cfg['local_model_roots'] = []
+    current = config_local_model_roots(cfg)
+    if target not in current:
+        return 0, current
+    remaining = [root for root in current if root != target]
+    cfg['local_model_roots'] = remaining
+    cfg['local_model_roots_explicit'] = True
     save_config(cfg)
-    return []
+    return 1, remaining
 
 
 def synchronize_llm_dependents(config: dict, previous: Optional[dict] = None) -> dict:

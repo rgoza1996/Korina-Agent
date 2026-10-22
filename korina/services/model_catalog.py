@@ -31,13 +31,18 @@ def local_model_roots() -> list[Path]:
 def discover_local_gguf_models() -> list[str]:
     found: set[str] = set()
     for root in local_model_roots():
-        if not root.exists():
-            continue
-        for path in root.rglob('*.gguf'):
-            lname = path.name.lower()
-            if 'mmproj' in lname or lname.endswith('-assistant.gguf'):
+        try:
+            if not root.exists():
                 continue
-            found.add(str(path))
+            for path in root.rglob('*.gguf'):
+                lname = path.name.lower()
+                if 'mmproj' in lname or lname.endswith('-assistant.gguf'):
+                    continue
+                found.add(str(path))
+        except (OSError, ValueError):
+            # Old configs can contain invalid/unreadable paths. Roots GET
+            # reports their diagnostic; one bad directory cannot break discovery.
+            continue
     return sorted(found, key=lambda s: display_model_label(s).lower())
 
 def discover_lmstudio_local_models() -> list[str]:

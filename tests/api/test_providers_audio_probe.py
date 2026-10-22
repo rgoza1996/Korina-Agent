@@ -1,5 +1,47 @@
 from __future__ import annotations
 
+import pytest
+
+
+@pytest.mark.parametrize('provider', ['unknown', 'anthropic', '  '])
+@pytest.mark.parametrize('model', [None, 'demo'])
+def test_activation_rejects_unsupported_response_provider_before_save(
+    client, config_module, monkeypatch, provider, model,
+):
+    from korina.routes import providers
+
+    before = config_module.load_config()
+    monkeypatch.setattr(providers, 'select_response_provider', lambda *args: pytest.fail('selection saved'))
+    monkeypatch.setattr(providers, 'activate_llm_provider', lambda *args, **kwargs: pytest.fail('process managed'))
+    response = client.post('/api/llm/provider/activate', json={'provider': provider, 'model': model})
+    assert response.status_code == 400
+    assert response.json()['detail'] == 'Unsupported response provider'
+    assert config_module.load_config() == before
+
+
+@pytest.mark.parametrize('conflict', [False, True])
+def test_activation_failure_reports_saved_selection_and_releases_lock(
+    client, config_module, monkeypatch, conflict,
+):
+    from korina.routes import providers
+
+    error_type = providers.ProviderRoleConflict if conflict else RuntimeError
+
+    def fail(*args, **kwargs):
+        raise error_type('kept active STT model')
+
+    monkeypatch.setattr(providers, 'activate_llm_provider', fail)
+    response = client.post('/api/llm/provider/activate', json={'provider': 'openai-compatible', 'model': 'next'})
+    assert response.status_code == (409 if conflict else 500)
+    detail = response.json()['detail']
+    assert 'Selection was saved' in detail
+    assert 'no automatic rollback' in detail
+    assert 'kept active STT model' in detail
+    assert config_module.load_config()['lm_model'] == 'next'
+
+    monkeypatch.setattr(providers, 'activate_llm_provider', lambda *args, **kwargs: {})
+    assert client.post('/api/llm/provider/activate', json={'provider': 'openai-compatible'}).status_code == 200
+
 
 def test_provider_activate_rejects_incompatible_provider_model(client):
     response = client.post(

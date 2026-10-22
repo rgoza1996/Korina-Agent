@@ -10,11 +10,19 @@ from __future__ import annotations
 import logging
 import os
 import signal
+import time
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 PROC_ROOT = Path('/proc')
+
+
+@dataclass
+class TerminationResult:
+    signalled: list[int] = field(default_factory=list)
+    failed: list[int] = field(default_factory=list)
 
 
 def user_processes() -> Iterator[tuple[int, Path, list[str]]]:
@@ -69,20 +77,37 @@ def listens_on(pid: int, port: int) -> bool:
     return False
 
 
-def terminate_matching(predicate: Callable[[int, Path, list[str]], bool]) -> None:
+def terminate_matching(predicate: Callable[[int, Path, list[str]], bool]) -> TerminationResult:
+    result = TerminationResult()
     for pid, executable, args in user_processes():
         if predicate(pid, executable, args):
             try:
                 os.kill(pid, signal.SIGTERM)
+                result.signalled.append(pid)
             except ProcessLookupError:
                 pass
             except PermissionError:
+                result.failed.append(pid)
                 logger.warning('Cannot stop provider process %s', pid)
+    return result
 
 
-def terminate_executable(executable: Path, command: str | None = None) -> None:
+def terminate_executable(executable: Path, command: str | None = None) -> TerminationResult:
     expected = executable.resolve()
-    terminate_matching(lambda pid, actual, args: (
+    return terminate_matching(lambda pid, actual, args: (
         (actual == expected or Path(args[0]).resolve() == expected)
         and (command is None or (len(args) > 1 and args[1] == command))
     ))
+
+
+def wait_for_exit(pids: list[int], timeout: float = 2) -> list[int]:
+    """Wait briefly for the signalled processes; never escalate to SIGKILL."""
+    remaining = set(pids)
+    deadline = time.monotonic() + timeout
+    while remaining:
+        running = {pid for pid, _, _ in user_processes()}
+        remaining.intersection_update(running)
+        if not remaining or time.monotonic() >= deadline:
+            break
+        time.sleep(min(.05, max(0, deadline - time.monotonic())))
+    return sorted(remaining)
