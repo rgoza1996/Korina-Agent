@@ -202,14 +202,24 @@ def test_lms_branch_surfaces_lms_load_error(fake_lms, isolated_korina_app_dir, t
     assert 'load failure simulated' in detail
 
 
-def test_kill_stray_llama_servers_invokes_pkill(isolated_korina_app_dir, monkeypatch):
+def test_kill_stray_llama_servers_only_targets_actual_listener(monkeypatch):
     from korina.services import provider_manager as pm
-    calls = []
-    monkeypatch.setattr(pm.subprocess, 'run',
-                        lambda *a, **k: calls.append(a[0]) or subprocess.CompletedProcess(a[0], 0, '', ''))
+    from korina.services import provider_processes as processes
+
+    # An editor mentions the binary in its argv, and another llama-server
+    # listens on 8080. Neither is the competing listener on 1234.
+    monkeypatch.setattr(processes, 'user_processes', lambda: iter([
+        (101, Path('/usr/bin/editor'), ['editor', 'llama-server --port 1234']),
+        (102, Path('/opt/llama-server'), ['/opt/llama-server', '--port=8080']),
+        (103, Path('/opt/llama-server'), ['/opt/llama-server', '--port=1234']),
+    ]))
+    monkeypatch.setattr(processes, 'listens_on', lambda pid, port: pid == 103 and port == 1234)
+    killed = []
+    monkeypatch.setattr(processes.os, 'kill', lambda pid, signal: killed.append(pid))
+
     pm._kill_stray_llama_servers()
-    assert calls and 'pkill' in calls[0] and '--port 1234' in ' '.join(calls[0])
-    assert '-f' in calls[0]
+
+    assert killed == [103]
 
 
 def test_llama_cpp_branch_also_kills_stray_servers(fake_lms, isolated_korina_app_dir, model_root, client, monkeypatch):

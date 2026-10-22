@@ -964,7 +964,13 @@ def test_phase4_audio_probe_cache_source_contracts() -> bool:
     if "probe_base = config_stt_llm_base_url(config)" not in stt_src:
         print("  [FAIL] stt route must set probe_base from config_stt_llm_base_url(config)")
         return False
-    first_fallback = stt_src.find("maybe_fallback_to_whisper(")
+    first_fallback = min(
+        (position for position in (
+            stt_src.find("maybe_fallback_to_whisper("),
+            stt_src.find("maybe_fallback_to_whisper,"),
+        ) if position >= 0),
+        default=-1,
+    )
     first_llm_call = stt_src.find("lmstudio_transcribe_wav(")
     if first_fallback < 0 or first_llm_call < 0 or first_fallback > first_llm_call:
         print("  [FAIL] cached audio_unsupported check must run before lmstudio_transcribe_wav")

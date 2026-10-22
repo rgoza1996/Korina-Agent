@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from korina.config import (
+    config_llm_base_url,
     config_stt_llm_api_env,
     config_stt_llm_base_url,
     config_stt_llm_chat_url,

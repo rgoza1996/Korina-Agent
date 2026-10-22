@@ -25,5 +25,10 @@ def test_start_sh_uses_config_and_provider_manager():
 
 def test_stop_sh_stops_all_korina_managed_servers():
     src = STOP.read_text()
-    for needle in ["korina-voice-lab.service", "kokoro-streaming-server.service", "llama-server.service", "ollama.service", "stop_lmstudio_server", "stop_lmstudio", "stop_ollama", "llama-server.*--port (8080|1234)", "kokoro-streaming-server.py"]:
+    for needle in ["korina-voice-lab.service", "kokoro-streaming-server.service", "llama-server.service", "ollama.service", "stop_lmstudio_server", "stop_lmstudio", "stop_ollama"]:
         assert needle in src
+
+
+def test_stop_never_uses_broad_command_line_kills():
+    assert "pkill" not in STOP.read_text()
+    assert "agent-llm.service" not in STOP.read_text()

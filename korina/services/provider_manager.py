@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 import os
 import shutil
-import socket
 import subprocess
 import time
 import urllib.error
@@ -28,79 +29,73 @@ from korina.util.paths import (
 )
 
 from korina.util.presets import provider_preset_base_url
+from korina.services import provider_processes
 
 from pathlib import Path
 
 from typing import Optional
 
 
+logger = logging.getLogger(__name__)
+
+
 def gui_env() -> dict:
+    """Use the launching user's session without inventing a display server."""
     env = os.environ.copy()
-    env.setdefault('DISPLAY', ':0')
-    env.setdefault('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus')
-    env.setdefault('XDG_RUNTIME_DIR', '/run/user/1000')
-    if not env.get('XAUTHORITY'):
-        candidates = sorted(Path('/run/user/1000').glob('.mutter-Xwaylandauth.*'))
-        if candidates:
-            env['XAUTHORITY'] = str(candidates[-1])
-        elif Path('/home/roggoz/.Xauthority').exists():
-            env['XAUTHORITY'] = '/home/roggoz/.Xauthority'
+    if hasattr(os, 'getuid'):
+        runtime = Path(env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}')
+        if runtime.is_dir():
+            env['XDG_RUNTIME_DIR'] = str(runtime)
+            if not env.get('DBUS_SESSION_BUS_ADDRESS') and (runtime / 'bus').exists():
+                env['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path={runtime}/bus'
+            if not env.get('XAUTHORITY'):
+                candidates = sorted(runtime.glob('.mutter-Xwaylandauth.*'))
+                if candidates:
+                    env['XAUTHORITY'] = str(candidates[-1])
+    authority = Path.home() / '.Xauthority'
+    if not env.get('XAUTHORITY') and authority.is_file():
+        env['XAUTHORITY'] = str(authority)
     return env
 
+
 def stop_lmstudio() -> None:
-    subprocess.run(['pkill', '-f', '/opt/LM-Studio/lm-studio'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    provider_processes.terminate_executable(LMSTUDIO_BIN)
+
 
 def start_lmstudio() -> None:
-    if not LMSTUDIO_BIN.exists():
-        raise RuntimeError('LM Studio binary not found at /opt/LM-Studio/lm-studio')
-    already = subprocess.run(['pgrep', '-f', '/opt/LM-Studio/lm-studio'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if already.returncode == 0:
+    if not LMSTUDIO_BIN.is_file():
+        raise RuntimeError(f'LM Studio binary not found at {LMSTUDIO_BIN}; set KORINA_LMSTUDIO_BIN')
+    if provider_processes.has_executable(LMSTUDIO_BIN):
         return
-    subprocess.Popen([str(LMSTUDIO_BIN)], env=gui_env(), cwd='/opt/LM-Studio', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    subprocess.Popen(
+        [str(LMSTUDIO_BIN)], env=gui_env(), cwd=str(LMSTUDIO_BIN.resolve().parent),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+    )
+
 
 def stop_ollama() -> None:
     subprocess.run(['systemctl', '--user', 'stop', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['pkill', '-f', 'ollama serve'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    binary = shutil.which('ollama')
+    if binary:
+        provider_processes.terminate_executable(Path(binary), command='serve')
+
 
 def _kill_stray_llama_servers() -> None:
-    """Kill any `llama-server` process currently bound to LM Studio's port (:1234).
-
-    Korina's systemd `llama-server.service` is handled separately by
-    `stop_llama_server()`. The remaining case is the `llama-server` that LM
-    Studio launches on demand from its GUI (`lms load` with a GUI bound to
-    :1234) and that keeps running after the GUI is closed. Without this kill,
-    picking `lmstudio` in Korina returns success but `:1234` is still owned
-    by the stray binary, so Korina's chat endpoint gets the wrong model id
-    back from `/v1/models`.
-    """
-    subprocess.run(
-        ['pkill', '-f', 'llama-server.*--port 1234'],
-        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-    )
+    """Stop only this user's llama-server actually listening on LM Studio's port."""
+    provider_processes.terminate_matching(lambda pid, executable, args: (
+        executable.name == 'llama-server'
+        and provider_processes.listens_on(pid, 1234)
+    ))
 
 
 def _lms_run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     """Run an `lms` CLI subcommand and return the CompletedProcess."""
     cmd = [str(LMS_CLI_BIN), *args]
-    return subprocess.run(cmd, check=check, capture_output=True, text=True)
+    result = subprocess.run(cmd, check=check, capture_output=True, text=True, timeout=60)
+    if not check and result.returncode:
+        logger.warning('lms %s failed: %s', ' '.join(args), (result.stderr or result.stdout or '').strip())
+    return result
 
-
-
-def _wait_for_port_free(port: int, timeout_seconds: float = 30.0) -> None:
-    """Block until ``port`` on 127.0.0.1 is no longer accepting connections.
-
-    Used between ``lms server stop`` and the next bind attempt. Polls the
-    kernel via ``socket.connect_ex`` so we do not depend on the just-killed
-    process having fully released the socket yet (TIME_WAIT/CLOSE_WAIT).
-    """
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.25)
-            if s.connect_ex(('127.0.0.1', port)) != 0:
-                return  # port is free
-        time.sleep(0.25)
-    raise RuntimeError(f'Port {port} did not free within {timeout_seconds:.0f}s')
 
 
 def _is_lmstudio_server_already_up(port: int = 1234) -> bool:
@@ -199,34 +194,45 @@ def stop_lmstudio_server() -> None:
     if LMS_CLI_BIN.exists():
         try:
             _lms_run('server', 'stop', check=False)
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning('Could not stop LM Studio server: %s', exc)
     _kill_stray_llama_servers()
 
 
-def wait_for_lmstudio_server_ready(timeout_seconds: float = 90.0) -> None:
-    """Poll http://127.0.0.1:1234/v1/models until HTTP 200."""
-    deadline = time.time() + timeout_seconds
-    last_error = ''
-    while time.time() < deadline:
+def _wait_for_models(url: str, label: str, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = 'no successful response'
+    while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen('http://127.0.0.1:1234/v1/models', timeout=2) as resp:
+            remaining = max(0.01, deadline - time.monotonic())
+            with urllib.request.urlopen(url, timeout=min(2, remaining)) as resp:
                 if resp.status == 200:
                     return
-        except Exception as e:
-            last_error = str(e)
-        time.sleep(0.5)
-    raise RuntimeError(
-        f'LM Studio server did not become ready within {timeout_seconds:.0f}s: {last_error}'
-    )
+                last_error = f'HTTP {resp.status}'
+        except (OSError, urllib.error.URLError) as exc:
+            last_error = str(exc)
+        time.sleep(min(0.5, max(0, deadline - time.monotonic())))
+    raise RuntimeError(f'{label} did not become ready within {timeout_seconds:.0f}s: {last_error}')
+
+
+def wait_for_lmstudio_server_ready(timeout_seconds: float = 90.0) -> None:
+    _wait_for_models('http://127.0.0.1:1234/v1/models', 'LM Studio server', timeout_seconds)
 
 
 def start_ollama() -> None:
     if shutil.which('ollama') is None:
-        raise RuntimeError('Ollama is not installed on roggoz')
+        raise RuntimeError('Ollama is not installed or is not on PATH')
     run = subprocess.run(['systemctl', '--user', 'start', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if run.returncode != 0:
         subprocess.Popen(['ollama', 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+def _systemd_argument(value: str) -> str:
+    """Quote one systemd argument; protect specifier/environment expansion."""
+    if any(ord(char) < 32 for char in value):
+        raise ValueError('systemd arguments cannot contain control characters')
+    escaped = value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%').replace('$', '$$')
+    return f'"{escaped}"' if re.search(r'[\s"\\%$]', value) else value
+
 
 def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> None:
     config = dict(config or load_config())
@@ -235,6 +241,7 @@ def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> N
         raise RuntimeError(f'llama.cpp model not found: {model}')
     if not LLAMA_SERVER_BIN.exists():
         raise RuntimeError(f'llama-server binary not found: {LLAMA_SERVER_BIN}')
+    model = model.resolve()
     mmproj = find_mmproj_for_model(str(model))
     unit = [
         '[Unit]',
@@ -245,31 +252,23 @@ def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> N
         'Type=simple',
         'Restart=always',
         'RestartSec=5',
-        'Environment=VK_ICD_FILE=/usr/share/vulkan/icd.d/radeon_icd.json',
     ]
-    exec_parts = [str(LLAMA_SERVER_BIN), '-m', str(model)]
+    exec_parts = [str(LLAMA_SERVER_BIN.resolve()), '-m', str(model)]
     if mmproj:
         exec_parts += ['--mmproj', mmproj]
-    exec_parts += ['--reasoning', config_llm_reasoning(config), '--host', '0.0.0.0', '--port', '8080', '--media-path', LLAMA_SERVER_MEDIA_PATH, '-ngl', '99', '-t', '4']
-    unit.append('ExecStart=' + ' '.join(exec_parts))
-    unit.append(f'WorkingDirectory={LLAMA_SERVER_BIN.parent}')
+    exec_parts += ['--reasoning', config_llm_reasoning(config), '--host', os.environ.get('KORINA_LLM_HOST', '127.0.0.1'), '--port', '8080', '-ngl', '99', '-t', '4']
+    if LLAMA_SERVER_MEDIA_PATH:
+        exec_parts += ['--media-path', LLAMA_SERVER_MEDIA_PATH]
+    unit.append('ExecStart=' + ' '.join(_systemd_argument(part) for part in exec_parts))
+    unit.append('WorkingDirectory=' + str(LLAMA_SERVER_BIN.resolve().parent).replace('%', '%%'))
     unit += ['', '[Install]', 'WantedBy=default.target', '']
     service_path = LLAMA_SERVER_USER_UNIT
     service_path.parent.mkdir(parents=True, exist_ok=True)
     service_path.write_text('\n'.join(unit))
 
 def wait_for_llama_server_ready(timeout_seconds: float = 90.0) -> None:
-    deadline = time.time() + timeout_seconds
-    last_error = ''
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen('http://127.0.0.1:8080/v1/models', timeout=2) as resp:
-                if resp.status == 200:
-                    return
-        except Exception as e:
-            last_error = str(e)
-        time.sleep(0.5)
-    raise RuntimeError(f'llama-server did not become ready within {timeout_seconds:.0f}s: {last_error}')
+    _wait_for_models('http://127.0.0.1:8080/v1/models', 'llama-server', timeout_seconds)
+
 
 def start_llama_server(model_path: str, config: Optional[dict] = None) -> None:
     write_llama_server_unit(model_path, config=config)
@@ -367,7 +366,6 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
     from pathlib import Path
     from korina.services.model_catalog import (
         discover_lmstudio_catalog_models,
-        discover_local_gguf_models,
     )
 
     pid = str(provider or "").strip()

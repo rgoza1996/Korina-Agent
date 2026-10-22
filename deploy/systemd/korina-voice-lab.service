@@ -1,14 +1,15 @@
 [Unit]
 Description=Korina Voice Lab
-After=network-online.target kokoro-streaming-server.service
-Wants=network-online.target kokoro-streaming-server.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/Korina
+WorkingDirectory=@REPO_ROOT@
 Environment=PYTHONUNBUFFERED=1
-ExecStart=%h/kokoro-env4/bin/python %h/Korina/korina_voice_lab.py
-Restart=always
+Environment=@APP_DIR_ENV@
+ExecStart=@PYTHON@ -m korina.app
+Restart=on-failure
 RestartSec=5
 
 [Install]

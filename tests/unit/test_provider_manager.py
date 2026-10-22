@@ -103,5 +103,61 @@ def test_write_llama_server_unit_output_shape(monkeypatch, reload_korina_modules
     assert f"ExecStart={llama_bin} -m {model}" in body
     assert f"--mmproj {mmproj}" in body
     assert f"--reasoning {reasoning}" in body
-    assert "--host 0.0.0.0 --port 8080 --media-path /models" in body
+    assert "--host 127.0.0.1 --port 8080" in body
+    assert "--media-path /models" in body
+    assert "VK_ICD_FILE" not in body
     assert f"WorkingDirectory={llama_bin.parent}" in body
+
+
+def test_lmstudio_start_uses_configured_binary_directory(monkeypatch, tmp_path):
+    from korina.services import provider_manager as manager
+
+    executable = tmp_path / 'custom install' / 'lm-studio'
+    executable.parent.mkdir()
+    executable.write_text('#!/bin/sh\n')
+    monkeypatch.setattr(manager, 'LMSTUDIO_BIN', executable)
+    monkeypatch.setattr(manager.provider_processes, 'has_executable', lambda path: False)
+    calls = []
+    monkeypatch.setattr(manager.subprocess, 'Popen', lambda args, **kwargs: calls.append((args, kwargs)))
+    manager.start_lmstudio()
+    assert calls[0][0] == [str(executable)]
+    assert calls[0][1]['cwd'] == str(executable.parent)
+
+
+def test_gui_environment_keeps_current_user_session(monkeypatch, tmp_path):
+    from korina.services import provider_manager as manager
+
+    runtime = tmp_path / 'runtime'
+    runtime.mkdir()
+    (runtime / 'bus').touch()
+    authority = runtime / '.mutter-Xwaylandauth.test'
+    authority.touch()
+    monkeypatch.setenv('XDG_RUNTIME_DIR', str(runtime))
+    monkeypatch.delenv('DBUS_SESSION_BUS_ADDRESS', raising=False)
+    monkeypatch.delenv('XAUTHORITY', raising=False)
+    monkeypatch.delenv('DISPLAY', raising=False)
+    environment = manager.gui_env()
+    assert environment['XDG_RUNTIME_DIR'] == str(runtime)
+    assert environment['DBUS_SESSION_BUS_ADDRESS'] == f'unix:path={runtime}/bus'
+    assert environment['XAUTHORITY'] == str(authority)
+    assert 'DISPLAY' not in environment
+
+
+def test_unit_arguments_protect_paths_with_spaces_and_specifiers(monkeypatch, tmp_path):
+    from korina.services import provider_manager as manager
+
+    directory = tmp_path / 'model files%'
+    directory.mkdir()
+    model = directory / 'demo $model.gguf'
+    model.write_text('gguf')
+    binary = directory / 'llama-server'
+    binary.write_text('#!/bin/sh\n')
+    unit = tmp_path / 'llama-server.service'
+    monkeypatch.setattr(manager, 'LLAMA_SERVER_BIN', binary)
+    monkeypatch.setattr(manager, 'LLAMA_SERVER_USER_UNIT', unit)
+    monkeypatch.setattr(manager, 'LLAMA_SERVER_MEDIA_PATH', '')
+    manager.write_llama_server_unit(str(model), {'llm_reasoning': 'off'})
+    body = unit.read_text()
+    assert 'model files%%/demo $$model.gguf"' in body
+    assert 'WorkingDirectory=' + str(directory).replace('%', '%%') in body
+    assert '--media-path' not in body

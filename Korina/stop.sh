@@ -4,7 +4,7 @@
 # Stops Korina and every local server Korina can run:
 # - korina-voice-lab.service
 # - kokoro-streaming-server.service
-# - llama-server.service / llama-server processes
+# - llama-server.service
 # - LM Studio server/GUI helper processes
 # - Ollama service / `ollama serve`
 
@@ -12,7 +12,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KORINA_APP_DIR="${KORINA_APP_DIR:-$SCRIPT_DIR}"
-PYTHON_BIN="${KORINA_PYTHON:-$HOME/kokoro-env4/bin/python}"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${KORINA_PYTHON:-${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python}"
 if [[ ! -x "$PYTHON_BIN" ]]; then
   PYTHON_BIN="$(command -v python3)"
 fi
@@ -54,7 +55,7 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "  [dry-run] would run provider_manager stop functions"
 else
   export KORINA_APP_DIR
-  (cd "$KORINA_APP_DIR" && "$PYTHON_BIN" - <<'PY') || true
+  (cd "$REPO_ROOT" && "$PYTHON_BIN" - <<'PY') || true
 from korina.services.provider_manager import (
     stop_llama_server, stop_lmstudio_server, stop_lmstudio, stop_ollama,
 )
@@ -70,17 +71,9 @@ stop_unit kokoro-streaming-server.service
 stop_unit korina-streaming-server.service
 stop_unit llama-server.service
 stop_unit ollama.service
-stop_unit agent-llm.service
 
-echo "Killing remaining Korina-managed server process shapes..."
-run pkill -f '/home/.*/Korina/korina_voice_lab.py'
-run pkill -f 'korina_voice_lab.py'
-run pkill -f 'kokoro-streaming-server.py'
-run pkill -f 'llama-server.*--port (8080|1234)'
-run pkill -f 'ollama serve'
-run pkill -f '/opt/LM-Studio/lm-studio'
-run pkill -f '/\.lmstudio/llmster/'
-run pkill -f 'lmlink-connector'
+# Provider helpers match only current-user executables and actual listeners.
+# Services started manually should be stopped through their owning terminal.
 
 echo
 if [[ "$DRY_RUN" -eq 1 ]]; then

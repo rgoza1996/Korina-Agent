@@ -13,7 +13,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KORINA_APP_DIR="${KORINA_APP_DIR:-$SCRIPT_DIR}"
 CONFIG="$KORINA_APP_DIR/config.json"
-PYTHON_BIN="${KORINA_PYTHON:-$HOME/kokoro-env4/bin/python}"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PYTHON_BIN="${KORINA_PYTHON:-${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python}"
 if [[ ! -x "$PYTHON_BIN" ]]; then
   PYTHON_BIN="$(command -v python3)"
 fi
@@ -33,8 +34,11 @@ for arg in "$@"; do
 done
 
 if [[ ! -f "$CONFIG" ]]; then
-  echo "ERROR: config.json not found at $CONFIG" >&2
-  exit 1
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    CONFIG="$REPO_ROOT/Korina/config/config.example.json"
+  else
+    (cd "$REPO_ROOT" && KORINA_APP_DIR="$KORINA_APP_DIR" "$PYTHON_BIN" -c 'from korina.config import load_config; load_config()')
+  fi
 fi
 
 cfg_json() {
@@ -64,7 +68,7 @@ PY
 is_listening() { ss -ltn "sport = :$1" 2>/dev/null | grep -q ":$1"; }
 wait_port() {
   local port="$1" label="$2" max_iters="${3:-120}"
-  [[ "$NO_WAIT" -eq 1 ]] && return 0
+  [[ "$NO_WAIT" -eq 1 || "$DRY_RUN" -eq 1 ]] && return 0
   for _ in $(seq 1 "$max_iters"); do
     if is_listening "$port"; then
       echo "  OK: $label listening on :$port"
@@ -116,7 +120,7 @@ else
   case "$LLM_PROVIDER" in
     llama.cpp|lmstudio|ollama)
       echo "Activating local LLM provider $LLM_PROVIDER..."
-      (cd "$KORINA_APP_DIR" && "$PYTHON_BIN" - "$LLM_PROVIDER" "$LM_MODEL" <<'PY')
+      (cd "$REPO_ROOT" && "$PYTHON_BIN" - "$LLM_PROVIDER" "$LM_MODEL" <<'PY')
 import json, sys
 from korina.config import load_config
 from korina.services.provider_manager import activate_llm_provider
