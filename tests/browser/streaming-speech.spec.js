@@ -80,6 +80,46 @@ test('finite SSE keeps native PCM playback active after EOF and Stop cancels it 
   expect(errors).toEqual([]);
 });
 
+for (const action of ['resume', 'Stop']) {
+  test(`suspended native PCM retains its playback owner until ${action}`, async ({ page }) => {
+    const errors = await loadStreamingPage(page, pcmEvent());
+    await page.locator('#playBtn').click();
+    await expect.poll(() => page.evaluate(() => window.__speechEof)).toBe(true);
+    await expect.poll(() => page.evaluate(() => window.state.activeSources.length)).toBe(1);
+    await page.evaluate(() => window.state.audioCtx.suspend());
+    await page.waitForTimeout(2300);
+    expect(await page.evaluate(() => window.state.audioCtx.state)).toBe('suspended');
+    expect(await page.evaluate(() => window.state.ttsSpeaking)).toBe(true);
+    expect(await page.evaluate(() => window.__speechSources[0].ended)).toBe(false);
+    await expect(page.locator('#stopBtn')).toBeEnabled();
+    await expect(page.locator('#playBtn')).toBeDisabled();
+    await expect(page.locator('#ttsStatus')).not.toContainText('Done');
+
+    if (action === 'resume') {
+      await page.evaluate(() => window.state.audioCtx.resume());
+      await expect(page.locator('#ttsStatus')).toContainText('Done · 1 chunks');
+      expect(await page.evaluate(() => window.__speechSources[0])).toEqual({ started: 1, stopped: 0, ended: true });
+    } else {
+      await page.locator('#stopBtn').click();
+      await expect.poll(() => page.evaluate(() => window.__speechSources[0].stopped), { timeout: 750 }).toBeGreaterThan(0);
+      expect(await page.evaluate(() => window.state.activeSources.length)).toBe(0);
+    }
+    await expect(page.locator('#stopBtn')).toBeDisabled();
+    await expect(page.locator('#playBtn')).toBeEnabled();
+    expect(await page.evaluate(() => window.state.ttsSpeaking)).toBe(false);
+    if (action === 'Stop') {
+      await page.locator('#playBtn').click();
+      await expect.poll(() => page.evaluate(() => window.__speechSources.length)).toBe(2);
+      expect(await page.evaluate(() => window.state.ttsSpeaking)).toBe(true);
+      await expect(page.locator('#stopBtn')).toBeEnabled();
+      await page.locator('#stopBtn').click();
+      await expect(page.locator('#stopBtn')).toBeDisabled({ timeout: 750 });
+      expect(await page.evaluate(() => window.__speechSources.every(source => source.stopped > 0))).toBe(true);
+    }
+    expect(errors).toEqual([]);
+  });
+}
+
 test('an SSE error after native PCM scheduling stops the audio before disabling Stop', async ({ page }) => {
   const errors = await loadStreamingPage(page, pcmEvent() + 'data: {"error":"synthesis failed after first chunk"}\n\n');
   await page.locator('#playBtn').click();

@@ -298,17 +298,28 @@ export async function speakText(text, _wait = false) {
 // Wait for scheduled audio to finish
 export async function waitForScheduledAudio(signal) {
   signal?.throwIfAborted();
-  if (!state.audioCtx) return;
-  const ms = Math.max(0, (state.nextPlayTime - state.audioCtx.currentTime) * 1000) + 150;
-  if (ms > 0) await new Promise((resolve, reject) => {
-    const finish = error => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', aborted);
-      if (error) reject(error);
-      else resolve();
-    };
-    const aborted = () => finish(playbackAborted());
-    const timer = setTimeout(() => finish(), ms);
-    signal?.addEventListener('abort', aborted, { once: true });
-  });
+  const context = state.audioCtx;
+  if (!context) return;
+  const endTime = state.nextPlayTime;
+  // AudioContext time pauses during suspension. A wall-clock deadline can
+  // finish the turn with speech still queued, disabling Stop until it resumes.
+  while (true) {
+    signal?.throwIfAborted();
+    if (state.audioCtx !== context) throw playbackAborted();
+    if (context.state === 'closed') throw new Error('Audio context closed before speech playback completed.');
+    const remaining = endTime - context.currentTime;
+    if (remaining <= 0) return;
+    await new Promise((resolve, reject) => {
+      const finish = error => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', aborted);
+        if (error) reject(error);
+        else resolve();
+      };
+      const aborted = () => finish(playbackAborted());
+      const delay = context.state === 'running' ? Math.min(100, Math.max(10, remaining * 1000)) : 100;
+      const timer = setTimeout(() => finish(), delay);
+      signal?.addEventListener('abort', aborted, { once: true });
+    });
+  }
 }

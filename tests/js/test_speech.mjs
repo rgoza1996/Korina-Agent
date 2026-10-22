@@ -1,7 +1,7 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
-import { schedulePcm, speakBuffered, speakText, stopTtsNow } from '../../Korina/js/speech.js';
+import { schedulePcm, speakBuffered, speakText, stopTtsNow, waitForScheduledAudio } from '../../Korina/js/speech.js';
 import { MAX_BUFFERED_AUDIO_BYTES } from '../../Korina/js/response-body.js';
 
 class AudioElement extends EventTarget {
@@ -175,9 +175,7 @@ for (const [name, body, error] of [
 
 test('SSE progress counts scheduled PCM frames rather than trusting provider metadata', async () => {
   state.mode = 'sse';
-  state.gain = {};
-  state.audioCtx.createBuffer = () => ({ copyToChannel() {} });
-  state.audioCtx.createBufferSource = () => ({ connect() {}, start() {} });
+  pcmAudioContext();
   const body = 'data: {"audio":"AQACAA==","samples":0,"sample_rate":24000}\n\n';
   globalThis.fetch = async () => {
     let read = false;
@@ -212,6 +210,10 @@ test('finishing a stopped old reply cannot clear the new buffered playback lifec
 
 function pcmAudioContext() {
   const sources = [];
+  const startedAt = performance.now();
+  const startTime = state.audioCtx.currentTime;
+  Object.defineProperty(state.audioCtx, 'currentTime', { configurable: true,
+    get: () => startTime + (performance.now() - startedAt) / 1000 });
   state.gain = {};
   Object.assign(state.audioCtx, {
     createBuffer: () => ({ copyToChannel() {} }),
@@ -311,6 +313,39 @@ test('stream EOF keeps controls active through scheduled PCM playback and Stop c
   assert(sources[0].stopped > 0);
   assert.equal(element('stopBtn').disabled, true);
   assert.equal(element('ttsStatus').textContent, 'Interrupted');
+});
+
+test('scheduled audio waits for actual context time across suspension and resumes normally', async () => {
+  state.audioCtx.state = 'suspended';
+  state.nextPlayTime = 10.001;
+  let complete = false;
+  const pending = waitForScheduledAudio().then(() => { complete = true; });
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(complete, false, 'elapsed wall time cannot complete suspended PCM');
+  state.audioCtx.state = 'running';
+  state.audioCtx.currentTime = 10.002;
+  await pending;
+  assert.equal(complete, true);
+});
+
+test('Stop aborts a suspended scheduled-audio wait without resuming the context', async () => {
+  state.audioCtx.state = 'suspended';
+  state.nextPlayTime = 12;
+  const controller = new AbortController();
+  const pending = waitForScheduledAudio(controller.signal);
+  const result = assert.rejects(pending, { name: 'AbortError' });
+  controller.abort();
+  await result;
+  assert.equal(state.audioCtx.currentTime, 10);
+  assert.equal(state.audioCtx.state, 'suspended');
+});
+
+test('closing the context while queued audio waits rejects instead of reporting completion', async () => {
+  state.nextPlayTime = 12;
+  const pending = waitForScheduledAudio();
+  const result = assert.rejects(pending, /Audio context closed before speech playback completed/);
+  state.audioCtx.state = 'closed';
+  await result;
 });
 
 for (const tail of ['data: {"audio":"truncated', 'data: {"audio":"AQACAA=="}\n']) {
