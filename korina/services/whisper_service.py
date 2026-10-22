@@ -11,19 +11,13 @@ import tempfile
 import threading
 import time
 
-from korina.config import (
-    config_stt_llm_api_env,
-    config_stt_llm_chat_url,
-    load_config,
-)
+from korina.config import load_config
 
 from korina.runtime import state
 from korina.runtime.limits import bounded_seconds, resolve_audio_limits
 
-from korina.services.multimodal_stt import (
-    lmstudio_transcribe_wav,
-    transient_whisper_fallback_reason,
-)
+from korina.services.multimodal_stt import lmstudio_transcribe_wav
+from korina.services.stt_resolution import resolve_multimodal_transcription
 
 from korina.util.paths import (
     WHISPER_BEAM_SIZE,
@@ -252,33 +246,19 @@ def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, 
         if backend == 'llm':
             config = load_config()
 
-            def whisper_fallback(detail: str, fallback_reason: str) -> dict:
+            def whisper_fallback() -> dict:
                 started = time.time()
-                parts, info = transcribe_wav_segments(wav, vad_filter=vad_filter, device=device, model_id=model_id)
-                return {
-                    **whisper_payload(
-                        parts, info, metadata=metadata, started=started,
-                        device=device,
-                        model_id=model_id or config.get('stt_model'),
-                        backend='whisper-fallback',
-                    ),
-                    'warning': detail,
-                    'fallback_reason': fallback_reason,
-                }
-
-            try:
-                result = lmstudio_transcribe_wav(
-                    wav, model=llm_model, base_url=config_stt_llm_chat_url(config),
-                    api_env=config_stt_llm_api_env(config),
+                parts, info = transcribe_wav_segments(wav, vad_filter=False, device=device, model_id=model_id)
+                return whisper_payload(
+                    parts, info, metadata=metadata, started=started,
+                    device=device, model_id=model_id or config.get('stt_model'),
+                    backend='whisper-fallback',
                 )
-            except Exception as exc:
-                return whisper_fallback(str(exc), 'multimodal_call_failed')
-            text_out = str(result.get('text', '') or '').strip()
-            if not text_out:
-                reason = transient_whisper_fallback_reason('empty_text')
-                if reason:
-                    return whisper_fallback('empty_text', reason)
-            result.update({'text': text_out, **metadata, 'partial_capable': True})
+            result = resolve_multimodal_transcription(
+                wav, model=llm_model, fallback=whisper_fallback,
+                transcribe=lmstudio_transcribe_wav, config=config,
+            )
+            result.update({**metadata, 'partial_capable': True})
             return result
 
         started = time.time()

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shutil
 import tempfile
 import time
@@ -15,17 +14,9 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from korina.config import (
-    config_stt_llm_api_env,
-    config_stt_llm_base_url,
-    config_stt_llm_chat_url,
-    load_config,
-)
-from korina.services.audio_probe import maybe_fallback_to_whisper
-from korina.services.multimodal_stt import (
-    lmstudio_transcribe_wav,
-    transient_whisper_fallback_reason,
-)
+from korina.config import load_config
+from korina.services.multimodal_stt import lmstudio_transcribe_wav
+from korina.services.stt_resolution import resolve_multimodal_transcription
 from korina.services.whisper_service import (
     AudioDurationLimitError,
     WhisperBusyError,
@@ -110,56 +101,22 @@ def _emit_whisper_sse(parts, info, *, metadata, started, device, model):
 
 def _multimodal_payload(wav: Path, *, device, model, llm_model, started, metadata) -> dict:
     """Resolve cached capability failures, then attempt multimodal STT once."""
-    config = load_config()
-    probe_base = config_stt_llm_base_url(config)
-    stt_chat_url = config_stt_llm_chat_url(config)
     whisper_fallback = partial(
         _whisper_fallback_payload, wav, device=device, model_id=model,
         started=started, metadata=metadata,
     )
-    probe = partial(
-        maybe_fallback_to_whisper,
-        provider=config.get('stt_llm_provider') or config.get('llm_provider') or 'llama.cpp',
-        base_url=probe_base, model=llm_model or '',
-        whisper_fallback_fn=whisper_fallback,
+    result = resolve_multimodal_transcription(
+        wav, model=llm_model, fallback=whisper_fallback,
+        transcribe=lmstudio_transcribe_wav,
     )
-    # A known incompatible model must not incur another multimodal round trip.
-    used_fallback, payload = probe(stt_status_code=0, stt_response_body='')
-    if used_fallback:
-        return payload
-    try:
-        result = lmstudio_transcribe_wav(
-            wav, model=llm_model, base_url=stt_chat_url,
-            api_env=config_stt_llm_api_env(config),
-        )
-    except Exception as exc:
-        return {
-            **whisper_fallback(), 'warning': str(exc),
-            'fallback_reason': 'multimodal_call_failed',
-        }
-
-    text = str(result.get('text') or '').strip()
-    finish_reason = str(result.get('finish_reason') or '')
-    if not text:
-        # Preserve structural-empty detection and its persistent probe cache.
-        body = json.dumps({'choices': [{
-            'finish_reason': finish_reason, 'message': {'content': text},
-        }]})
-        used_fallback, payload = probe(
-            stt_status_code=200, stt_response_body=body,
-            finish_reason=finish_reason,
-        )
-        if used_fallback:
-            return payload
-        detail = result.get('error') or 'empty_text'
-        reason = transient_whisper_fallback_reason(detail)
-        if reason:
-            return {**whisper_fallback(), 'warning': detail, 'fallback_reason': reason}
+    if result.get('backend') == 'whisper-fallback':
+        return result
+    text = result['text']
     return {
         **result, **metadata, 'text': text,
         'seconds': time.time() - started,
         'model': llm_model or result.get('model') or LMSTUDIO_MODEL,
-        'backend': 'multimodal-stt', 'finish_reason': finish_reason,
+        'backend': 'multimodal-stt', 'finish_reason': str(result.get('finish_reason') or ''),
         'segments': [{'start': None, 'end': None, 'text': text}] if text else [],
     }
 

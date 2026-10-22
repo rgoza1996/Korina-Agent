@@ -32,6 +32,16 @@ _TRANSIENT_WHISPER_FALLBACK_PATTERNS = [
 ]
 
 
+class MultimodalSttError(RuntimeError):
+    """Keep provider status/detail available to the shared fallback policy."""
+
+    def __init__(self, model: str, status_code: int, detail: str):
+        self.model, self.status_code, self.detail = model, status_code, detail
+        super().__init__(
+            f'Multimodal STT model {model!r} rejected audio transcription request: HTTP {status_code}: {detail}'
+        )
+
+
 def transient_whisper_fallback_reason(detail: str) -> str | None:
     """Return a non-cacheable Whisper-fallback reason for transient multimodal failures.
 
@@ -123,9 +133,7 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
     try:
         body = request_json(resolved_base_url, method='POST', headers=headers, json_body=payload, timeout=timeout)
     except HTTPStatusError as e:
-        raise RuntimeError(
-            f'Multimodal STT model {selected_model!r} rejected audio transcription request: HTTP {e.status_code}: {e.detail}'
-        ) from e
+        raise MultimodalSttError(selected_model, e.status_code, e.detail) from e
     completion = openai_text_completion(body)
     text, finish_reason = completion.text, completion.finish_reason
     return {
