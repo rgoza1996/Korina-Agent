@@ -247,6 +247,13 @@ def clear_ack_wavs() -> int:
         return count
 
 
+def cancel_ack_generation() -> None:
+    """Drop pending work on app shutdown while preserving published audio."""
+    with state.ack.queue_lock:
+        state.ack.generation += 1
+        state.ack.queue.clear()
+
+
 def ack_status(voice: str) -> dict:
     manifest = load_ack_manifest()
     generated_count = sum(_wav_size(ack_path(voice, phrase)) > 44 for phrase in manifest)

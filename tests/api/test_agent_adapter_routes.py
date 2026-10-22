@@ -154,3 +154,50 @@ def test_richer_legacy_adapter_keeps_full_request_and_response_shape(adapter, cl
     assert permission.json()['legacy_permission'] is True
     assert legacy.answer_request.transcript == transcript
     assert legacy.turns == legacy.answers == []
+
+
+def test_core_adapter_discovery_describes_bridge_without_executing_work(adapter, client, monkeypatch):
+    def must_not_probe():
+        raise AssertionError('capability discovery must not probe or run the adapter')
+
+    monkeypatch.setattr(adapter, 'health_check', must_not_probe)
+    response = client.get('/api/agent/capabilities')
+    assert response.status_code == 200
+    discovery = response.json()
+    assert discovery['protocol_version'] == 1
+    assert discovery['adapter_id'] == 'fake'
+    assert discovery['adapter_capabilities']['adapter_id'] == 'fake'
+    assert discovery['legacy_http_supported'] is False
+    assert discovery['http_operations'] == {
+        'status': True, 'events': True, 'reset': True,
+        'transcript_prompt': True, 'transcript_injection': False,
+        'permission_answer': True,
+    }
+    assert adapter.turns == adapter.answers == adapter.events == []
+    assert adapter.resets == 0
+
+
+def test_discovery_exposes_legacy_extension_independently_of_self_reported_http_flag(adapter, client):
+    from korina.agents import register_adapter
+
+    class RichAdapter(CoreAdapter):
+        def snapshot(self):
+            return {'status': 'idle'}
+
+        def submit_transcript_legacy(self, request):
+            raise AssertionError('discovery is read-only')
+
+        def answer_permission_legacy(self, request):
+            raise AssertionError('discovery is read-only')
+
+    register_adapter(RichAdapter())
+    discovery = client.get('/api/agent/capabilities').json()
+    assert discovery['legacy_http_supported'] is True
+    assert discovery['http_operations']['transcript_injection'] is True
+    assert discovery['adapter_capabilities']['http_compatible'] is False
+
+
+def test_discovery_reports_unsupported_core_permission_operation(adapter, client):
+    adapter.capabilities = AgentCapabilities(adapter_id='fake', supports_permission_flow=False)
+    discovery = client.get('/api/agent/capabilities').json()
+    assert discovery['http_operations']['permission_answer'] is False

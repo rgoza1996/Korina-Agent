@@ -22,7 +22,6 @@ import os
 from typing import Any
 
 from korina.util.presets import (
-    MODEL_CAPABILITIES,
     _lookup_registry_capability,
 )
 

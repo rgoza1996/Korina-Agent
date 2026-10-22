@@ -6,18 +6,16 @@ runs on every load_config() call so old config.json files still work.
 from __future__ import annotations
 
 import json
-import os
 import threading
-import urllib.request
 from functools import wraps
 from pathlib import Path
 from typing import Callable, Optional, ParamSpec, TypeVar
 
 from korina.util.paths import (
-    APP_DIR, CONFIG_PATH, ACK_DEFAULT_VOICE, LMSTUDIO_MODEL, KOKORO_URL,
+    APP_DIR, CONFIG_PATH, ACK_DEFAULT_VOICE, LMSTUDIO_MODEL,
 )
 
-from korina.util.presets import provider_preset_base_url, is_local_provider_base_url
+from korina.util.presets import provider_preset_base_url
 from korina.runtime.http import api_key_from_config
 
 _CONFIG_LOCK = threading.RLock()
@@ -203,6 +201,15 @@ def select_response_provider(provider: str, model: str | None = None) -> dict:
         key: value for key, value in config_audio_unsupported(previous).items()
         if not key.startswith(prefix)
     }
+    return save_config(current)
+
+
+@_config_transaction
+def save_converse_channel(name: str) -> dict:
+    """Persist a channel without overwriting simultaneous settings/probe writes."""
+    current = load_config()
+    converse = current.get('converse')
+    current['converse'] = {**(converse if isinstance(converse, dict) else {}), 'channel': name}
     return save_config(current)
 
 

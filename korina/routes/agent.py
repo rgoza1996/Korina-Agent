@@ -16,10 +16,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
-from korina.agents import AgentHttpBridge, UnsupportedAgentOperation, agent_gateway
+from korina.agents import AgentHttpBridge, LegacyAgentHttpAdapter, UnsupportedAgentOperation, agent_gateway
 from korina.config import agent_provider, load_config
 from korina.schemas import (
     AgentPermissionAnswer,
+    AgentProtocolInfo,
     AgentStateRequest,
     AgentTranscriptRequest,
 )
@@ -38,6 +39,26 @@ def _default_model() -> str:
         load_config().get('agent_model')
         or load_config().get('lm_model')
         or LMSTUDIO_MODEL
+    )
+
+
+@router.get('/api/agent/capabilities', response_model=AgentProtocolInfo)
+def agent_capabilities():
+    """Describe the real bridge surface without submitting work or probing models."""
+    adapter = agent_gateway()
+    legacy = isinstance(adapter, LegacyAgentHttpAdapter)
+    return AgentProtocolInfo(
+        adapter_id=adapter.id,
+        adapter_capabilities=adapter.capabilities,
+        legacy_http_supported=legacy,
+        http_operations={
+            'status': True,
+            'events': True,
+            'reset': True,
+            'transcript_prompt': True,
+            'transcript_injection': legacy,
+            'permission_answer': legacy or adapter.capabilities.supports_permission_flow,
+        },
     )
 
 

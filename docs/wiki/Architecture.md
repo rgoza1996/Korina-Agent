@@ -32,4 +32,4 @@ FastAPI routes → small service functions → configured model endpoints
 
 Source checkouts serve tracked `Korina/` files. Built wheels contain the same allowlisted assets; generated config/audio goes into the user data directory. `KORINA_APP_DIR` selects a complete alternate runtime tree. Optional binaries and model roots come from configuration, environment overrides, or discovery.
 
-See [setup](../../README.md), [testing](../testing.md), [hackathon rehearsal](../hackathon.md), and [tracker #23](https://github.com/rgoza1996/Korina-Agent/issues/23). Earlier architecture reports and phase plans are historical records, not the current deployment contract.
+See [agent protocol](../agent-protocol.md), [setup](../../README.md), [testing](../testing.md), [hackathon rehearsal](../hackathon.md), and [tracker #23](https://github.com/rgoza1996/Korina-Agent/issues/23). Earlier architecture reports and phase plans are historical records, not the current deployment contract.

@@ -21,7 +21,7 @@ from korina.routes import model_roots as _model_roots_routes
 from korina.routes import models as _models_routes
 from korina.routes import providers as _providers_routes
 from korina.routes import stt as _stt_routes
-from korina.services.ack_service import enqueue_missing_acks
+from korina.services.ack_service import cancel_ack_generation, enqueue_missing_acks
 from korina.runtime.limits import RequestSizeLimit
 from korina.util.paths import ACK_DEFAULT_VOICE, ACK_DIR, APP_DIR
 
@@ -63,6 +63,7 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            cancel_ack_generation()
             shutdown_agent_worker()
 
     app = FastAPI(

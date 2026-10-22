@@ -80,3 +80,12 @@ def test_browser_settings_cannot_reset_server_probe_cache(config_module):
     config_module.set_audio_unsupported('demo', 'http://test/v1', 'model', 'unsupported', '')
     config_module.update_config_values({'voice': 'af_bella', 'audio_unsupported': {}})
     assert len(config_module.config_audio_unsupported()) == 1
+
+
+def test_channel_save_preserves_allowed_origins_and_current_settings(config_module):
+    config_module.update_config_values({'converse': {'channel': 'korina', 'allowed_origins': ['https://demo.test']}, 'speed': 1.5})
+    config_module.set_audio_unsupported('demo', 'http://test/v1', 'model', 'unsupported', '')
+    saved = config_module.save_converse_channel('testing')
+    assert saved['converse'] == {'channel': 'testing', 'allowed_origins': ['https://demo.test']}
+    assert saved['speed'] == 1.5
+    assert len(saved['audio_unsupported']) == 1

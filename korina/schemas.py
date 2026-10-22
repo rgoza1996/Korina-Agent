@@ -108,3 +108,12 @@ class AgentCapabilities(BaseModel):
     supports_streaming: bool = False
     http_compatible: bool = False
 
+
+class AgentProtocolInfo(BaseModel):
+    """Read-only discovery of the selected adapter and its HTTP bridge."""
+    ok: Literal[True] = True
+    protocol_version: Literal[1] = 1
+    adapter_id: str
+    adapter_capabilities: AgentCapabilities
+    legacy_http_supported: bool
+    http_operations: dict[str, bool]

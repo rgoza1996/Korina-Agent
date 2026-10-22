@@ -59,6 +59,18 @@ def test_disabled_background_enqueue_never_starts_worker(ack_runtime, monkeypatc
     assert ack_service.ack_status('af_heart')['enabled'] is False
 
 
+def test_shutdown_cancels_pending_work_without_deleting_published_cache(ack_runtime, monkeypatch):
+    monkeypatch.setattr(ack_service.threading.Thread, 'start', lambda self: None)
+    cache = ack_runtime['cache'] / 'published.wav'
+    cache.write_bytes(WAV)
+    ack_runtime['enqueue']('af_heart')
+    before = ack_service.state.ack.generation
+    ack_service.cancel_ack_generation()
+    assert ack_service.state.ack.queue == []
+    assert ack_service.state.ack.generation > before
+    assert cache.read_bytes() == WAV
+
+
 def test_clear_invalidates_inflight_audio_and_allows_same_phrase_rebuild(ack_runtime, monkeypatch):
     first_started, release_first = threading.Event(), threading.Event()
     second_started, release_second = threading.Event(), threading.Event()

@@ -25,10 +25,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from korina.agents.base import AgentAdapter
 from korina.schemas import (
     AgentCapabilities,
-    AgentEvent,
     PermissionAnswerEvent,
     UserTurn,
 )

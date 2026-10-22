@@ -1,6 +1,6 @@
 # Korina Agent / Korina Converse
 
-Korina is a local voice workspace with a separate background report agent. Start with the [README](../../README.md), [architecture](Architecture.md), [testing guide](../testing.md), and [hackathon rehearsal](../hackathon.md).
+Korina is a local voice workspace with a separate background report agent. Start with the [README](../../README.md), [architecture](Architecture.md), [testing guide](../testing.md), [agent protocol](../agent-protocol.md), and [hackathon rehearsal](../hackathon.md).
 
 The October 2026 refactor is tracked in [#23](https://github.com/rgoza1996/Korina-Agent/issues/23), on `codex/hackathon-refactor` based on `alpha`. Verification and remaining model/microphone work are recorded there. `master` is the older v0.0.1 release; release promotion still needs a real voice rehearsal.
 

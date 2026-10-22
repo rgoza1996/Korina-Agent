@@ -25,7 +25,7 @@ Phase 5 silent-empty handling (2026-06-27):
 from __future__ import annotations
 
 import re
-from typing import Optional, Tuple
+from typing import Tuple
 
 
 # Patterns that indicate "this model/inference engine cannot accept
