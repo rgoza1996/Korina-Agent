@@ -75,7 +75,7 @@ async function mockProviders(page, request) {
 }
 
 async function waitForBoot(page) {
-  await expect(page.locator('#pageHealth')).not.toHaveText('');
+  await expect(page.locator('#pageHealth')).not.toHaveText('page server…', { timeout: 15000 });
   await expect(page.locator('#settingsBtn')).toBeEnabled();
 }
 

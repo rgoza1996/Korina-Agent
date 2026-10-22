@@ -22,7 +22,7 @@ async function loadCapturePage(page, healthOverrides = {}) {
     return route.fulfill({ status: 409, json: { detail: 'Unexpected mutation during capture check' } });
   });
   await page.goto('/');
-  await expect(page.locator('#pageHealth')).not.toHaveText('');
+  await expect(page.locator('#pageHealth')).not.toHaveText('page server…', { timeout: 15000 });
   return errors;
 }
 

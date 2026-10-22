@@ -56,7 +56,7 @@ async function loadStreamingPage(page, body) {
   });
   await page.route('http://speech.fixture/stream/speech', route => route.fulfill({ contentType: 'text/event-stream', body }));
   await page.goto('/');
-  await expect(page.locator('#pageHealth')).not.toHaveText('');
+  await expect(page.locator('#pageHealth')).not.toHaveText('page server…', { timeout: 15000 });
   await expect(page.locator('#ttsBaseUrl')).toHaveValue('http://speech.fixture');
   return errors;
 }

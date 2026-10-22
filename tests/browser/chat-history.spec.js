@@ -17,7 +17,7 @@ test('a browser chat sends prior history separately from the current interrupted
     return route.fulfill({ status: 409, json: { detail: 'Unexpected mutation in chat-history check' } });
   });
   await page.goto('/');
-  await expect(page.locator('#pageHealth')).not.toHaveText('');
+  await expect(page.locator('#pageHealth')).not.toHaveText('page server…', { timeout: 15000 });
   const history = await page.evaluate(async () => {
     const { state } = await import('/js/state.js');
     const { askAndSpeak } = await import('/js/agent-ui.js');

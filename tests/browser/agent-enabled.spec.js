@@ -34,7 +34,7 @@ async function app(page) {
     await route.fulfill({ json: body });
   });
   await page.goto('/');
-  await expect(page.locator('#pageHealth')).not.toHaveText('');
+  await expect(page.locator('#pageHealth')).not.toHaveText('page server…', { timeout: 15000 });
   await page.locator('#settingsBtn').click();
   await page.locator('[data-settings-tab="agent"]').click();
   return scenario;

@@ -31,7 +31,7 @@ async function loadBufferedPage(page, body, mode = 'buf') {
   });
   await page.route('http://speech.fixture/v1/audio/speech', route => route.fulfill({ status: 200, contentType: 'audio/wav', body }));
   await page.goto('/');
-  await expect(page.locator('#pageHealth')).not.toHaveText('');
+  await expect(page.locator('#pageHealth')).not.toHaveText('page server…', { timeout: 15000 });
   await expect(page.locator('#ttsBaseUrl')).toHaveValue('http://speech.fixture');
   await page.evaluate(() => {
     window.__bufferedEnded = 0;
