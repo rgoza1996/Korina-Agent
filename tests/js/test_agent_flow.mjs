@@ -25,7 +25,7 @@ beforeEach(() => {
     history: [], agentTurnCount: 3, agentLastDeliveredTurn: 0,
     agentFirstDelivered: false, agentLastDeliveryAt: 0,
     agentEventCursor: 0, pendingAgentStateReport: '', agentStateReport: '',
-    pendingAgentReportVersion: 0, agentSession: 0,
+    pendingAgentReportVersion: 0, agentSession: 0, agentResetBlocked: false,
   });
 });
 
@@ -255,4 +255,15 @@ test('a chat response from a cleared session cannot append or speak its reply', 
   assert.deepEqual(state.history, []);
   assert.equal(element('text').value, '');
   assert.deepEqual(requests, ['/api/chat']);
+});
+
+test('pending or failed reset blocks agent delivery, polling, and event injection', async () => {
+  state.agentResetBlocked = true;
+  let requests = 0;
+  globalThis.fetch = async () => { requests++; throw new Error('reset has not succeeded'); };
+  await deliverTranscriptToAgent('turn');
+  await pollAgentEvents();
+  handleAgentEvent({ type: 'state_report', priority: 'normal', report: 'Old server event.' });
+  assert.equal(requests, 0);
+  assert.equal(state.pendingAgentStateReport, '');
 });

@@ -75,13 +75,13 @@ export function agentTranscriptSlice() {
 }
 
 export async function deliverTranscriptToAgent(reason = 'turn') {
-  if (agentEnabled() !== 'on' || deliveryInFlight) return false;
+  if (agentEnabled() !== 'on' || state.agentResetBlocked || deliveryInFlight) return false;
   deliveryInFlight = true;
   const session = state.agentSession;
   try {
     const statusResp = await fetch('/api/agent/status')
       .then(r => r.ok ? r.json() : { busy: false }).catch(() => ({ busy: false }));
-    if (session !== state.agentSession || agentEnabled() !== 'on') return false;
+    if (session !== state.agentSession || state.agentResetBlocked || agentEnabled() !== 'on') return false;
     const mode = statusResp.busy ? ($('agentBusyDeliveryMode')?.value || 'injection') : ($('agentIdleDeliveryMode')?.value || 'prompt');
     const payload = { transcript: agentTranscriptSlice(), delivery_mode: mode, reason, turn_count: state.agentTurnCount };
     agentDebug(`Transcript delivery (${mode})`, payload);
@@ -93,7 +93,7 @@ export async function deliverTranscriptToAgent(reason = 'turn') {
     if (!response.ok || result?.ok === false || result?.accepted !== true) {
       throw new Error(result?.detail || result?.error || `Agent did not accept transcript (HTTP ${response.status}).`);
     }
-    if (session !== state.agentSession) return false;
+    if (session !== state.agentSession || state.agentResetBlocked) return false;
     state.agentLastDeliveredTurn = payload.turn_count;
     state.agentLastDeliveryAt = performance.now();
     state.agentFirstDelivered = true;
@@ -108,7 +108,7 @@ export async function deliverTranscriptToAgent(reason = 'turn') {
 }
 
 export function maybeDeliverTranscriptToAgent(reason = 'timer') {
-  if (agentEnabled() !== 'on' || !state.history.length) return;
+  if (agentEnabled() !== 'on' || state.agentResetBlocked || !state.history.length) return;
   const now = performance.now();
   const firstMode = $('agentFirstDeliveryMode')?.value || 'first_turn_or_timer';
   const firstSeconds = (parseInt($('agentFirstDeliverySeconds')?.value || '20', 10) || 20) * 1000;
@@ -125,14 +125,14 @@ export function maybeDeliverTranscriptToAgent(reason = 'timer') {
 
 // Event polling
 export async function pollAgentEvents() {
-  if (agentEnabled() !== 'on' || eventPollInFlight) return;
+  if (agentEnabled() !== 'on' || state.agentResetBlocked || eventPollInFlight) return;
   eventPollInFlight = true;
   const session = state.agentSession;
   try {
     const response = await fetch(`/api/agent/events?after=${state.agentEventCursor}`);
     if (!response.ok) throw new Error(`Agent events HTTP ${response.status}`);
     const result = await response.json();
-    if (session !== state.agentSession || agentEnabled() !== 'on') return;
+    if (session !== state.agentSession || state.agentResetBlocked || agentEnabled() !== 'on') return;
     for (const event of (result.events || [])) {
       state.agentEventCursor = Math.max(state.agentEventCursor, event.id || 0);
       agentDebug(`Agent event ${event.type || ''} #${event.id || ''}`, event);
@@ -153,6 +153,7 @@ export function conciseAgentMessage(ev) {
 
 // Event dispatcher
 export function handleAgentEvent(ev) {
+  if (state.agentResetBlocked) return;
   if (ev.type === 'agent_status') return;
   if (ev.type === 'agent_error') { queueAgentReport(`Korina Agent error: ${ev.message}`); return; }
   if (ev.type === 'permission_request') {

@@ -11,7 +11,7 @@ async function mockProviders(page, request) {
     agent_provider: 'openai-compatible', agent_base_url: 'http://agent.example/v1',
   };
   const capabilities = await (await request.get('/api/capabilities')).json();
-  const scenario = { config, saves: [], activations: [], activeChannel: 'korina', failSave: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0 };
+  const scenario = { config, saves: [], activations: [], activeChannel: 'korina', failSave: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0, resets: 0, polls: 0, deliveries: 0, failReset: false, resetBarrier: null, agentEvents: [] };
   await page.route('**/api/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -39,7 +39,14 @@ async function mockProviders(page, request) {
     else if (endpoint === '/api/audio-probe') body = { entries: {} };
     else if (endpoint === '/api/acks') body = { acks: [] };
     else if (endpoint === '/api/acks/rebuild') { scenario.rebuilds++; body = { voice: config.voice, removed: 0, queued_or_missing: 0 }; }
-    else if (endpoint === '/api/agent/events') body = { events: [] };
+    else if (endpoint === '/api/agent/events') { scenario.polls++; body = { events: scenario.agentEvents }; }
+    else if (endpoint === '/api/agent/transcript') { scenario.deliveries++; body = { ok: true, accepted: true }; }
+    else if (endpoint === '/api/agent/reset') {
+      scenario.resets++;
+      if (scenario.resetBarrier) await scenario.resetBarrier;
+      if (scenario.failReset) { status = 503; body = { detail: 'Reset backend unavailable' }; }
+      else { scenario.agentEvents = []; body = { ok: true }; }
+    }
     else if (endpoint === '/api/agent/status') body = { busy: false };
     else if (endpoint === '/api/converse/channels') body = { channels: ['korina', 'testing'] };
     else if (endpoint === '/api/converse/channel') body = { channel: scenario.activeChannel };
@@ -227,4 +234,50 @@ test('configuration banner stays stable while model and runtime statuses update 
   await page.locator('#sttBackend').selectOption('llm');
   await expect(page.locator('#settingsInfo')).toHaveText(banner);
   await expect(page.locator('#modelOptionsStatus')).toContainText('Multimodal STT selected');
+});
+
+test('agent delivery and polling stay paused while a backend reset is pending', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  let release;
+  scenario.resetBarrier = new Promise(resolve => { release = resolve; });
+  await page.evaluate(() => { document.getElementById('agentEnabled').checked = true; });
+  await page.locator('#clearSessionBtn').click();
+  await expect.poll(() => scenario.resets).toBe(1);
+  scenario.agentEvents = [{ id: 50, type: 'state_report', priority: 'normal', report: 'Stale backend report.' }];
+  try {
+    await page.evaluate(async () => {
+      window.state.history = [{ role: 'user', content: 'A new conversation can continue.' }];
+      await window.pollAgentEvents();
+      await window.deliverTranscriptToAgent('test');
+    });
+    expect(scenario.polls).toBe(0);
+    expect(scenario.deliveries).toBe(0);
+    await expect.poll(() => page.evaluate(() => window.state.agentResetBlocked)).toBe(true);
+    expect(await page.evaluate(() => window.state.pendingAgentStateReport)).toBe('');
+  } finally { release(); }
+  await expect.poll(() => page.evaluate(() => window.state.agentResetBlocked)).toBe(false);
+  await page.evaluate(() => window.deliverTranscriptToAgent('after-reset'));
+  expect(scenario.deliveries).toBe(1);
+});
+
+test('a failed backend reset stays blocked until Clear Session succeeds on retry', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  scenario.failReset = true;
+  await page.evaluate(() => { document.getElementById('agentEnabled').checked = true; });
+  await page.locator('#clearSessionBtn').click();
+  await expect(page.locator('#clearSessionBtn')).toHaveText('Retry Clear Session');
+  await expect(page.locator('#sttStatus')).toContainText('Reset backend unavailable');
+  await expect(page.locator('#sttStatus')).toContainText('Retry Clear Session');
+  await page.evaluate(async () => { await window.pollAgentEvents(); await window.deliverTranscriptToAgent('test'); });
+  expect(scenario.polls).toBe(0);
+  expect(scenario.deliveries).toBe(0);
+  expect(await page.evaluate(() => window.state.agentResetBlocked)).toBe(true);
+  scenario.failReset = false;
+  await page.locator('#clearSessionBtn').click();
+  await expect(page.locator('#clearSessionBtn')).toHaveText('Clear Session');
+  await expect.poll(() => page.evaluate(() => window.state.agentResetBlocked)).toBe(false);
+  expect(scenario.resets).toBe(2);
+  await expect(page.locator('#settingsActionStatus')).not.toContainText('Agent reset failed');
 });

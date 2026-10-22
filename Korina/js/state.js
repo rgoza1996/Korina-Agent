@@ -90,6 +90,7 @@ export const state = {
   pendingAgentStateReport: '',
   pendingAgentReportVersion: 0,
   agentSession: 0,
+  agentResetBlocked: false,
   pendingImportantAgentMessage: '',
   awaitingAgentPermission: null,
 

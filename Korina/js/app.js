@@ -230,6 +230,10 @@ function stopPlayback() {
 }
 
 async function clearSession() {
+  state.agentResetBlocked = true;
+  const clearButton = $('clearSessionBtn');
+  clearButton.disabled = true;
+  clearButton.textContent = 'Clearing session…';
   try { stopTtsNow(); } catch {}
   state.history = [];
   state.agentStateReport = '';
@@ -237,6 +241,7 @@ async function clearSession() {
   state.pendingAgentStateReport = '';
   state.pendingAgentReportVersion++;
   state.agentSession++;
+  const session = state.agentSession;
   state.pendingImportantAgentMessage = '';
   state.awaitingAgentPermission = null;
   state.agentEventCursor = 0;
@@ -258,12 +263,26 @@ async function clearSession() {
   $('text').value = '';
   $('transcriptInfo').textContent = 'Session cleared. Korina writes the transcript here. This box is read-only; queued live chunks append while you speak.';
   $('chunkInfo').textContent = '';
-  status($('sttStatus'), 'Session cleared. Live mode can continue with fresh context.', 'good');
+  status($('sttStatus'), 'Clearing session. Agent deliveries are paused until reset completes.', 'warn');
   try {
-    await fetch('/api/agent/reset', { method: 'POST' });
+    const response = await fetch('/api/agent/reset', { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok || result?.ok !== true) throw new Error(result?.detail || `HTTP ${response.status}`);
+    if (session !== state.agentSession) return;
+    state.agentResetBlocked = false;
+    clearButton.textContent = 'Clear Session';
+    if ($('settingsActionStatus').textContent.startsWith('Agent reset failed:')) $('settingsActionStatus').textContent = '';
     agentDebug('Agent backend reset', { ok: true });
-  } catch (e) {
-    agentDebug('Agent backend reset failed', String(e));
+    status($('sttStatus'), 'Session cleared. Live mode can continue with fresh context.', 'good');
+  } catch (error) {
+    if (session !== state.agentSession) return;
+    const message = `Agent reset failed: ${error.message}. Retry Clear Session to resume agent delivery. Conversation can continue.`;
+    clearButton.textContent = 'Retry Clear Session';
+    $('settingsActionStatus').textContent = message;
+    status($('sttStatus'), message, 'bad');
+    agentDebug('Agent backend reset failed', error.message || String(error));
+  } finally {
+    if (session === state.agentSession) clearButton.disabled = false;
   }
   markActivity('session-clear');
 }
