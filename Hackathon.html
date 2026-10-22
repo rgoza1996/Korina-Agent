@@ -1,0 +1,213 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Hackathon — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><style>:root{
+ --paper:#f4efe6;
+ --paper-2:#ece5d8;
+ --paper-3:#e3dac9;
+ --ink:#2b2620;
+ --ink-soft:#5a4f44;
+ --ink-faint:#8a7d6e;
+ --rule:#cdc1ad;
+ --rule-soft:#e0d6c0;
+ --blue:#3a5a7a;
+ --blue-soft:#7c95ad;
+ --sage:#7a8a6a;
+ --rose:#a87060;
+ --warn:#9a6a30;
+ --code-bg:#ebe3d2;
+ --link:#355a82;
+ --link-visited:#6a4f7a;
+ --font:Georgia,"Times New Roman","Liberation Serif",serif;
+ --mono:"Courier New","Liberation Mono",ui-monospace,monospace;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:soft;font-size:16px;background:var(--paper)}
+body{background:var(--paper);color:var(--ink);font:var(--font);line-height:1.55;min-height:100vh}
+a{color:var(--link);text-decoration:underline;text-underline-offset:2px}
+a:visited{color:var(--link-visited)}
+a:hover{color:var(--ink)}
+img{max-width:100%;display:block;border:1px solid var(--rule);margin:1rem 0}
+pre,code{font-family:var(--mono);font-size:.92em;color:var(--ink-soft)}
+code{background:var(--code-bg);padding:.1em .35em;border:1px solid var(--rule-soft)}
+pre{background:var(--code-bg);padding:1rem 1.25rem;border:1px solid var(--rule);overflow-x:auto;line-height:1.45;margin:1rem 0}
+pre code{background:none;border:none;padding:0;font-size:1em}
+blockquote{border-left:3px solid var(--rule);padding:.25rem 1rem;color:var(--ink-soft);margin:1rem 0;background:var(--paper-2)}
+table{width:100%;border-collapse:collapse;font-size:.92em;margin:1rem 0;border:1px solid var(--rule)}
+th,td{border:1px solid var(--rule);padding:.5rem .75rem;text-align:left;vertical-align:top}
+th{background:var(--paper-2);color:var(--ink);font-weight:700}
+tr:nth-child(even) td{background:var(--paper-2)}
+hr{border:none;border-top:1px solid var(--rule);margin:2rem 0}
+h1,h2,h3,h4,h5,h6{line-height:1.25;font-weight:700;margin-top:1.6em;margin-bottom:.4em;color:var(--ink)}
+h1{font-size:1.85rem;border-bottom:2px solid var(--rule);padding-bottom:.4rem;margin-top:0}
+h2{font-size:1.35rem;border-bottom:1px solid var(--rule);padding-bottom:.3rem}
+h3{font-size:1.1rem;color:var(--blue)}
+h4{font-size:1rem;color:var(--ink-soft);font-style:italic}
+p{margin:.6rem 0}
+ul,ol{padding-left:1.5rem;margin:.5rem 0}
+li{margin:.2rem 0}
+
+.wrap{max-width:980px;margin:0 auto;padding:0 1.5rem}
+.hero-svg{width:100%;border:1px solid var(--rule);margin:1.25rem 0;background:var(--paper-2)}
+.chart-img{width:100%;border:1px solid var(--rule);margin:1.25rem 0;background:var(--paper-2)}
+
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin:1.25rem 0}
+.card{background:#fbf7ee;border:1px solid var(--rule);padding:1rem 1.1rem}
+.card h3{color:var(--blue);margin-top:0;font-size:1.05em;font-family:var(--font)}
+.card p{color:var(--ink-soft);font-size:.92em}
+.card .card-footer{margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--rule-soft)}
+.card a{font-size:.88em}
+
+.quick-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1rem;margin:1.5rem 0}
+.quick-link{background:#fbf7ee;border:1px solid var(--rule);padding:.85rem 1rem;display:flex;flex-direction:column;gap:.25rem;text-decoration:none}
+.quick-link:hover{border-color:var(--blue);background:var(--paper-2)}
+.quick-link-title{font-weight:700;color:var(--ink);font-size:1em}
+.quick-link-desc{color:var(--ink-soft);font-size:.85em}
+
+.req-table th{background:var(--paper-3)}
+.req-tier{padding:.5rem .75rem;border:1px solid var(--rule);margin:.25rem 0;background:var(--paper-2)}
+.req-tier.minimal{background:#f6efde;border-color:var(--rule)}
+.req-tier.basic{background:#eef2e7;border-color:var(--sage)}
+.req-tier.good{background:#e9eef3;border-color:var(--blue-soft)}
+.tier-label{display:inline-block;font-weight:700;font-size:.8em;padding:.15em .6em;border:1px solid var(--rule);margin-right:.5em;background:#fbf7ee}
+.tier-label.minimal{background:#f6efde;color:var(--ink)}
+.tier-label.basic{background:#eef2e7;color:var(--sage)}
+.tier-label.good{background:#e9eef3;color:var(--blue)}
+
+.req-note{background:var(--paper-2);border:1px solid var(--rule);padding:.85rem 1rem;margin:1rem 0;font-size:.9em;color:var(--ink-soft)}
+
+footer{text-align:center;color:var(--ink-faint);font-size:.85em;padding:2rem 0;border-top:1px solid var(--rule);margin-top:3rem}
+footer code{color:var(--ink-faint)}
+
+.site-nav{background:var(--paper-2);border-bottom:1px solid var(--rule);position:relative;z-index:10}
+.site-nav .wrap{display:flex;align-items:center;gap:1.25rem;padding:.6rem 1.5rem;flex-wrap:wrap}
+.site-logo{display:flex;align-items:center;gap:.55rem;font-weight:700;font-size:1.05em;color:var(--ink);text-decoration:none;font-family:var(--font)}
+.site-logo svg{width:24px;height:24px}
+.site-nav-links{display:flex;gap:1rem;flex-wrap:wrap}
+.site-nav-links a{padding:.15rem 0;color:var(--ink-soft);font-size:.92em;font-weight:400;text-decoration:none;border-bottom:1px solid transparent}
+.site-nav-links a:hover,.site-nav-links a.active{color:var(--ink);border-bottom-color:var(--blue);text-decoration:none}
+.nav-right{margin-left:auto;display:flex;gap:.6rem;align-items:center}
+.nav-btn{display:inline-flex;align-items:center;gap:.3rem;background:#fbf7ee;border:1px solid var(--rule);padding:.25em .7em;font-size:.85em;color:var(--ink);text-decoration:none;font-family:var(--font)}
+.nav-btn:hover{border-color:var(--blue);color:var(--ink);background:var(--paper-3);text-decoration:none}
+.back-link{display:inline-flex;align-items:center;gap:.3rem;background:#fbf7ee;border:1px solid var(--rule);padding:.25em .7em;font-size:.85em;color:var(--ink-soft);margin-bottom:1.25rem;text-decoration:none}
+.back-link:hover{border-color:var(--blue);color:var(--ink);background:var(--paper-2);text-decoration:none}
+
+.issue-tag{display:inline-block;background:#fbf7ee;border:1px solid var(--rule);padding:.15em .55em;font-size:.82em;font-family:var(--mono);margin:.15em;color:var(--ink)}
+.issue-tag.priority-high{border-color:var(--rose);color:var(--rose)}
+.issue-tag.priority-med{border-color:var(--warn);color:var(--warn)}
+.issue-tag.priority-low{border-color:var(--sage);color:var(--sage)}
+
+@media (max-width:768px){
+ body{line-height:1.5}
+ .wrap{padding:0 1rem}
+ h1{font-size:1.45rem}
+ h2{font-size:1.2rem}
+ h3{font-size:1.02rem}
+ .wrap table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;font-size:.82em}
+ .site-nav-links{display:none}
+ .site-nav-links.open{display:flex;flex-direction:column;gap:.5rem;position:absolute;top:100%;left:0;right:0;background:var(--paper-2);border-bottom:1px solid var(--rule);padding:.75rem 1.5rem;z-index:99}
+ .nav-toggle{display:flex!important}
+ .hero-svg{display:none}
+ .hero-text{display:block!important}
+}
+@media (max-width:480px){
+ h1{font-size:1.3rem}
+ h2{font-size:1.05rem}
+ .card-grid{grid-template-columns:1fr;gap:.6rem}
+ .card{padding:.85rem}
+ .quick-links{grid-template-columns:1fr;gap:.6rem}
+ .quick-link{padding:.75rem .85rem}
+ code{font-size:.82em}
+ pre{padding:.75rem .9rem;font-size:.85em}
+ .wrap table{font-size:.78em}
+}
+
+.nav-toggle{display:none;background:none;border:1px solid var(--rule);padding:.25rem .5rem;cursor:pointer;color:var(--ink);font-size:1.1em;line-height:1;margin-left:auto;font-family:var(--font)}
+.nav-toggle:focus{outline:1px solid var(--blue)}
+
+.hero-text{display:none;background:#fbf7ee;border:1px solid var(--rule);padding:1.25rem;margin:1.25rem 0}
+.hero-text h1{font-size:1.6rem;border-bottom:none;margin-top:0}
+.hero-text p{color:var(--ink-soft);font-size:.95em;margin:.4rem 0}
+.hero-badges{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.6rem}
+.hero-badge{display:inline-block;background:var(--paper-2);border:1px solid var(--rule);padding:.2em .7em;font-size:.8em;font-family:var(--mono);color:var(--ink)}</style></head><body>
+<nav class="site-nav"><div class="wrap">
+<a href="index.html" class="site-logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<rect width="32" height="32" rx="7" fill="#0d1117"/>
+<circle cx="16" cy="16" r="10" fill="none" stroke="#58a6ff" stroke-width="2"/>
+<circle cx="16" cy="16" r="5" fill="#bc8cff"/>
+<path d="M10 16 Q13 11 16 16 Q19 21 22 16" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-linecap="round"/>
+</svg>Korina</a>
+<button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" onclick="document.getElementById('navLinks').classList.toggle('open')"> &#9776;</button>
+ <div class="site-nav-links" id="navLinks">
+<a href="index.html">Home</a><a href="Architecture.html">Architecture</a>
+<a href="Converse.html">Converse</a><a href="Agent.html">Agent</a>
+<a href="Agent-Side-Channel.html">Side Channel</a>
+<a href="Providers.html">Providers</a><a href="Testing.html">Testing</a>
+<a href="Hackathon.html" class="active">Hackathon</a>
+<a href="Roadmap.html">Roadmap</a>
+<a href="Issues.html">Issues</a>
+<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
+</div>
+<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
+</div></nav><main class="wrap">
+<a href="index.html" class="back-link">← Back to Home</a>
+<h1>Hackathon setup and rehearsal</h1>
+<div class="req-note"><strong>Hackathon refactor preview · 22 October 2026.</strong>
+Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>alpha</code>.
+These changes are not yet merged into <code>alpha</code> or the release branch.
+<a href="Hackathon.html">Setup and rehearsal guide</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Progress and verification evidence</a> · <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">Review PR #24</a>.</div>
+<p>Korina Converse brings microphone capture, transcription, a response model, speech playback, and background agent reports into one local voice interface. The refactor focuses on a predictable demo and simpler runtime code.</p>
+<h2>What the preview improves</h2>
+<div class="card-grid">
+<div class="card"><h3>Portable startup</h3><p>A checkout serves its own browser assets. Provider binaries resolve through configuration and PATH. Installed wheels include the UI and keep generated state in the user’s data directory.</p></div>
+<div class="card"><h3>Shared transcription flow</h3><p>Buffered, partial, and streaming transcription share result and fallback logic. Conversion and inference run away from the async request loop; fallback remains visible in API responses.</p></div>
+<div class="card"><h3>Bounded background work</h3><p>Agent deliveries have a concurrency limit, validated transcript sizes, and reset protection for stale results. Priority classification has its own testable rules.</p></div>
+<div class="card"><h3>Clear diagnostics</h3><p>Health comes from server-resolved providers and endpoints. Transient polling failures, lazy model loading, and unavailable services have distinct states.</p></div>
+</div>
+<h2>Start from a source checkout</h2>
+<p>The commands below target the preview branch. Python 3.10+ is required. Install FFmpeg separately for browser audio conversion. Node is only needed for frontend development checks.</p>
+<pre><code>git clone https://github.com/rgoza1996/Korina-Agent.git
+cd Korina-Agent
+git switch codex/hackathon-refactor
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e '.[whisper]'
+python -m korina.app</code></pre>
+<p>Open <a href="http://localhost:8001">localhost:8001</a>. The initial runtime settings are seeded from <code>Korina/config/config.example.json</code>. Choose an available response model and endpoint in Settings. Model weights and external provider servers are separate prerequisites.</p>
+<p>For local speech output, use a second terminal in the source checkout with the same environment:</p>
+<pre><code>source .venv/bin/activate
+python -m pip install -e '.[tts]'
+python kokoro-streaming-server.py</code></pre>
+<p>Kokoro loads its pipeline on first speech and may download weights. Warm the selected voice before presenting. Its default port is 8880. An existing compatible endpoint can be configured instead.</p>
+<p>On Linux with a systemd user session, <code>./Korina/install-services.sh</code> renders service units for this checkout and interpreter. <code>KORINA_PYTHON</code> and optional <code>KORINA_TTS_PYTHON</code> select interpreters. The local provider lifecycle remains Linux specific.</p>
+<h2>Run a built wheel</h2>
+<p>From the preview checkout, build and install the package:</p>
+<pre><code>python -m pip install '.[dev]'
+python -m build
+python -m pip install dist/*.whl
+korina</code></pre>
+<p>The wheel includes the browser UI, configuration example, and acknowledgement manifest. It keeps generated config and ACK audio under <code>${XDG_DATA_HOME:-~/.local/share}/korina</code>. A source/editable install keeps that state beside <code>Korina/</code>. <code>KORINA_APP_DIR</code> selects a complete alternate runtime tree.</p>
+<p>Speech engines are optional dependencies. The built wheel’s <code>korina-tts</code> command starts Kokoro after its TTS extra is installed. Building/installing the base package alone does not install a response LLM or preload speech models. See the <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/README.md">README</a> for the current install contract.</p>
+<h2>Before the demo</h2>
+<ol>
+<li>Choose the intended response model and confirm its endpoint is running. Keep agent reporting off until basic voice round trips work.</li>
+<li>Preload the Whisper model and TTS voice on the demonstration machine so downloads do not interrupt the presentation.</li>
+<li>Run <code>python scripts/check_stack.py</code> and inspect <code>/api/ready</code>. Readiness returns 503 for a failed required check; <code>/api/health</code> remains HTTP 200 for backend liveness. A reachable lazy Kokoro counts as available, so warm actual speech before presenting.</li>
+<li>Use localhost or an HTTPS origin for microphone access. Allow microphone permission, speak one short turn, and verify the transcript, reply, and audible playback.</li>
+<li>Enable the background agent and deliver another turn. Confirm that a report appears in the debug panel and normal reports become context without an unnecessary interrupt.</li>
+<li>Test interruption, Clear Session, and one unavailable-provider case. Confirm the interface recovers and describes the affected provider accurately.</li>
+<li>Run the read-only smoke command, then rehearse actual chat, speech, interruption, and recovery on the prepared machine.</li>
+</ol>
+<pre><code>python scripts/check_stack.py --base http://127.0.0.1:8001
+# Infrastructure-only check when models are intentionally unavailable:
+python scripts/check_stack.py --base http://127.0.0.1:8001 --allow-degraded</code></pre>
+<p>The smoke command reads UI/assets, capabilities, health, and readiness. <code>--allow-degraded</code> accepts unavailable model services while checking the HTTP/assets layer; it does not establish a working voice demo.</p>
+<div class="req-note"><strong>Legacy regression changes runtime state.</strong> <code>tests/regression_smoke.py</code> resets sessions, rebuilds ACK audio, activates providers, and temporarily writes configuration, even with <code>--no-chat --no-transcribe</code>. Run it only against a disposable or deliberately selected local stack. Use <code>scripts/check_stack.py</code> for the routine read-only gate.</div>
+<h2>Verification and remaining gaps</h2>
+<p>Event-specific Meta requirements have not been supplied. This preparation does not claim a particular Meta integration or hackathon eligibility.</p>
+<p>Deterministic tests cover backend contracts, fallback behavior, request limits, background-worker concurrency, frontend health behavior, module imports, portable paths, and packaging. Local checks and final CI results are recorded in <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a> and the <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">code review</a>.</p>
+<ul>
+<li>Live microphone capture, physical audio playback, real model inference, GPU selection, and provider activation on the demonstration hardware still require a rehearsal.</li>
+<li>The agent currently produces reports and events. A complete tool-execution runtime, durable memory, and arbitrary third-party agent support remain separate roadmap work.</li>
+<li>This preview has not been promoted to <code>alpha</code> or <code>master</code>. A passing unit suite does not establish end-to-end demo readiness.</li>
+</ul>
+<p><a href="Testing.html">Testing commands and gates</a> · <a href="Issues.html">Issue status</a> · <a href="Architecture.html">Architecture</a></p>
+</main><footer><div class="wrap"><p>Korina Agent &amp; Korina Converse — <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Hackathon progress</a></p><p>Documentation preview updated 22 October 2026. <code>gh-pages</code> stores these static pages; live hosting is not configured.</p></div></footer></body></html>

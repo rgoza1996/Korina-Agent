@@ -140,19 +140,40 @@ footer code{color:var(--ink-faint)}
 <a href="Converse.html">Converse</a><a href="Agent.html">Agent</a>
 <a href="Agent-Side-Channel.html">Side Channel</a>
 <a href="Providers.html">Providers</a><a href="Testing.html">Testing</a>
+<a href="Hackathon.html">Hackathon</a>
 <a href="Roadmap.html">Roadmap</a>
 <a href="Issues.html">Issues</a>
-<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
+<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
 </div>
-<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">Issues</a></div>
-</div></nav><div style='max-width:900px;margin:3rem auto;padding:0 1.5rem'><a href='index.html' style='display:inline-block;margin-bottom:1.5rem;color:var(--sub)'>&#8592; Back to Home</a><h1 style='border-bottom:1px solid var(--border);padding-bottom:.5rem;margin-top:0'>Testing & CI</h1><p style='color:var(--sub);font-size:1.05em;margin-top:1rem;white-space:pre-wrap'>Korina has 101 pytest tests across four layers:
- - Unit tests: backend module isolation
- - API/TestClient: FastAPI route contracts and response schemas
- - Static/frontend smoke: module shape, no-refresh-on-focus regression
- - Live regression: 49 release-gate smoke checks against a running backend
-
-CI runs on GitHub Actions across Python 3.10/3.11/3.12. The pytest suite avoids live model servers so CI is fast and deterministic.
-
-Current release gate: 101 pytest tests passing and 49 live smoke checks passing.
-
-Live regression (regression_smoke.py) is a separate script that exercises the running service. The default release gate uses --no-chat --no-transcribe so it validates frontend/API contracts without requiring local model availability; full chat/transcription smoke can be run when those services are up.</p></div></body></html>
+<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
+</div></nav><main class="wrap"><a href="index.html" class="back-link">← Back to Home</a><h1>Testing and CI</h1><div class="req-note"><strong>Hackathon refactor preview · 22 October 2026.</strong>
+Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>alpha</code>.
+These changes are not yet merged into <code>alpha</code> or the release branch.
+<a href="Hackathon.html">Setup and rehearsal guide</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Progress and verification evidence</a> · <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">Review PR #24</a>.</div>
+<p>Automated checks validate contracts without requiring model weights or running provider servers. Live smoke and hardware rehearsal are separate and must be recorded separately.</p>
+<h2>Local checks</h2>
+<pre><code>python -m pip install -e '.[dev]'
+python -m pytest -q
+ruff check korina
+mypy --ignore-missing-imports korina
+npm ci --ignore-scripts
+npm run lint
+npm test
+python -m build</code></pre>
+<p>The Python suite covers units, API behavior, static frontend contracts, Converse adapters, input limits, background concurrency, and STT fallbacks. Executable Node tests cover browser-independent frontend behavior. ESLint checks native ES modules for undefined imports and variables.</p>
+<h2>CI contract in the preview</h2>
+<ul><li>Python tests and coverage artifacts across Python 3.10, 3.11, 3.12, and 3.13 on Ubuntu.</li><li>Python correctness lint, a baseline mypy check, and source/wheel builds, including an installed-asset check.</li><li>Node 22 frontend lint and executable JavaScript tests.</li></ul>
+<p>The configured matrix describes the workflow; successful remote runs must be confirmed in <a href="https://github.com/rgoza1996/Korina-Agent/actions">GitHub Actions</a>. Final counts and exact verification commits are tracked in <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a>.</p>
+<h2>Recorded checkpoint</h2>
+<p>The latest local checkpoint is <strong>347 Python tests, 38 JavaScript tests, 10 real Chromium smoke tests, and 85% Python coverage</strong>, including the ACK lifecycle checks. This is local verification. GitHub Actions jobs did not start because the account billing/spending limit blocked them; hardware rehearsal and successful hosted CI remain separate evidence. The current commit, final totals, and remote CI status belong to <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">PR #24</a> and <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a>.</p>
+<h2>Read-only HTTP smoke</h2>
+<pre><code>python scripts/check_stack.py --base http://127.0.0.1:8001
+python scripts/check_stack.py --base http://127.0.0.1:8001 --allow-degraded</code></pre>
+<p>This reads the UI, stylesheet, JavaScript entrypoint, capabilities, health, and readiness. It does not reset sessions, change configuration, switch providers, or send prompts/audio. Exit 0 means its checks passed. <code>--allow-degraded</code> accepts a 503 readiness result from unavailable models while still checking the app/assets layer; it is not a successful voice rehearsal.</p>
+<p>The manually dispatched <strong>Live voice-stack smoke</strong> workflow runs on a self-hosted runner labelled <code>korina-demo</code> and uploads a JSON report. The runner must be configured where it can reach the selected demo stack; ordinary CI does not require real model services.</p>
+<h2>Legacy regression and real rehearsal</h2>
+<div class="req-note"><strong>The legacy suite mutates state.</strong> <code>tests/regression_smoke.py</code> performs session reset, ACK rebuild, provider activation, and temporary config writes even with <code>--no-chat --no-transcribe</code>. Use only a disposable or deliberately selected local stack. It is not the routine read-only gate.</div>
+<p>The <a href="Hackathon.html">hackathon rehearsal checklist</a> adds microphone permissions, actual speech playback, interruption, session reset, and provider failure recovery. Passing mocked or static checks does not establish those hardware results.</p>
+<h2>Platform and dependency scope</h2>
+<p>The backend/UI can be tested without optional speech engines. Install <code>.[whisper]</code> for faster-whisper and <code>.[tts]</code> for the local Kokoro server. FFmpeg is a system dependency for audio conversion. systemd service installation and local provider supervision are Linux specific.</p>
+</main><footer><div class="wrap"><p>Korina Agent &amp; Korina Converse — <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Hackathon progress</a></p><p>Documentation preview updated 22 October 2026. <code>gh-pages</code> stores these static pages; live hosting is not configured.</p></div></footer></body></html>

@@ -141,56 +141,37 @@ footer code{color:var(--ink-faint)}
 <a href="Converse.html">Converse</a><a href="Agent.html">Agent</a>
 <a href="Agent-Side-Channel.html">Side Channel</a>
 <a href="Providers.html">Providers</a><a href="Testing.html">Testing</a>
+<a href="Hackathon.html">Hackathon</a>
 <a href="Roadmap.html">Roadmap</a>
 <a href="Issues.html">Issues</a>
-<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
+<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
 </div>
-<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">Issues</a></div>
+<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
 </div></nav>
-<div class="wrap">
- <h1>Architecture Overview</h1>
- <p style="color:var(--sub);margin-bottom:1rem">
- Full source-grounded report:
- <a href="https://github.com/rgoza1996/Korina-Agent/blob/beta/docs/refactor/architecture-report.md"><code>docs/refactor/architecture-report.md</code></a>
- on <code>beta</code>.
- </p>
- <img class="chart-img" width="900" height="563" loading="lazy" src="arch_diagram.png" alt="Korina system architecture">
- <hr>
- <h2 id="product-split">Product Split</h2>
-<p><strong>Korina Converse</strong> — the local-first, voice-first design chat channel. It owns the human-facing loop: microphone input, VAD/endpointing, STT, response-LLM calls, TTS playback, barge-in, agent interrupts, and permission prompts. Converse is intended to be a channel that can host multiple agents: Korina Agent, Hermes Agent, OpenClaw, or another compatible local/OpenAI-style agent.</p>
-<p><strong>Korina Agent</strong> — the local-first agent built for that channel. Today it receives transcript deliveries, maintains compact state, emits background reports/events, and asks Converse to inject context or speak important/critical interrupts.</p>
-<h2 id="runtime-shape">Runtime Shape</h2>
-<p>Korina Converse ↔ Korina Agent ↔ external agents all share one local FastAPI backend on port 8001.</p>
-<h2 id="current-implementation-highlights">Current Implementation Highlights</h2>
-<ul>
-<li><strong>Python backend package</strong> under <code>korina/</code> with 10 route modules and 9 service modules.</li>
-<li><strong>Browser frontend</strong> split into native ES modules under <code>Korina/js/</code> (17 modules, 2333 lines).</li>
-<li><strong>Backend-owned provider registry</strong> exposed by <code>GET /api/capabilities</code>.</li>
-<li><strong>Model catalog/capability helpers</strong> for endpoint-loaded models, local GGUFs, LM Studio catalogs, and mmproj sidecars.</li>
-<li><strong>Converse channel layer</strong> under <code>korina/converse/</code> — <code>ConverseChannel</code> Protocol, thread-safe registry, default <code>KorinaConverseChannel</code> adapter bridging to the in-process agent gateway (Phase 5 Commit 1, shipped).</li>
-<li><strong>Agent gateway</strong> under <code>korina/agents/</code> — <code>AgentAdapter</code> Protocol, <code>agent_gateway()</code> singleton, <code>KorinaAgentAdapter</code> default implementation.</li>
-<li><strong>CI-safe pytest suite</strong> (200+ tests across unit/API/static/converse layers) plus separate live regression smoke script.</li>
-<li><strong>GitHub Actions</strong> workflow running pytest on Python 3.10 / 3.11 / 3.12.</li>
-</ul>
-<h2 id="main-follow-up-themes">Main Follow-up Themes</h2>
-<h3 id="1-formal-agent-protocol-for-third-party-agents">1. Formal Agent Protocol for Third-Party Agents</h3>
-<p>Phase 5 Commit 1 ships the in-process adapter protocol (<code>ConverseChannel</code>). The next phase is the public/converse split: <code>pip install korina-converse</code> with optional <code>[hermes]</code> and <code>[openclaw]</code> extras, so third-party agents can ship as separate packages and wire into Converse through the public seam.</p>
-<h3 id="2-korina-agent-executionruntime-layer-beyond-state-reports">2. Korina Agent Execution/runtime Layer Beyond State Reports</h3>
-<p>Korina Agent currently emits state reports/events. Add: tool/action adapters, durable task state, side-effect permission gates, project trust enforcement, transport abstraction.</p>
-<h3 id="3-composite-readiness-across-backend-llm-stt-tts-ack">3. Composite Readiness Across Backend, LLM, STT, TTS, ACK</h3>
-<p>One clear readiness contract covering backend, selected response LLM, STT backend/degraded fallback, TTS endpoint, ACK cache state, and served frontend asset freshness.</p>
-<h3 id="4-portable-installconfig-paths">4. Portable Install/config Paths</h3>
-<p>Move local runtime paths, model roots, and service binary assumptions behind config/env settings. Document a generic install contract.</p>
-<h3 id="5-probe-backed-model-capabilities">5. Probe-backed Model Capabilities</h3>
-<p>Turn model capability metadata into a probe-backed layer recording model source, sidecar/mmproj presence, audio-input support, last probe status/error.</p>
-<h3 id="6-optional-liveself-hosted-regression-tier">6. Optional Live/Self-hosted Regression Tier</h3>
-<p>Add an opt-in live regression job/script for a local/self-hosted runner with real services and model weights.</p>
-<h3 id="7-public-doc-vs-internal-runbook-cleanup">7. Public-doc vs Internal-runbook Cleanup</h3>
-<p>Zoomable code-explorer mindmap. See <a href='https://github.com/rgoza1996/Korina-Agent/issues/10'>Issue #10</a>.</p>
-<p>Scrub or clearly mark internal-only docs. README and architecture report are already clean.</p>
-</div>
-
-<footer><div class="wrap">
-<p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
-<p><code>docs/wiki/</code> source mirrored in the release branch</p>
-</div></footer></body></html>
+<main class="wrap"><h1>Architecture overview</h1><div class="req-note"><strong>Hackathon refactor preview · 22 October 2026.</strong>
+Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>alpha</code>.
+These changes are not yet merged into <code>alpha</code> or the release branch.
+<a href="Hackathon.html">Setup and rehearsal guide</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Progress and verification evidence</a> · <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">Review PR #24</a>.</div>
+<p>Korina Converse owns the human-facing voice loop. Korina Agent receives transcript deliveries and produces reports, injections, and permission events through an adapter boundary.</p>
+<img class="chart-img" width="900" height="563" loading="lazy" src="arch_diagram.png" alt="Historical overview of the Korina voice and agent components">
+<p>The diagram is an overview from an earlier revision. Use the source and running <code>/docs</code> for current route details.</p>
+<h2>Current boundaries</h2>
+<table><thead><tr><th>Area</th><th>Responsibility</th></tr></thead><tbody>
+<tr><td><code>korina/app_factory.py</code>, <code>korina/routes/</code></td><td>App composition, middleware, static assets, and HTTP contracts.</td></tr>
+<tr><td><code>korina/services/</code></td><td>STT orchestration, model catalogs, provider lifecycle, speech clients, agent reporting, and ACK generation.</td></tr>
+<tr><td><code>korina/converse/</code>, <code>korina/agents/</code></td><td>Channel and agent protocols, registry, and the default in-process adapters.</td></tr>
+<tr><td><code>Korina/js/</code></td><td>Native browser modules for settings, recording, VAD, transcription, playback, agent events, and diagnostics.</td></tr>
+<tr><td><code>korina/util/paths.py</code></td><td>Environment overrides, portable binary discovery, source/bundled assets, and writable runtime paths.</td></tr>
+</tbody></table>
+<h2>Refactor preview</h2>
+<ul><li>Shared transcription and payload/fallback logic reduces duplication across buffered, partial, and SSE routes. Blocking conversion/inference is delegated away from the async event loop.</li>
+<li>Bounded agent deliveries and reset protection prevent stale work from entering a cleared session. Priority rules are separated from orchestration.</li>
+<li>Validated schemas and request byte limits bound work before it reaches model services.</li>
+<li>ACK generation has a bounded queue, generation epochs that suppress cleared work, and bounded atomic WAV publication. Explicit rebuild can run while ACK playback is off.</li>
+<li>The optional Kokoro service uses bounded inference admission and releases synthesis state on response completion or disconnect.</li>
+<li>Health aggregates server-resolved providers and readiness signals; frontend polling distinguishes transient misses, loading, and unavailable services.</li>
+<li>Wheels bundle the UI; generated config and ACK audio stay in a writable user directory. Linux service units render checkout/interpreter paths instead of assuming a home layout.</li></ul>
+<h2>Remaining architecture work</h2>
+<p>The adapter seam is implemented, but an arbitrary external agent still needs a compatible adapter. Tool execution, durable tasks, project trust enforcement, and memory remain separate from the reporting loop. Live provider and hardware validation remains part of the <a href="Hackathon.html">rehearsal gate</a>.</p>
+<p><a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/docs/wiki/Architecture.md">Current architecture page</a> · <a href="Issues.html">Issue status</a> · <a href="Roadmap.html">Roadmap</a></p></main>
+<footer><div class="wrap"><p>Korina Agent &amp; Korina Converse — <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Hackathon progress</a></p><p>Documentation preview updated 22 October 2026. <code>gh-pages</code> stores these static pages; live hosting is not configured.</p></div></footer></body></html>

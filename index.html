@@ -141,11 +141,12 @@ footer code{color:var(--ink-faint)}
 <a href="Converse.html">Converse</a><a href="Agent.html">Agent</a>
 <a href="Agent-Side-Channel.html">Side Channel</a>
 <a href="Providers.html">Providers</a><a href="Testing.html">Testing</a>
+<a href="Hackathon.html">Hackathon</a>
 <a href="Roadmap.html">Roadmap</a>
 <a href="Issues.html">Issues</a>
-<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
+<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
 </div>
-<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">Issues</a></div>
+<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
 </div></nav>
 <div class="wrap" style="padding-top:0">
  <svg class="hero-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 260" role="img">
@@ -181,7 +182,7 @@ footer code{color:var(--ink-faint)}
  <text x="696" y="167" font-family="ui-monospace,monospace" font-size="12" fill="#5a4f44" text-anchor="middle">Cloud-Optional</text>
  <text x="450" y="212" font-family="system-ui,-apple-system,sans-serif" font-size="12.5" fill="#5a4f44" text-anchor="middle">Browser UI · faster-whisper STT · Response LLM · Kokoro TTS · Agent Side Channel</text>
  <line x1="120" y1="228" x2="780" y2="228" stroke="#cdc1ad" stroke-width="1" opacity="0.5"/>
- <text x="860" y="248" font-family="ui-monospace,monospace" font-size="10" fill="#8a7d6e" text-anchor="end">beta · 2026-06</text>
+ <text x="860" y="248" font-family="ui-monospace,monospace" font-size="10" fill="#8a7d6e" text-anchor="end">preview · 2026-10</text>
  </svg>
 </div>
 
@@ -192,61 +193,64 @@ footer code{color:var(--ink-faint)}
  <span class="hero-badge">Local-First</span>
  <span class="hero-badge">Voice-Native</span>
  <span class="hero-badge">Agent-Ready</span>
- <span class="hero-badge">First Release</span>
+ <span class="hero-badge">Hackathon Preview</span>
  <span class="hero-badge">&#65039; Cloud Optional</span>
  </div>
- <p style="margin-top:0.75rem;font-size:0.85em;color:var(--sub2)">Browser UI &middot; faster-whisper STT &middot; Response LLM &middot; Kokoro TTS &middot; Agent Side Channel</p>
+ <p style="margin-top:0.75rem;font-size:0.85em;color:var(--ink-faint)">Browser UI &middot; faster-whisper STT &middot; Response LLM &middot; Kokoro TTS &middot; Agent Side Channel</p>
 </div>
 
 
 <div class="wrap">
+ <div class="req-note"><strong>Hackathon refactor preview · 22 October 2026.</strong>
+Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>alpha</code>.
+These changes are not yet merged into <code>alpha</code> or the release branch.
+<a href="Hackathon.html">Setup and rehearsal guide</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Progress and verification evidence</a> · <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">Review PR #24</a>.</div>
  <h1>What is Korina?</h1>
- <p style="font-size:1.1em;color:var(--sub);max-width:720px;margin:0.5rem 0 1.5rem">
+ <p style="font-size:1.1em;color:var(--ink-soft);max-width:720px;margin:0.5rem 0 1.5rem">
  Korina is two related systems sharing one local runtime. <strong>Korina Converse</strong> is the
  voice-first design chat channel. <strong>Korina Agent</strong> is the local-first agent built for it.
  Korina is designed to keep your voice data and inference on your own hardware —
- but it can fall back to cloud providers when local resources are insufficient.
+ and it can use cloud-compatible endpoints when explicitly configured.
  </p>
 
  <div class="card-grid">
  <div class="card"><h3> Korina Converse</h3><p>Browser-based voice UI: live VAD, rolling partial transcription, response LLM, Kokoro TTS, barge-in, and voice interrupts.</p><div class="card-footer"><a href="Converse.html">Read more →</a></div></div>
  <div class="card"><h3> Korina Agent</h3><p>Background agent that receives transcript deltas, maintains compact state, emits reports/events, and asks Converse to inject context or speak interrupts.</p><div class="card-footer"><a href="Agent.html">Read more →</a></div></div>
- <div class="card"><h3> Agent Side Channel</h3><p>Korina Converse can host any OpenAI-compatible agent — Hermes Agent, OpenClaw, or a custom local runner. The <code>ConverseChannel</code> protocol (Phase 5 Commit 1, shipped) defines the adapter contract.</p><div class="card-footer"><a href="Converse.html">See Converse protocol →</a></div></div>
+ <div class="card"><h3> Agent Side Channel</h3><p>The <code>ConverseChannel</code> protocol defines the seam for compatible adapters. The built-in Korina adapter is implemented; external integrations require their own working adapter.</p><div class="card-footer"><a href="Converse.html">See Converse protocol →</a></div></div>
  <div class="card"><h3> Provider Architecture</h3><p>Backend-owned registry at GET /api/capabilities. Supports llama.cpp, LM Studio, Ollama, OpenAI-compatible, and Anthropic-compatible.</p><div class="card-footer"><a href="Providers.html">Read more →</a></div></div>
- <div class="card"><h3> CI & Testing</h3><p>200+ pytest tests across unit/API/static/converse layers + GitHub Actions on Python 3.10 / 3.11 / 3.12. Live-smoke gate is separate.</p><div class="card-footer"><a href="Testing.html">Read more →</a></div></div>
- <div class="card"><h3> Open Issues</h3><p>7 architecture backlog items tracked as GitHub Issues.</p><div class="card-footer"><a href="Issues.html">Read more →</a></div></div>
+ <div class="card"><h3> CI & Testing</h3><p>Backend, frontend, and packaging checks protect the preview. Live model and microphone rehearsal remains a separate gate.</p><div class="card-footer"><a href="Testing.html">Read more →</a></div></div>
+ <div class="card"><h3> Open Issues</h3><p>Hackathon progress and the remaining architecture backlog are tracked in GitHub Issues.</p><div class="card-footer"><a href="Issues.html">Read more →</a></div></div>
  </div>
 
- <h2>Latest</h2>
+ <h2>Latest: hackathon refactor preview</h2>
  <div class="card-grid">
- <div class="card"><h3>Phase 5 Commit 1 — ConverseChannel Protocol</h3><p>Shipped on <code>alpha</code>. Adds <code>korina.converse</code> as a public async-protocol layer between Converse and any agent adapter. <code>KorinaConverseChannel</code> bridges to the in-process <code>agent_gateway()</code>; Hermes Agent, OpenClaw, and other adapters can plug in by implementing the same protocol and calling <code>register_converse_channel()</code>.</p><div class="card-footer"><a href="Converse.html">See protocol details →</a></div></div>
- <div class="card"><h3>README refresh</h3><p>The repo <code>README.md</code> now documents the Converse channel architecture and an explicit Phase 1–6 status table.</p><div class="card-footer"><a href="https://github.com/rgoza1996/Korina-Agent/blob/alpha/README.md">View on GitHub →</a></div></div>
- <div class="card"><h3>Green CI on alpha</h3><p>200+ tests passing on Python 3.10 / 3.11 / 3.12. Latest green: Phase 5 Commit 1 (ConverseChannel + 14 registry tests + <code>_DEFAULT_REGISTERED</code> test-isolation fix).</p></div>
+ <div class="card"><h3>Simpler runtime</h3><p>Portable paths, bundled browser assets, safer provider process matching, shared STT orchestration, and bounded agent work.</p><div class="card-footer"><a href="Hackathon.html">Setup and rehearsal →</a></div></div>
+ <div class="card"><h3>Review and evidence</h3><p>The working branch is <code>codex/hackathon-refactor</code>, based on <code>alpha</code>. Review the changes in <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">PR #24</a>; final verification evidence lives in issue #23.</p><div class="card-footer"><a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Follow progress →</a></div></div>
+ <div class="card"><h3>Demo gate</h3><p>Local automated checks cover software contracts. The prepared hardware still needs a real microphone, model, TTS, and interruption rehearsal.</p><div class="card-footer"><a href="Testing.html">Verification guide →</a></div></div>
  </div>
-
  <h2>System Architecture</h2>
  <img class="chart-img" width="900" height="563" loading="lazy" src="arch_diagram.png" alt="Korina system architecture diagram">
 
- <h2>API Surface — 20 HTTP Endpoints</h2>
- <p style="color:var(--sub);margin-bottom:0.75rem">Across 10 route modules: STT, Response LLM, Agent, Config, Providers, Models, Capabilities, Health, ACKs, and Index.</p>
+ <h2>API Surface</h2>
+ <p style="color:var(--ink-soft);margin-bottom:0.75rem">The illustration is a historical overview. The running backend’s <code>/docs</code> and <code>/openapi.json</code> describe the current API, including the Converse channel layer.</p>
  <img class="chart-img" width="900" height="540" loading="lazy" src="routes_chart.png" alt="API routes reference">
 
  <h2>Release Gate</h2>
  <div class="card-grid">
  <div class="card"><h3>First Release Line</h3><p><code>master</code> is the release branch promoted from <code>beta</code> after the documented gates pass.</p><div class="card-footer"><a href="Testing.html">See test gate →</a></div></div>
- <div class="card"><h3>Automated Tests</h3><p><strong>200+ pytest tests passing</strong> across unit, API, static frontend, and converse-layer checks.</p></div>
- <div class="card"><h3>Live Smoke</h3><p><strong>49 live smoke checks passing</strong> against a running local service without requiring chat or transcription model availability.</p></div>
+ <div class="card"><h3>Automated Tests</h3><p>Unit, API, frontend, channel, and packaging checks run independently of model weights. See issue #23 for the current preview’s verification evidence.</p></div>
+ <div class="card"><h3>Live Smoke</h3><p>Run the read-only <code>scripts/check_stack.py</code> gate first, then real chat and transcription on the demonstration hardware. The legacy regression suite mutates runtime state.</p></div>
  </div>
 
  <h2>Quick Links</h2>
  <div class="quick-links">
- <a href="https://github.com/rgoza1996/Korina-Agent" class="quick-link" target="_blank">
+ <a href="https://github.com/rgoza1996/Korina-Agent" class="quick-link" target="_blank" rel="noopener noreferrer">
  <span class="quick-link-title"> GitHub Repo</span>
  <span class="quick-link-desc">Source code, issues, CI status</span>
  </a>
- <a href="https://github.com/rgoza1996/Korina-Agent/tree/beta" class="quick-link" target="_blank">
- <span class="quick-link-title"> beta Branch</span>
- <span class="quick-link-desc">Current working branch · active development</span>
+ <a href="https://github.com/rgoza1996/Korina-Agent/tree/alpha" class="quick-link" target="_blank" rel="noopener noreferrer">
+ <span class="quick-link-title"> alpha Branch</span>
+ <span class="quick-link-desc">Integration branch · refactor preview reviewed separately</span>
  </a>
  <a href="Architecture.html" class="quick-link">
  <span class="quick-link-title"> Architecture Report</span>
@@ -254,7 +258,7 @@ footer code{color:var(--ink-faint)}
  </a>
  <a href="Issues.html" class="quick-link">
  <span class="quick-link-title">Architecture Backlog</span>
- <span class="quick-link-desc">7 open items as GitHub Issues</span>
+ <span class="quick-link-desc">Current work and remaining architecture items</span>
  </a>
  <a href="Roadmap.html" class="quick-link">
  <span class="quick-link-title"> Roadmap</span>
@@ -263,7 +267,4 @@ footer code{color:var(--ink-faint)}
  </div>
 </div>
 
-<footer><div class="wrap">
-<p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
-<p><code>docs/wiki/</code> source mirrored in the release branch</p>
-</div></footer></body></html>
+<footer><div class="wrap"><p>Korina Agent &amp; Korina Converse — <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Hackathon progress</a></p><p>Documentation preview updated 22 October 2026. <code>gh-pages</code> stores these static pages; live hosting is not configured.</p></div></footer></body></html>

@@ -141,14 +141,15 @@ footer code{color:var(--ink-faint)}
 <a href="Converse.html">Converse</a><a href="Agent.html">Agent</a>
 <a href="Agent-Side-Channel.html">Side Channel</a>
 <a href="Providers.html">Providers</a><a href="Testing.html">Testing</a>
+<a href="Hackathon.html">Hackathon</a>
 <a href="Roadmap.html">Roadmap</a>
 <a href="Issues.html">Issues</a>
-<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank">GitHub</a>
+<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
 </div>
-<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank">Issues</a></div>
+<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
 </div></nav><div class="wrap"><a href="index.html" class="back-link">&#8592; Back to Home</a>
 <h1>Korina Converse</h1>
-<p style="color:var(--sub);font-size:1.05em;margin-bottom:1.5rem">
+<p style="color:var(--ink-soft);font-size:1.05em;margin-bottom:1.5rem">
 The <strong>local-first, voice-first design chat channel</strong>. It owns the human-facing loop:
 microphone capture, VAD/endpointing, STT, response-LLM calls, TTS playback, barge-in,
 interrupts, and permission prompts. Converse is designed to be a channel that hosts any compatible agent.
@@ -159,7 +160,7 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 </div>
 
 <h2>Minimum System Requirements (Korina Converse)</h2>
-<p style="color:var(--sub);margin-bottom:1rem">Estimates based on <code>faster-whisper base</code> + <code>Qwen3.5-0.5B</code> as the lightweight STT + LLM baseline.</p>
+<p style="color:var(--ink-soft);margin-bottom:1rem">Estimates based on <code>faster-whisper base</code> + <code>Qwen3.5-0.5B</code> as the lightweight STT + LLM baseline.</p>
 
 <table class="req-table">
 <thead>
@@ -196,13 +197,13 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 </tbody>
 </table>
 
-<p style="color:var(--sub);font-size:0.85em;margin-top:0.75rem">
+<p style="color:var(--ink-soft);font-size:0.85em;margin-top:0.75rem">
 <strong>STT models:</strong> faster-whisper base.en (~74M params, ~150MB INT8) is the minimum. Larger models (medium.en ~418M, large-v3 ~1.5B) improve accuracy at the cost of VRAM/speed.
 </p>
-<p style="color:var(--sub);font-size:0.85em">
+<p style="color:var(--ink-soft);font-size:0.85em">
 <strong>LLM models:</strong> Qwen3.5-0.5B Q8 (~1GB) is the minimum viable for basic conversational quality. Qwen3.5-4B Q8 (~4.5GB) is the practical floor for decent response quality. Larger models (7B, 13B+) dramatically improve output quality but require corresponding VRAM headroom.
 </p>
-<p style="color:var(--sub);font-size:0.85em">
+<p style="color:var(--ink-soft);font-size:0.85em">
 <strong>Kokoro TTS:</strong> TTS runs on CPU (omnivoice is lightweight, ~100MB RAM). No discrete GPU needed for TTS.
 </p>
 
@@ -262,6 +263,6 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 </table>
 </div>
 <footer><div class="wrap">
-<p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> &middot; <a href="https://rgoza1996.github.io/Korina-Agent">Pages</a></p>
-<p><code>docs/wiki/</code> source mirrored in the release branch</p>
+<p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a></p>
+<p>Static documentation maintained on <code>gh-pages</code>; live hosting is not configured.</p>
 </div></footer></body></html>
