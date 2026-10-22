@@ -78,12 +78,16 @@ test('an oversized native read reports failure without awaiting a stuck cancel c
 
 for (const [name, text, expected] of [
   ['JSON diagnostics', '{"detail":"Model missing"}', /HTTP 503: Model missing/],
+  ['structured JSON diagnostics', '{"detail":{"reason":"Model is incompatible","input":"private-key"}}', /HTTP 503: Model is incompatible/],
+  ['validation JSON diagnostics', '{"detail":[{"loc":["body","speed"],"msg":"Invalid speed","input":"private-key"}]}', /HTTP 503: speed: Invalid speed/],
+  ['unrecognized JSON diagnostics', '{"input":"private-key","token":"private-key"}', /^HTTP 503$/],
   ['plain diagnostics', 'Model missing', /HTTP 503: Model missing/],
   ['an oversized diagnostic body', 'x'.repeat(4097), /HTTP 503:.*download size limit/],
 ]) {
   test(`HTTP errors use bounded ${name}`, async () => {
     const error = await responseError(new Response(text, { status: 503 }));
     assert.match(error.message, expected);
+    assert.doesNotMatch(error.message, /private-key/);
     assert(error.message.length < 4097);
   });
 }

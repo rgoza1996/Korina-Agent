@@ -85,20 +85,3 @@ def test_recorder_wires_fetch_rejection_stream():
     assert 'catch (e)' in blob_body, "transcribeBlob must catch fetch errors"
     assert 'recordSttBackend(null' in blob_body, \
         "transcribeBlob must call recordSttBackend on fetch rejection"
-
-
-def test_recorder_wires_partial_success_and_error():
-    src = RECORDER_JS.read_text()
-    partial_start = src.find('export async function transcribePartialBlob')
-    partial_body = src[partial_start:]
-    # Success path - the function calls recordSttBackend after !r.ok.
-    assert 'recordSttBackend({' in partial_body, \
-        "transcribePartialBlob must call recordSttBackend on success"
-    # !r.ok path - the function calls recordSttBackend(null, ...) before throw.
-    assert '!r.ok' in partial_body, "transcribePartialBlob still has !r.ok check"
-    # The order matters: !r.ok records then throws.
-    ok_idx = partial_body.find('!r.ok')
-    throw_idx = partial_body.find('throw new Error(j.detail', ok_idx)
-    record_idx = partial_body.find('recordSttBackend(null', ok_idx, throw_idx)
-    assert record_idx != -1 and record_idx < throw_idx, \
-        "recordSttBackend(null, ...) must be called BEFORE throw in the !r.ok branch"

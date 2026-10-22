@@ -8,6 +8,7 @@ import { recordSttBackend } from "./api.js";
 import { createBoundedRecorder } from "./bounded-recorder.js";
 import { readJsonEvents } from "./sse.js";
 import { responseError } from "./response-body.js";
+import { apiErrorMessage } from './api-errors.js';
 
 let microphoneGeneration = 0;
 let microphoneSetup = null;
@@ -192,8 +193,9 @@ export async function transcribePartialBlob(blob, seq, meta = {}, { isCurrent = 
     const j = await r.json();
     assertCurrent();
     if (!r.ok) {
-      recordSttBackend(null, j.detail || JSON.stringify(j));
-      throw new Error(j.detail || JSON.stringify(j));
+      const message = apiErrorMessage(j, `HTTP ${r.status}`);
+      recordSttBackend(null, message);
+      throw new Error(message);
     }
     recordSttBackend({
       backend: j.backend,

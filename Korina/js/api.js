@@ -1,6 +1,7 @@
 // Backend API client, runtime health rendering, and application bootstrap.
 
 import { state } from './state.js';
+import { apiErrorMessage } from './api-errors.js';
 import { ttsProviderLabel, llmProviderLabel } from './labels.js';
 import { $, setDot, status } from './dom.js';
 import {
@@ -23,7 +24,7 @@ export async function activateSelectedProvider(provider, model = '') {
     body: JSON.stringify({ provider, model: model || '' }),
   });
   const j = await r.json();
-  if (!r.ok) throw new Error(j.detail || JSON.stringify(j));
+  if (!r.ok) throw new Error(apiErrorMessage(j, `HTTP ${r.status}`));
   if (j.saved) state.appConfig = { ...state.appConfig, ...j.saved };
   // Signal a pending provider switch so the readiness pill flips to
   // "loading" until /api/health confirms the new model is loaded.
@@ -75,7 +76,7 @@ function flushConfigSaves() {
           body: JSON.stringify(config),
         });
         const result = await response.json();
-        if (!response.ok) throw new Error(result?.detail || `Settings save failed: HTTP ${response.status}`);
+        if (!response.ok) throw new Error(apiErrorMessage(result, `Settings save failed: HTTP ${response.status}`));
         const saved = result?.saved || result;
         if (!saved || typeof saved !== 'object' || Array.isArray(saved) || saved.ok === false) {
           throw new Error('The server returned an invalid settings response.');

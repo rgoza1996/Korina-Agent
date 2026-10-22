@@ -1,6 +1,7 @@
 // Agent transcript delivery, event polling, interruptions, and response orchestration.
 
 import { state } from "./state.js";
+import { apiErrorMessage } from './api-errors.js';
 import { $, status, log } from "./dom.js";
 import { stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry } from "./history.js";
 import { agentEnabled, lmModel, llmReasoningEnabled } from "./settings-ui.js";
@@ -165,7 +166,7 @@ export async function deliverTranscriptToAgent(reason = 'turn') {
     });
     const result = await response.json();
     if (!response.ok || result?.ok === false || result?.accepted !== true) {
-      throw new Error(result?.detail || result?.error || `Agent did not accept transcript (HTTP ${response.status}).`);
+      throw new Error(apiErrorMessage(result, `Agent did not accept transcript (HTTP ${response.status}).`));
     }
     if (!current()) return false;
     state.agentLastDeliveredTurn = payload.turn_count;
@@ -352,8 +353,7 @@ export async function handlePermissionAnswerIfAny(message, { isCurrent = () => t
     }
     if (!current()) return true;
     if (!response.ok || result?.ok === false || result?.accepted !== true) {
-      const detail = result?.detail || result?.error || (result?.disabled ? 'Korina Agent is disabled' : 'Agent did not accept the permission answer');
-      throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+      throw new Error(apiErrorMessage(result, result?.disabled ? 'Korina Agent is disabled' : 'Agent did not accept the permission answer'));
     }
   } catch (error) {
     if (!current()) return true;
@@ -425,7 +425,7 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
       status($('sttStatus'), 'Agent context changed. Ask again for a fresh reply.', 'warn');
       return null;
     }
-    if (!r.ok) throw new Error(j?.detail || JSON.stringify(j));
+    if (!r.ok) throw new Error(apiErrorMessage(j, `HTTP ${r.status}`));
     if (typeof j?.reply !== 'string') throw new Error('The response LLM returned an invalid reply.');
     if (j.reply.trim() && includedReport && state.pendingAgentReportVersion === reportVersion && state.pendingAgentStateReport === report) {
       state.pendingAgentStateReport = '';

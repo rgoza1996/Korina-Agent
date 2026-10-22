@@ -3,6 +3,8 @@
 // Frontend controller for the "Local GGUF models" settings section.
 
 import { loadModelOptions, modelDiscoveryQuery } from './providers-ui.js';
+import { apiErrorMessage } from './api-errors.js';
+import { responseError } from './response-body.js';
 import {
   llmProvider,
   effectiveSttLlmProvider,
@@ -122,17 +124,7 @@ async function addRoot() {
     });
     if (!isCurrent()) return;
     if (!r.ok) {
-      // Dogfood pass 2026-06-26: parse the FastAPI JSON envelope so the
-      // user sees "path not found: /tmp/…" instead of the raw body
-      // {"detail":"path not found: /tmp/…"}.
-      let detail = '';
-      try {
-        const j = await r.json();
-        detail = j?.detail || '';
-      } catch (_) {
-        detail = await r.text().catch(() => '');
-      }
-      throw new Error(detail || ('HTTP ' + r.status));
+      throw await responseError(r, { isCurrent });
     }
     if (!isCurrent()) return;
     if (inputEl()?.value.trim() === path) inputEl().value = '';
@@ -186,7 +178,7 @@ async function probeActiveModels(payload, isCurrent) {
       body: JSON.stringify({ provider, base_url: baseUrl, api_key_env: effectiveSttLlmApiKeyEnv(), models: candidates }),
     });
     if (!isCurrent()) return;
-    if (!r.ok) throw new Error(await r.text());
+    if (!r.ok) throw await responseError(r, { isCurrent });
     const j = await r.json();
     if (!isCurrent()) return;
     for (const id of Object.keys(j.results || {})) {
@@ -225,7 +217,7 @@ async function refreshLocalModels() {
     const r = await fetch('/api/llm/llama/refresh', { method: 'POST' });
     const j = await r.json();
     if (!isCurrent()) return;
-    if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+    if (!r.ok) throw new Error(apiErrorMessage(j, 'HTTP ' + r.status));
     await loadLocalModelRoots();
     if (!isCurrent()) return;
     const payload = await loadModelOptions(true);

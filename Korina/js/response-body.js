@@ -1,5 +1,7 @@
 // Bound downloaded audio and diagnostics before retaining or decoding them.
 
+import { apiErrorMessage } from './api-errors.js';
+
 export const MAX_AUDIO_SECONDS = 600;
 export const MAX_BUFFERED_AUDIO_BYTES = 32 * 1024 * 1024;
 export const MAX_ACK_AUDIO_BYTES = 2 * 1024 * 1024;
@@ -55,10 +57,9 @@ export async function responseError(response, options = {}) {
     const blob = await readResponseBlob(response, { ...options, maxBytes: MAX_ERROR_BYTES });
     const text = await blob.text();
     assertCurrent(options.signal, options.isCurrent || (() => true));
-    let detail = text.trim();
+    let detail = apiErrorMessage(text, '');
     try {
-      const payload = JSON.parse(text);
-      if (typeof payload?.detail === 'string') detail = payload.detail;
+      detail = apiErrorMessage(JSON.parse(text), '');
     } catch {}
     return new Error(detail ? `${fallback}: ${detail}` : fallback);
   } catch (error) {
