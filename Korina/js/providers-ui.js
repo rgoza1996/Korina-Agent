@@ -20,7 +20,7 @@ import {
   listAudioProbes,
   clearAudioProbe,
   normalizeTripleBaseUrl,
-} from "./api.js";
+} from "./audio-probes.js";
 import {
   filterModelsByCapability,
   sttLlmModelRequirement,
