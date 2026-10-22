@@ -226,6 +226,8 @@ HTTP selection changes are serialized under the registry lock. The route first m
 
 On startup, Korina restores the saved channel if registered; otherwise it selects `korina`. Register custom channels during startup before restoration. `HermesStubChannel` is an opt-in contract stub, not a network integration with Hermes.
 
+`converse.allowed_origins` supplies the CORS origin list at app startup. The default is `http://127.0.0.1:8001` and `http://localhost:8001`. A malformed saved value (including a string instead of a list, or any non-string list entry) uses those loopback defaults without rewriting the file. A valid explicit `[]` allows no cross-origin requests; same-origin requests still work. Valid string lists are preserved, and wildcard access is enabled only by an explicit `"*"` entry. Restart the app after changing this setting.
+
 ## Compatibility and migration
 
 Version 1 is additive: existing HTTP names, validated fields, flat event envelopes, and optional legacy adapter dictionaries remain supported. There is no new execution API, session-ID HTTP routing, WebSocket protocol, or automatic routing of the spoken response through the selected channel.

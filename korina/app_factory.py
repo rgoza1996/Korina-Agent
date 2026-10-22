@@ -72,10 +72,7 @@ def create_app() -> FastAPI:
     )
 
     cfg = _cfg.load_config()
-    _converse_block = cfg.get("converse") if isinstance(cfg.get("converse"), dict) else None
-    allowed_origins = (
-        _converse_block.get("allowed_origins") if _converse_block else None
-    ) or ['http://127.0.0.1:8001', 'http://localhost:8001']
+    allowed_origins = _cfg.config_converse_allowed_origins(cfg)
     app.add_middleware(RequestSizeLimit)
     app.add_middleware(
         CORSMiddleware,

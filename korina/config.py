@@ -329,8 +329,31 @@ def config_tts_base_url(config: Optional[dict] = None) -> str:
     explicit = str(config.get('tts_base_url') or '').strip().rstrip('/')
     if explicit:
         return explicit
-    port = int(config.get('tts_port') or 8880)
+    raw_port = config.get('tts_port')
+    try:
+        if raw_port is None or isinstance(raw_port, bool):
+            raise ValueError
+        port = int(raw_port)
+        if not 1 <= port <= 65535 or (isinstance(raw_port, float) and raw_port != port):
+            raise ValueError
+    except (TypeError, ValueError, OverflowError):
+        # Older files bypassed update validation. Resolve a usable endpoint
+        # without rewriting the original value, so it remains repairable.
+        port = 8880
     return f'http://127.0.0.1:{port}'
+
+
+def config_converse_allowed_origins(config: Optional[dict] = None) -> list[str]:
+    """Resolve CORS origins, retaining an explicit empty list as deny-all."""
+    config = config if config is not None else load_config()
+    converse = config.get('converse')
+    origins = converse.get('allowed_origins') if isinstance(converse, dict) else None
+    if isinstance(origins, list) and all(isinstance(origin, str) for origin in origins):
+        return list(origins)
+    defaults = DEFAULT_CONFIG['converse']
+    assert isinstance(defaults, dict)
+    return list(defaults['allowed_origins'])
+
 
 def config_tts_provider(config: Optional[dict] = None) -> str:
     """Resolved TTS provider name from config (defaults to 'kokoro')."""
