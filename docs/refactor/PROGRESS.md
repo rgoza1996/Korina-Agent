@@ -6,10 +6,11 @@
 - Review: [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24).
 - Tracker: [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23).
 - Current setup: [README](../../README.md); current behavior: [architecture](../wiki/Architecture.md).
-- Core refactor is pushed through `22b401c`; PR #24 contains portability, STT/TTS/ACK bounds, agent and frontend lifecycle fixes, accurate readiness, packaging, and CI changes.
-- Final local validation and repository documentation are being completed. Hosted Actions is blocked by account billing/spending limits; no job started on `22b401c`.
-- Baseline: 233 Python tests on alpha. Verified on `22b401c`: 347 Python tests, 85% coverage, 38 executable Node tests (+17 label assertions), 10 real Chromium smoke tests, mypy across 54 modules, Ruff/ESLint, source/wheel build, and an isolated wheel UI/config/entrypoint smoke passed. Python 3.10/3.11/3.13 are being checked locally because hosted CI cannot start. Evidence is maintained in issue #23.
-- Real microphone/model/GPU rehearsal is pending. No historical live-host result below is evidence for this branch.
+- Current immutable verification checkpoint: `fb996a1`; later diagnostics and real-model evidence are published in PR #24. Active catalog/startup/completion recovery work is tracked in issue #23.
+- Baseline: 233 Python tests on alpha. Checkpoint: 779 Python tests / 91% coverage on Python 3.12, 230 executable Node tests, 38 real Chromium tests, mypy across 58 modules, Ruff/ESLint, source/wheel builds, and an isolated wheel check of 26 byte-identical assets. Clean Python 3.10/3.11/3.13 each passed 778 tests with only the optional real Whisper decoder skipped; Python 3.12 exercised it.
+- Real CPU browser capture → Whisper → pinned local SmolLM2 response inference → Kokoro → native WebAudio completed in 29.365 seconds. Actual agent inference and one next-response injection also completed; the full read-only readiness gate passed. The tiny model mostly echoed input, so useful presentation-model quality still requires rehearsal.
+- Physical microphone/speakers, human interruption, selected presentation models, GPU if used, and event-specific Meta requirements remain unverified. Hosted Actions jobs did not start because of account billing/spending limits. Pages source is maintained on `gh-pages`; hosting is not configured.
+- [Observed evidence and exact boundaries](../verification.md). No historical live-host result below is evidence for this branch.
 
 ## Historical phase log
 
