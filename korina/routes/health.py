@@ -256,6 +256,23 @@ def _validated_tts_health(body: object) -> dict:
     return result
 
 
+def _aggregate_ack(config: dict) -> tuple[int | None, dict]:
+    """Collect bounded local ACK state outside the async request loop.
+
+    A rebuild may hold its queue lock while clearing or publishing its new
+    selection. Waiting for that lock must not block unrelated HTTP requests.
+    """
+    voice = state.ack.current_voice
+    try:
+        manifest = load_ack_manifest()
+        acknowledgements = ack_status(voice, manifest=manifest)
+        return len(ack_files_for(voice, manifest=manifest)), acknowledgements
+    except AckManifestError as error:
+        return None, {'ok': False, 'status': 'unavailable', 'error': str(error),
+            'voice': voice, 'enabled': config.get('ack_enabled') == 'on',
+            'manifest_count': None, 'generated_count': None, 'missing_count': None}
+
+
 @router.get('/api/health')
 async def health(request: Request):
     config = load_config()
@@ -303,15 +320,7 @@ async def health(request: Request):
             'provider': provider, 'base_url': base,
         }
     whisper_available = importlib.util.find_spec('faster_whisper') is not None
-    try:
-        manifest = load_ack_manifest()
-        acknowledgements = ack_status(state.ack.current_voice, manifest=manifest)
-        ack_count = len(ack_files_for(state.ack.current_voice, manifest=manifest))
-    except AckManifestError as error:
-        acknowledgements = {'ok': False, 'status': 'unavailable', 'error': str(error),
-            'voice': state.ack.current_voice, 'enabled': config.get('ack_enabled') == 'on',
-            'manifest_count': None, 'generated_count': None, 'missing_count': None}
-        ack_count = None
+    ack_count, acknowledgements = await asyncio.to_thread(_aggregate_ack, config)
     result = {
         'ok': True,
         'service': 'korina-voice-lab',
