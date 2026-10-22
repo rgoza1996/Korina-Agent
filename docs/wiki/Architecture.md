@@ -43,6 +43,8 @@ Explicit probe batches and ordinary STT fallback carry request ownership through
 
 `GET /api/ready` returns a check map for frontend assets, response LLM, selected STT dependencies, TTS, and enabled agent. It returns 503 when a required check fails. A reachable lazy Kokoro pipeline counts as available; rehearsal must warm actual models.
 
+`asset_manifest.py` declares the required browser filenames once for packaging, runtime readiness, and verification fixtures. Frontend readiness checks every required regular/readable file away from the event loop, including all imported modules; optional ACK/config example data is separate. Custom runtime content remains supported. This verifies file availability, not JavaScript execution, API compatibility, or a browser's cached copy.
+
 Health advertises the effective upload and decoded duration budgets in read-only `audio_limits`. Browser captures leave encoding/multipart headroom and retain at most 24 MiB. Invalid server limit settings remain visible through `audio_limits_error`, fail readiness, and prevent new recordings. Stop, Clear Session, replacement, and recorder errors release capture timers and owned audio buffers.
 
 Browser health results belong to their poll generation, current provider settings, activation state, and session. A retired success or failure cannot replace current readiness, pending provider status, capture limits, or the current ACK result. Only current failures advance the ordinary three-miss unreachable threshold.

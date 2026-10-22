@@ -67,6 +67,8 @@ python scripts/check_stack.py
 
 Health also publishes read-only `audio_limits` with the effective decoded duration and upload budget. Invalid audio-limit environment settings appear as `audio_limits_error` and fail readiness while liveness remains available.
 
+Frontend readiness requires every shipped UI filename to be a readable regular file, including all JavaScript modules. A custom `KORINA_APP_DIR` must provide that complete set; its content can differ. A failed frontend check calls for restoring the complete UI. Browser execution and cached-page freshness still require a browser check.
+
 Acknowledgements are optional. A malformed phrase manifest leaves startup and voice readiness available, reports an actionable ACK error with unknown clip counts, and rejects rebuilds before deleting audio. See [ACK recovery](docs/acknowledgements.md) for catalog limits and repair.
 
 ```bash
