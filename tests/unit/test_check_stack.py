@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import http.client
 import importlib.util
 import io
 import json
@@ -135,6 +136,23 @@ def test_declared_oversize_is_rejected_before_reading():
     with pytest.raises(ValueError, match='exceeds'):
         smoke._read_bounded(reply)
     assert reply.read_sizes == []
+
+
+def test_truncated_response_cannot_pass_as_complete_json():
+    reply = Reply(b'{"ok":true}', headers={'Content-Length': '100'})
+    with pytest.raises(ValueError, match='declared Content-Length'):
+        smoke._read_bounded(reply)
+
+
+def test_malformed_http_is_reported_instead_of_crashing(monkeypatch):
+    def broken_response(*args, **kwargs):
+        raise http.client.BadStatusLine('not an HTTP response')
+
+    monkeypatch.setattr(smoke, '_open_url', broken_response)
+    result = run_gate()
+    assert result['ok'] is False
+    assert len(result['checks']) == 6
+    assert all('not an HTTP response' in check['error'] for check in result['checks'])
 
 
 @pytest.mark.parametrize('raw', [b'{"ok":NaN}', b'{"ok":Infinity}', b'{"ok":1e999}', b'[' * 10000 + b'0' + b']' * 10000])

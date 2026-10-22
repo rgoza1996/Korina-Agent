@@ -10,6 +10,7 @@ workflow supplies the hard overall time limit.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import math
 import urllib.error
@@ -33,6 +34,7 @@ _open_url = urllib.request.build_opener(_NoRedirect()).open
 
 def _read_bounded(response) -> bytes:
     length = response.headers.get('Content-Length')
+    declared = None
     if length is not None:
         try:
             declared = int(length)
@@ -44,6 +46,8 @@ def _read_bounded(response) -> bytes:
     while True:
         chunk = response.read(min(READ_CHUNK_BYTES, MAX_RESPONSE_BYTES - len(body) + 1))
         if not chunk:
+            if declared is not None and len(body) != declared:
+                raise ValueError('response ended before its declared Content-Length')
             return bytes(body)
         if len(body) + len(chunk) > MAX_RESPONSE_BYTES:
             raise ValueError(f'response exceeds {MAX_RESPONSE_BYTES} bytes')
@@ -150,7 +154,7 @@ def check_stack(base: str, *, allow_degraded: bool = False) -> dict:
             elif not raw:
                 raise ValueError('frontend asset is empty')
             check = {'path': path, 'ok': ok, 'http_status': status}
-        except (OSError, ValueError) as exc:
+        except (OSError, ValueError, http.client.HTTPException) as exc:
             check = {'path': path, 'ok': False, 'error': str(exc)}
             if status is not None:
                 check['http_status'] = status
