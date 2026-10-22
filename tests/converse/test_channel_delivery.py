@@ -324,3 +324,39 @@ def test_new_send_waits_until_synchronous_reset_has_finished(cancel_reset_caller
         assert adapter.submitted == ['new session']
 
     asyncio.run(exercise())
+
+
+def test_cancel_resets_after_a_slow_submission_finishes():
+    adapter = Adapter()
+    paused = PausedCall()
+    reset_started = threading.Event()
+    operations = []
+
+    def slow_submit(turn):
+        paused.return_after_release(None)
+        operations.append('submitted old turn')
+
+    def reset():
+        reset_started.set()
+        operations.append('reset')
+
+    adapter.submit_turn = slow_submit
+    adapter.reset = reset
+    ch = channel(adapter)
+
+    async def exercise():
+        task = asyncio.create_task(ch.send(ConverseRequest(transcript=[{'role': 'user', 'text': 'old turn'}])))
+        assert await asyncio.to_thread(paused.started.wait, 2)
+        cancelling = asyncio.create_task(ch.cancel())
+        try:
+            await asyncio.sleep(0)
+            assert not await asyncio.to_thread(reset_started.wait, 0.05)
+        finally:
+            paused.release.set()
+        await asyncio.wait_for(cancelling, timeout=2)
+        response = await asyncio.wait_for(task, timeout=2)
+        assert response.error == 'cancelled'
+        assert response.text == ''
+        assert operations == ['submitted old turn', 'reset']
+
+    asyncio.run(exercise())

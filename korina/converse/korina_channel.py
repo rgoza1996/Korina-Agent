@@ -54,6 +54,7 @@ class KorinaConverseChannel(ConverseChannel):
         self._agent_gateway = agent_gateway
         self._send_lock = threading.Lock()
         self._lifecycle_lock = threading.Lock()
+        self._submit_reset_lock = threading.Lock()
         self._generation = 0
         self._active_adapter: AgentAdapter | None = None
         self._pending_resets = 0
@@ -145,6 +146,15 @@ class KorinaConverseChannel(ConverseChannel):
         with self._lifecycle_lock:
             return generation != self._generation
 
+    def _submit_if_current(self, adapter: AgentAdapter, turn: UserTurn, generation: int) -> bool:
+        # Reset must follow an already-started synchronous submission. If its
+        # thread has not started yet, cancellation prevents submission entirely.
+        with self._submit_reset_lock:
+            if self._cancelled(generation):
+                return False
+            adapter.submit_turn(turn)
+            return True
+
     @asynccontextmanager
     async def _serialize_sends(self):
         # Channels can be shared by several event loops; do not bind the lock
@@ -179,7 +189,9 @@ class KorinaConverseChannel(ConverseChannel):
                 cursor, _ = await asyncio.to_thread(adapter.poll_events, 0)
                 if self._cancelled(generation):
                     return ConverseResponse(error='cancelled')
-                await asyncio.to_thread(adapter.submit_turn, turn)
+                submitted = await asyncio.to_thread(self._submit_if_current, adapter, turn, generation)
+                if not submitted or self._cancelled(generation):
+                    return ConverseResponse(error='cancelled')
             except Exception as exc:
                 if self._cancelled(generation):
                     return ConverseResponse(error='cancelled')
@@ -221,7 +233,8 @@ class KorinaConverseChannel(ConverseChannel):
 
         def reset_adapter():
             try:
-                adapter.reset()
+                with self._submit_reset_lock:
+                    adapter.reset()
             finally:
                 with self._lifecycle_lock:
                     self._pending_resets -= 1
