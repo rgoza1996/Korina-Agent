@@ -55,7 +55,9 @@ def test_explicit_stt_change_is_preserved_when_saving(config_module):
     assert saved['stt_llm_base_url'] == 'http://audio.test/v1'
 
 
-def test_resolve_llama_cpp_model_id_variants(reload_korina_modules, model_root):
+def test_resolve_llama_cpp_model_id_variants(monkeypatch, model_root):
+    from korina.services import model_catalog, provider_manager
+
     family = model_root / "family"
     family.mkdir(parents=True)
     exact = family / "Exact-Model.Q4.gguf"
@@ -64,9 +66,9 @@ def test_resolve_llama_cpp_model_id_variants(reload_korina_modules, model_root):
     substring.write_text("gguf")
     (family / "mmproj-Gemma-4-E2B.gguf").write_text("skip mmproj")
 
-    provider_manager = reload_korina_modules(
-        "korina.services.model_catalog", "korina.services.provider_manager"
-    )[1]
+    # Patch the data boundary rather than reloading the service: its exception
+    # class and activation lock are also held by the imported API routes.
+    monkeypatch.setattr(model_catalog, 'local_model_roots', lambda: [model_root])
 
     assert provider_manager._resolve_llama_cpp_model_id(str(exact)) == str(exact)
     assert provider_manager._resolve_llama_cpp_model_id(exact.name) == str(exact)
@@ -76,16 +78,17 @@ def test_resolve_llama_cpp_model_id_variants(reload_korina_modules, model_root):
     assert provider_manager._resolve_llama_cpp_model_id("missing-model") == "missing-model"
 
 
-def test_provider_supports_model_examples(reload_korina_modules, model_root, lmstudio_root):
+def test_provider_supports_model_examples(monkeypatch, model_root, lmstudio_root):
+    from korina.services import model_catalog, provider_manager
+
     local = model_root / "local.gguf"
     local.write_text("gguf")
     manifest_dir = lmstudio_root / "owner" / "repo"
     manifest_dir.mkdir(parents=True)
     (manifest_dir / "manifest.json").write_text('{"owner":"owner","name":"repo"}')
 
-    provider_manager = reload_korina_modules(
-        "korina.services.model_catalog", "korina.services.provider_manager"
-    )[1]
+    monkeypatch.setattr(model_catalog, 'LMSTUDIO_HUB_ROOT', lmstudio_root)
+    monkeypatch.setattr(model_catalog, 'LMS_CLI_BIN', model_root / 'missing-lms')
 
     assert provider_manager.provider_supports_model("openai-compatible", "remote-model") == (
         True,
@@ -104,8 +107,9 @@ def test_provider_supports_model_examples(reload_korina_modules, model_root, lms
 
 
 @pytest.mark.parametrize("reasoning", ["on", "off", "auto"])
-def test_write_llama_server_unit_output_shape(monkeypatch, reload_korina_modules, tmp_path, reasoning):
-    provider_manager = reload_korina_modules("korina.services.provider_manager")[0]
+def test_write_llama_server_unit_output_shape(monkeypatch, tmp_path, reasoning):
+    from korina.services import provider_manager
+
     model = tmp_path / "model.gguf"
     model.write_text("gguf")
     mmproj = tmp_path / "model-mmproj.gguf"

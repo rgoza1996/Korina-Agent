@@ -304,10 +304,37 @@ def start_ollama() -> LifecycleActions:
     process = None
     if run.returncode != 0:
         process = subprocess.Popen(['ollama', 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    _wait_for_models('http://127.0.0.1:11434/v1/models', 'Ollama server', 90)
-    if process is not None and process.poll() is not None:
-        raise RuntimeError(f'ollama serve exited during startup (exit {process.returncode})')
+    try:
+        _wait_for_models('http://127.0.0.1:11434/v1/models', 'Ollama server', 90)
+        if process is not None and process.poll() is not None:
+            raise RuntimeError(f'ollama serve exited during startup (exit {process.returncode})')
+    except BaseException:
+        if process is not None:
+            _cleanup_failed_start(process)
+        raise
     return LifecycleActions(started=['ollama'])
+
+
+def _cleanup_failed_start(process: subprocess.Popen) -> None:
+    """Reap only the child this attempt created, preserving the startup error."""
+    try:
+        if process.poll() is not None:
+            return
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass  # It exited between poll and terminate; still reap it below.
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=2)
+    except Exception:
+        logger.warning('Could not confirm cleanup of the Ollama child from failed startup', exc_info=True)
+
 
 def _systemd_argument(value: str) -> str:
     """Quote one systemd argument; protect specifier/environment expansion."""
