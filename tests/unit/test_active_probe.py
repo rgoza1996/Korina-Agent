@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import tempfile
 import threading
 import wave
 
@@ -350,3 +351,45 @@ def test_probe_waiting_for_config_lock_does_not_publish_after_retirement(monkeyp
         return_provider.set()
         current.clear()
         worker.join(3)
+
+
+@pytest.mark.parametrize('phase', ['generation', 'write'])
+def test_probe_preparation_failure_removes_real_temporary_file(monkeypatch, config_module, tmp_path, phase):
+    from pathlib import Path
+    from korina.services import active_probe
+
+    config_module.update_config_values({'audio_unsupported': {}})
+    saved_before = config_module.CONFIG_PATH.read_bytes()
+    named_temporary_file = tempfile.NamedTemporaryFile
+    files, paths, written = [], [], []
+
+    def controlled_file(**kwargs):
+        output = named_temporary_file(dir=tmp_path, **kwargs)
+        files.append(output)
+        paths.append(Path(output.name))
+        if phase == 'write':
+            def fail_write(data):
+                written.append(output.file.write(data[:16]))
+                raise OSError('controlled temporary WAV write failure')
+            output.write = fail_write
+        return output
+
+    def fail_generation():
+        raise RuntimeError('controlled synthetic WAV generation failure')
+
+    def unexpected_provider(wav, *, model, base_url, api_env):
+        pytest.fail('a preparation failure must not call the provider')
+
+    monkeypatch.setattr(tempfile, 'NamedTemporaryFile', controlled_file)
+    if phase == 'generation':
+        monkeypatch.setattr(active_probe, '_build_synthetic_wav', fail_generation)
+    result = active_probe.probe_audio_support('llama.cpp', 'http://fixture.test/v1', 'model',
+                                             transcribe_fn=unexpected_provider)
+    assert result.supported is False
+    assert result.reason == 'transient_runtime_error'
+    assert 'controlled' in result.error
+    assert len(files) == 1 and files[0].closed
+    assert len(paths) == 1 and not paths[0].exists()
+    assert list(tmp_path.iterdir()) == []
+    assert written == ([16] if phase == 'write' else [])
+    assert config_module.CONFIG_PATH.read_bytes() == saved_before

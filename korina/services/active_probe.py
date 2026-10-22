@@ -139,8 +139,8 @@ def probe_audio_support(
         import tempfile
         check_current(is_current)
         with tempfile.NamedTemporaryFile(prefix="korina-probe-", suffix=".wav", delete=False) as f:
-            f.write(_build_synthetic_wav())
             tmp_path = Path(f.name)
+            f.write(_build_synthetic_wav())
         check_current(is_current)
         result = transcribe_fn(tmp_path, model=model_id, base_url=base_url_clean, api_env=resolved_api_env)
         check_current(is_current)
