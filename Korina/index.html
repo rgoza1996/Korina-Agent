@@ -41,10 +41,10 @@
                 <input type="checkbox" id="sttCapabilityFilterOverride">
                 <span>Show all models (override audio-capability filter)</span>
               </label>
-              <div class="small mono">When unchecked, only models with audio input support appear in the multimodal STT dropdown. Non-audio-capable models are hidden, not shown in red.</div>
+              <div class="small mono">When unchecked, the picker shows models estimated to accept audio from metadata, names, and local sidecars. These hints do not prove audio support; active probes and real transcription can still reject a model. Show all models to inspect other choices; warnings are shown in red.</div>
             </div>
             <div id="sttMultimodalBaseUrlWrap"><label for="sttLlmBaseUrl">Base URL</label><input id="sttLlmBaseUrl" type="text" placeholder="blank = inherit from LLM Response"></div>
-            <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit from LLM Response"></div>
+            <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit for the same API URL"></div>
             <div id="sttMultimodalReasoningWrap" class="secretNote settingsHidden"><label>Advanced</label><div class="toggleLine"><input id="sttLlmReasoningEnabled" type="checkbox"><span>Allow multimodal STT model reasoning / thinking</span></div></div>
             <div><label for="finalSttMode">End-of-speech finalization</label><select id="finalSttMode"><option value="chunks" selected>Use live chunks — no full paragraph retranscribe</option><option value="full">Full utterance final pass</option></select></div>
             <div><label for="partialWindowMs">Live partial transcript window</label><input id="partialWindowMs" type="range" min="800" max="3200" step="100" value="1800"><div class="fieldHint"><span id="partialWindowMsDisplay">1.8s</span> audio per rolling partial STT window while you are still speaking.</div></div>
@@ -118,7 +118,7 @@
         <div class="secretNote"><label>Korina Agent</label><div class="toggleLine"><input id="agentEnabled" type="checkbox" checked><span>Enable hidden state reports and injection</span></div></div>
         <div><label for="agentProvider">Agent endpoint type</label><select id="agentProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="anthropic">Anthropic-compatible</option></select></div>
         <div><label for="agentBaseUrl">Agent API base URL</label><input id="agentBaseUrl" type="text" value="http://127.0.0.1:1234/v1" placeholder="OpenAI: .../v1 · Anthropic: .../v1"></div>
-        <div><label for="agentApiKey">Agent API key</label><input id="agentApiKey" type="password" autocomplete="off" placeholder="Optional; saved locally in config.json"></div>
+        <div><label for="agentApiKey">Agent API key</label><input id="agentApiKey" type="password" autocomplete="off" placeholder="Optional; saved locally in config.json" title="Blank inherits response credentials only when both use the same API base URL."></div>
         <div><label for="agentModel">Korina Agent model</label><select id="agentModel"><option value="">Use Korina Converse model</option></select></div>
         <div><label>&nbsp;</label><button id="refreshAgentModelsBtn" class="secondary" type="button">Refresh Agent models</button></div>
         <div><label for="agentMaxTurns">Transcript turns sent to agent</label><input id="agentMaxTurns" type="number" min="2" max="40" value="16"></div>

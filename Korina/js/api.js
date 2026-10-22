@@ -34,7 +34,12 @@ export async function activateSelectedProvider(provider, model = '') {
 // Load saved settings into the UI.
 export async function loadConfig() {
   try {
-    const c = await (await fetch('/api/config')).json();
+    const response = await fetch('/api/config');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const c = await response.json();
+    if (!c || typeof c !== 'object' || Array.isArray(c) || c.ok === false || Object.hasOwn(c, 'detail')) {
+      throw new Error('The server returned invalid settings.');
+    }
     applyConfig(c);
     syncConverseSettingsUI();
     $('settingsInfo').textContent = 'Loaded saved config.json settings.';

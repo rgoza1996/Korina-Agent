@@ -162,10 +162,10 @@ test('old recorder data, stop, and animation callbacks cannot use a replacement 
 });
 
 test('a current STT failure preserves its error and resumes capture once', async () => {
-  globalThis.fetch = async () => ({ ok: false, json: async () => ({ detail: 'STT model unavailable' }) });
+  globalThis.fetch = async () => new Response('{"detail":"STT model unavailable"}', { status: 503 });
   await captureInterruption();
   assert.equal(element('sttStatus').className, 'status bad');
-  assert.match(element('sttStatus').textContent, /Interruption error: STT model unavailable/);
+  assert.match(element('sttStatus').textContent, /Interruption error: HTTP 503: STT model unavailable/);
   assert.equal(state.handlingBarge, false);
   assert.equal(state.liveBusy, false);
   assert.equal(recorders.length, 3, 'barge recorder plus one normal and one partial recorder');
@@ -202,7 +202,7 @@ function installConversation() {
     if (url.startsWith('/api/transcribe/stream')) return transcription('Interruption turn.');
     if (url === '/api/chat') return { ok: true, json: async () => ({ reply: 'A current reply.' }) };
     assert.equal(url, 'http://speech.test/v1/audio/speech');
-    return { ok: true, blob: async () => new Blob(['fixture audio']) };
+    return new Response(new Blob(['fixture audio']));
   };
 }
 
@@ -244,7 +244,7 @@ test('a second interruption invalidates the first reply cleanup and keeps its ow
 
 test('cleared agent interrupt speech cannot clear a newer interrupt owner or set its cooldown', async () => {
   state.live = false;
-  globalThis.fetch = async () => ({ ok: true, blob: async () => new Blob(['fixture audio']) });
+  globalThis.fetch = async () => new Response(new Blob(['fixture audio']));
   interruptConverse('Old permission request.', true);
   await tick();
   stopTtsNow();

@@ -36,6 +36,8 @@ Browser microphone access needs localhost or a secure context. For a remote demo
 
 Browser speech uses the Kokoro service protocol: PCM SSE at `/stream/speech` and WAV at `/v1/audio/speech`, relative to the service root. Custom services must support those endpoints, browser CORS, and unauthenticated access. Authenticated cloud TTS is not implemented. Settings includes an optional health URL for compatible custom services.
 
+Compatible services must also obey the browser audio budgets: replies last at most ten minutes, buffered downloads are limited to 32 MiB, and acknowledgement downloads to 2 MiB each. Streaming PCM must use an integer sample rate between 3,000 and 384,000 Hz; the usual 8–48 kHz rates are supported. Oversized or overlong audio stops playback with an error instead of retaining more buffers.
+
 ## Install a built wheel
 
 ```bash
@@ -70,7 +72,7 @@ See [observed verification](docs/verification.md) and [testing](docs/testing.md)
 
 ## Configuration and portable paths
 
-`GET/POST /api/config` loads and saves settings. Provider activation is explicit through `/api/llm/provider/activate`; saving settings alone does not manage processes. Independent STT and agent endpoint choices are preserved. `Korina/config/config.example.json` is tracked; runtime `config.json`, generated WAVs, and model weights are ignored. API keys should come from environment variables named by `llm_api_key_env` and `stt_llm_api_key_env`. `agent_api_key` is a local development convenience stored in runtime config; the agent otherwise uses `llm_api_key_env`. Keep credentials out of commits.
+`GET/POST /api/config` loads and saves settings. Provider activation is explicit through `/api/llm/provider/activate`; saving settings alone does not manage processes. Independent STT and agent endpoint choices are preserved. `Korina/config/config.example.json` is tracked; runtime `config.json`, generated WAVs, and model weights are ignored. API keys should come from environment variables named by `llm_api_key_env` and `stt_llm_api_key_env`. Blank STT or agent credentials inherit the response key only when their normalized API base URL matches the response endpoint. An independent endpoint needs its own explicit credentials. `agent_api_key` is a local development convenience stored in runtime config. Keep credentials out of commits.
 
 | Setting | Purpose |
 | --- | --- |

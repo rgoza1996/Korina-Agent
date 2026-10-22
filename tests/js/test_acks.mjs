@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
 import { cancelAckPlayback, loadAcks, playRandomAck, preloadAckBuffers } from '../../Korina/js/acks.js';
 import { stopLive } from '../../Korina/js/live.js';
+import { MAX_ACK_AUDIO_BYTES } from '../../Korina/js/response-body.js';
 
 const elements = new Map();
 const sources = [];
@@ -25,7 +26,7 @@ function delayedAudio() {
     if (url.startsWith('/api/acks')) return { ok: true, json: async () => ({ acks: [{ url: '/ack.wav', text: 'One moment.' }] }) };
     started.resolve();
     await finish.promise;
-    return { ok: true, arrayBuffer: async () => new ArrayBuffer(4) };
+    return new Response(new Uint8Array(4));
   };
   return { started: started.promise, finish: finish.resolve };
 }
@@ -152,5 +153,54 @@ test('cancellation aborts a pending acknowledgement download', async () => {
   cancelAckPlayback();
   await playing;
   assert.equal(signal.aborted, true);
+  assert.equal(sources.length, 0);
+});
+
+test('oversized acknowledgement downloads never reach the native decoder', async () => {
+  let decodes = 0, cancelled = 0;
+  state.audioCtx.decodeAudioData = async () => { decodes++; return { duration: 1 }; };
+  globalThis.fetch = async url => {
+    if (url.startsWith('/api/acks')) return { ok: true, json: async () => ({ acks: [{ url: '/huge.wav' }] }) };
+    return new Response(new ReadableStream({ cancel() { cancelled++; } }), {
+      headers: { 'Content-Length': String(MAX_ACK_AUDIO_BYTES + 1) },
+    });
+  };
+  const warn = console.warn;
+  console.warn = () => {};
+  try { assert.deepEqual(await preloadAckBuffers(), []); }
+  finally { console.warn = warn; }
+  assert.equal(decodes, 0);
+  assert.equal(cancelled, 1);
+  assert.equal(sources.length, 0);
+});
+
+test('a decoded overlong acknowledgement is rejected without scheduling playback', async () => {
+  state.audioCtx.decodeAudioData = async () => ({ duration: 601 });
+  const audio = delayedAudio();
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const playing = playRandomAck();
+    await audio.started;
+    audio.finish();
+    await playing;
+  } finally { console.warn = warn; }
+  assert.equal(sources.length, 0);
+  assert.deepEqual(state.ackBuffers, []);
+});
+
+test('acknowledgement cancellation releases a pending native response reader', { timeout: 1000 }, async () => {
+  const started = deferred();
+  let body;
+  globalThis.fetch = async url => {
+    if (url.startsWith('/api/acks')) return { ok: true, json: async () => ({ acks: [{ url: '/pending.wav' }] }) };
+    body = new ReadableStream({ pull() { started.resolve(); }, cancel() { return new Promise(() => {}); } });
+    return new Response(body);
+  };
+  const playing = playRandomAck();
+  await started.promise;
+  cancelAckPlayback();
+  await playing;
+  assert.equal(body.locked, false);
   assert.equal(sources.length, 0);
 });

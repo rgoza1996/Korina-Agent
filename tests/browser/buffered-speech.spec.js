@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-function wavTone(seconds) {
-  const rate = 24000;
+function wavTone(seconds, rate = 24000) {
   const samples = Math.round(seconds * rate);
   const wav = Buffer.alloc(44 + samples * 2);
   wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8);
@@ -13,7 +12,7 @@ function wavTone(seconds) {
   return wav;
 }
 
-async function loadBufferedPage(page, body) {
+async function loadBufferedPage(page, body, mode = 'buf') {
   await page.addInitScript(() => {
     window.__revokedAudioUrls = [];
     const revoke = URL.revokeObjectURL.bind(URL);
@@ -24,7 +23,7 @@ async function loadBufferedPage(page, body) {
     const endpoint = new URL(request.url()).pathname;
     if (endpoint === '/api/config' && request.method() === 'GET') {
       const config = await (await route.fetch()).json();
-      return route.fulfill({ json: { ...config, mode: 'buf', ack_enabled: 'off', agent_enabled: 'off', tts_provider: 'kokoro', tts_base_url: 'http://speech.fixture' } });
+      return route.fulfill({ json: { ...config, mode, ack_enabled: 'off', agent_enabled: 'off', tts_provider: 'kokoro', tts_base_url: 'http://speech.fixture' } });
     }
     if (endpoint === '/api/acks') return route.fulfill({ json: { acks: [] } });
     if (request.method() === 'GET') return route.continue();
@@ -102,11 +101,22 @@ test('Stop settles a buffered native fetch before response headers arrive', asyn
 });
 
 test('an empty SSE success response is reported as missing speech', async ({ page }) => {
-  await loadBufferedPage(page, wavTone(1));
+  await loadBufferedPage(page, wavTone(1), 'sse');
   await page.route('http://speech.fixture/stream/speech', route => route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }));
-  await page.evaluate(() => { window.state.mode = 'sse'; });
   await page.locator('#playBtn').click();
   await expect(page.locator('#ttsStatus')).toHaveClass('status bad');
   await expect(page.locator('#ttsStatus')).toContainText('no audio samples');
   await expect(page.locator('#stopBtn')).toBeDisabled();
+});
+
+test('native buffered metadata rejects compact audio longer than the playback limit', async ({ page }) => {
+  await loadBufferedPage(page, wavTone(601, 3000));
+  await page.locator('#playBtn').click();
+  await expect(page.locator('#ttsStatus')).toHaveClass('status bad');
+  await expect(page.locator('#ttsStatus')).toContainText('ten minutes');
+  await expect(page.locator('#stopBtn')).toBeDisabled();
+  await expect(page.locator('#playBtn')).toBeEnabled();
+  expect(await page.locator('#audio').getAttribute('src')).toBeNull();
+  expect(await page.evaluate(() => window.state.ttsSpeaking)).toBe(false);
+  expect(await page.evaluate(() => window.__revokedAudioUrls.length)).toBe(1);
 });

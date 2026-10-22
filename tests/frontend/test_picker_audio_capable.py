@@ -28,6 +28,13 @@ import re
 import subprocess
 from pathlib import Path
 
+
+def test_picker_explains_that_capability_hints_are_estimates():
+    html = (Path(__file__).resolve().parents[2] / 'Korina' / 'index.html').read_text()
+    assert 'estimated to accept audio' in html
+    assert 'These hints do not prove audio support' in html
+    assert 'warnings are shown in red' in html
+
 import pytest
 
 import shutil  # noqa: E402  -- inserted by /tmp/fix_tests.py

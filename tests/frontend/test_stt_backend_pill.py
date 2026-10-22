@@ -19,6 +19,10 @@ request. This test enforces:
 4. The pill labels the four expected backend values.
 """
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 INDEX = REPO / "Korina" / "index.html"
@@ -58,23 +62,16 @@ def test_api_js_labels_four_backends():
             f"recordSttBackend must handle backend={backend!r}"
 
 
-def test_recorder_wires_sse_done():
-    src = RECORDER_JS.read_text()
-    # The SSE 'done' branch in transcribeBlob must call recordSttBackend.
-    done_block = src[src.find("ev === 'done'"):src.find("ev === 'error'")]
-    assert 'recordSttBackend(payload, undefined)' in done_block, \
-        "SSE 'done' branch must call recordSttBackend(payload, undefined)"
-
-
-def test_recorder_wires_sse_error():
-    src = RECORDER_JS.read_text()
-    # The SSE 'error' branch must call recordSttBackend(null, message)
-    # before throwing.
-    error_block = src[src.find("ev === 'error'"):src.find("if (!final) throw")]
-    assert 'recordSttBackend(null' in error_block, \
-        "SSE 'error' branch must call recordSttBackend(null, ...)"
-    assert 'throw new Error(payload.detail' in error_block, \
-        "SSE 'error' branch must still throw after recording"
+def test_recorder_updates_the_backend_pill_for_sse_success_and_failure():
+    node = shutil.which('node')
+    if node is None:
+        pytest.skip('Node is required for the executable STT transport regression')
+    result = subprocess.run(
+        [node, '--test', '--test-name-pattern=full STT (accepts|surfaces)',
+         str(REPO / 'tests/js/test_transport.mjs')],
+        cwd=REPO, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_recorder_wires_fetch_rejection_stream():

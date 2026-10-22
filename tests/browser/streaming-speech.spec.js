@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-function pcmEvent(seconds = 2) {
-  const rate = 24000;
+function pcmEvent(seconds = 2, rate = 24000) {
   const pcm = Buffer.alloc(Math.round(seconds * rate) * 2);
   for (let index = 0; index < pcm.length / 2; index++) {
     pcm.writeInt16LE(Math.round(1200 * Math.sin(index * 2 * Math.PI * 440 / rate)), index * 2);
@@ -93,6 +92,50 @@ test('an SSE error after native PCM scheduling stops the audio before disabling 
   expect(await page.evaluate(() => window.state.activeSources.length)).toBe(0);
   expect(await page.evaluate(() => window.state.ttsSpeaking)).toBe(false);
   expect(await page.evaluate(() => window.state.controller)).toBeNull();
+  await expect(page.locator('#stopBtn')).toBeDisabled();
+  await expect(page.locator('#playBtn')).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test('a truncated SSE tail stops already scheduled native PCM and reports failure', async ({ page }) => {
+  const errors = await loadStreamingPage(page, pcmEvent() + 'data: {"audio":"truncated');
+  await page.locator('#playBtn').click();
+  await expect(page.locator('#ttsStatus')).toHaveClass('status bad');
+  await expect(page.locator('#ttsStatus')).toContainText('Error:');
+  const sources = await page.evaluate(() => window.__speechSources);
+  expect(sources).toHaveLength(1);
+  expect(sources[0].started).toBe(1);
+  expect(sources[0].stopped).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.state.activeSources.length)).toBe(0);
+  expect(await page.evaluate(() => window.state.ttsSpeaking)).toBe(false);
+  await expect(page.locator('#stopBtn')).toBeDisabled();
+  await expect(page.locator('#playBtn')).toBeEnabled();
+  expect(errors).toEqual([]);
+});
+
+test('CRLF speech events play native PCM and complete normally', async ({ page }) => {
+  const errors = await loadStreamingPage(page, pcmEvent(0.1).replaceAll('\n', '\r\n'));
+  await page.locator('#playBtn').click();
+  await expect(page.locator('#ttsStatus')).toContainText('Done · 1 chunks');
+  expect(await page.evaluate(() => window.__speechSources)).toEqual([
+    { started: 1, stopped: 0, ended: true },
+  ]);
+  expect(await page.evaluate(() => window.state.ttsSpeaking)).toBe(false);
+  await expect(page.locator('#stopBtn')).toBeDisabled();
+  expect(errors).toEqual([]);
+});
+
+test('cumulative speech duration stops native playback before allocating an over-limit chunk', async ({ page }) => {
+  const errors = await loadStreamingPage(page, pcmEvent(300, 3000) + pcmEvent(301, 3000));
+  await page.locator('#playBtn').click();
+  await expect(page.locator('#ttsStatus')).toHaveClass('status bad');
+  await expect(page.locator('#ttsStatus')).toContainText('audio limit');
+  const sources = await page.evaluate(() => window.__speechSources);
+  expect(sources).toHaveLength(1);
+  expect(sources[0].started).toBe(1);
+  expect(sources[0].stopped).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.state.activeSources.length)).toBe(0);
+  expect(await page.evaluate(() => window.state.ttsSpeaking)).toBe(false);
   await expect(page.locator('#stopBtn')).toBeDisabled();
   await expect(page.locator('#playBtn')).toBeEnabled();
   expect(errors).toEqual([]);

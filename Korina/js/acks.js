@@ -5,6 +5,7 @@ import { $ } from './dom.js';
 import { addTranscriptEntry } from './history.js';
 import { markActivity, recordIdleAck } from './settings-ui.js';
 import { ensureAudio } from './speech.js';
+import { MAX_ACK_AUDIO_BYTES, MAX_AUDIO_SECONDS, readResponseBlob } from './response-body.js';
 
 let generation = 0;
 let cachedVoice = null;
@@ -84,10 +85,17 @@ export async function preloadAckBuffers(tag = 'global') {
       try {
         const response = await fetch(url, { signal: job.controller.signal });
         if (!response.ok) throw new Error(`Acknowledgement audio HTTP ${response.status}`);
-        const bytes = await response.arrayBuffer();
+        const blob = await readResponseBlob(response, {
+          maxBytes: MAX_ACK_AUDIO_BYTES, signal: job.controller.signal,
+          isCurrent: () => current(context, true),
+        });
+        const bytes = await blob.arrayBuffer();
         if (!current(context, true)) return [];
-        const buffer = await context.audio.decodeAudioData(bytes.slice(0));
+        const buffer = await context.audio.decodeAudioData(bytes);
         if (!current(context, true)) return [];
+        if (!Number.isFinite(buffer.duration) || buffer.duration <= 0 || buffer.duration > MAX_AUDIO_SECONDS) {
+          throw new Error('Acknowledgement audio exceeds the ten minute audio limit.');
+        }
         decoded.push({ url, text: typeof item === 'string' ? url : item.text || item.id || item.name || url,
           buffer, tag });
       } catch (error) {

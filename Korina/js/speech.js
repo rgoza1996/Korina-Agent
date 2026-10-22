@@ -5,9 +5,12 @@ import { $, status } from "./dom.js";
 import { stripTranscriptLabels } from "./history.js";
 import { markActivity, ttsBaseUrl, ttsDevice, ttsModel, ttsProvider } from "./settings-ui.js";
 import { startBargeInCapture } from "./barge-in.js";
+import { readJsonEvents } from "./sse.js";
+import { MAX_AUDIO_SECONDS, readResponseBlob, responseError } from "./response-body.js";
 
 let bufferedPlayback = null;
 let speechVersion = 0;
+let standaloneAudioSeconds = 0;
 
 function playbackAborted() {
   return new DOMException('Speech playback interrupted.', 'AbortError');
@@ -33,7 +36,7 @@ function beginPlayback() {
   stopTtsNow();
   // A newly started reply still waits for an already playing acknowledgement.
   state.ackPlayingUntil = ackUntil;
-  const playback = { version, controller: new AbortController(), sources: new Set() };
+  const playback = { version, controller: new AbortController(), sources: new Set(), audioSeconds: 0 };
   state.controller = playback.controller;
   return playback;
 }
@@ -57,6 +60,7 @@ export function stopTtsNow() {
   state.nextPlayTime = 0;
   state.ackPlayingUntil = 0;
   state.ttsSpeaking = false;
+  standaloneAudioSeconds = 0;
 }
 
 // Interrupt context
@@ -74,8 +78,15 @@ export function interruptedSpeechContext() {
 // PCM chunk scheduling
 export async function schedulePcm(b64, sr = 24000, playback = null) {
   if (playback) assertPlaybackCurrent(playback);
+  if (!Number.isSafeInteger(sr) || sr < 3000 || sr > 384000) throw new Error('TTS stream has an invalid sample rate.');
   ensureAudio();
-  const bin = atob(b64);
+  let bin;
+  try { bin = atob(b64); }
+  catch { throw new Error('TTS stream contains invalid base64 PCM audio.'); }
+  if (bin.length % 2) throw new Error('TTS stream contains incomplete 16-bit PCM audio.');
+  const seconds = bin.length / 2 / sr;
+  const totalSeconds = (playback?.audioSeconds ?? standaloneAudioSeconds) + seconds;
+  if (totalSeconds > MAX_AUDIO_SECONDS) throw new Error('Generated speech exceeds the ten minute audio limit.');
   const u8 = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   if (!u8.length) return 0;
@@ -89,6 +100,8 @@ export async function schedulePcm(b64, sr = 24000, playback = null) {
   src.connect(state.gain);
   const when = Math.max(state.audioCtx.currentTime, state.nextPlayTime, state.ackPlayingUntil);
   src.start(when);
+  if (playback) playback.audioSeconds = totalSeconds;
+  else standaloneAudioSeconds = totalSeconds;
   state.activeSources.push(src);
   playback?.sources.add(src);
   src.onended = () => {
@@ -103,8 +116,7 @@ export async function schedulePcm(b64, sr = 24000, playback = null) {
 // Streaming SSE speak
 export async function speakSSE(text, playback = beginPlayback()) {
   state.nextPlayTime = 0;
-  let chunks = 0, samples = 0, start = performance.now(), buf = '';
-  let reader;
+  let chunks = 0, samples = 0, start = performance.now();
   try {
     status($('ttsStatus'), 'Streaming Kokoro chunks…', 'warn');
     $('progress').style.width = '5%';
@@ -115,29 +127,25 @@ export async function speakSSE(text, playback = beginPlayback()) {
       signal: playback.controller.signal
     });
     assertPlaybackCurrent(playback);
-    if (!r.ok) throw new Error(await r.text());
-    reader = r.body.getReader();
-    const dec = new TextDecoder();
-    while (true) {
-      const { done, value } = await reader.read();
+    if (!r.ok) throw await responseError(r, { signal: playback.controller.signal,
+      isCurrent: () => state.controller === playback.controller });
+    // The bundled service permits at most ten minutes of mono PCM. Its
+    // base64 output fits these budgets even when emitted as one large event.
+    for await (const { data: ev } of readJsonEvents(r.body, {
+      isCurrent: () => !playback.controller.signal.aborted && state.controller === playback.controller,
+      maxEventBytes: 40 * 1024 * 1024,
+      maxTotalBytes: 48 * 1024 * 1024,
+    })) {
       assertPlaybackCurrent(playback);
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const lines = buf.split('\n');
-      buf = lines.pop();
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const ev = JSON.parse(line.slice(6));
-        if (typeof ev.audio !== 'string') throw new Error('TTS stream chunk is missing PCM audio.');
-        const frames = await schedulePcm(ev.audio, ev.sample_rate || 24000, playback);
-        assertPlaybackCurrent(playback);
-        if (!frames) continue;
-        chunks++;
-        samples += frames;
-        const elapsed = (performance.now() - start) / 1000;
-        $('progress').style.width = Math.min(99, 10 + chunks * 12) + '%';
-        $('chunkInfo').textContent = `${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`;
-      }
+      if (typeof ev.audio !== 'string') throw new Error('TTS stream chunk is missing PCM audio.');
+      const frames = await schedulePcm(ev.audio, ev.sample_rate ?? 24000, playback);
+      assertPlaybackCurrent(playback);
+      if (!frames) continue;
+      chunks++;
+      samples += frames;
+      const elapsed = (performance.now() - start) / 1000;
+      $('progress').style.width = Math.min(99, 10 + chunks * 12) + '%';
+      $('chunkInfo').textContent = `${chunks} chunks · ${samples.toLocaleString()} samples · ${elapsed.toFixed(1)}s`;
     }
     if (!samples) throw new Error('TTS stream returned no audio samples.');
     await waitForScheduledAudio(playback.controller.signal);
@@ -146,7 +154,6 @@ export async function speakSSE(text, playback = beginPlayback()) {
     status($('ttsStatus'), `Done · ${chunks} chunks`, 'good');
   } catch (error) {
     stopPlayback(playback);
-    if (reader) { try { await reader.cancel(); } catch {} }
     throw error;
   }
 }
@@ -164,7 +171,10 @@ function playBufferedAudio(blob, signal) {
       audio.removeEventListener('ended', ended);
       audio.removeEventListener('error', failed);
       audio.removeEventListener('playing', playing);
+      audio.removeEventListener('loadedmetadata', metadata);
+      audio.removeEventListener('durationchange', durationChanged);
       signal.removeEventListener('abort', aborted);
+      clearTimeout(deadline);
       if (bufferedPlayback?.url === url) bufferedPlayback = null;
       try {
         audio.pause();
@@ -179,8 +189,17 @@ function playBufferedAudio(blob, signal) {
     const ended = () => finish();
     const failed = () => finish(new Error(audio.error?.message || 'Buffered audio playback failed.'));
     const aborted = () => finish(new DOMException('Speech playback interrupted.', 'AbortError'));
+    const metadata = () => {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0 || audio.duration > MAX_AUDIO_SECONDS) {
+        finish(new Error('Buffered speech must contain at most ten minutes of finite audio.'));
+        return false;
+      }
+      return true;
+    };
+    const durationChanged = () => { if (audio.readyState >= 1) metadata(); };
     const playing = () => {
-      if (state.audioCtx && Number.isFinite(audio.duration)) {
+      if (!metadata()) return;
+      if (state.audioCtx) {
         state.currentTtsStartedAt = state.audioCtx.currentTime;
         state.currentTtsEstimatedEnd = state.currentTtsStartedAt + audio.duration;
       }
@@ -189,7 +208,10 @@ function playBufferedAudio(blob, signal) {
     audio.addEventListener('ended', ended);
     audio.addEventListener('error', failed);
     audio.addEventListener('playing', playing);
+    audio.addEventListener('loadedmetadata', metadata);
+    audio.addEventListener('durationchange', durationChanged);
     signal.addEventListener('abort', aborted, { once: true });
+    const deadline = setTimeout(() => finish(new Error('Buffered speech exceeded the ten minute playback limit.')), MAX_AUDIO_SECONDS * 1000);
     audio.src = url;
     try {
       Promise.resolve(audio.play()).catch(finish);
@@ -211,8 +233,10 @@ export async function speakBuffered(text, playback = beginPlayback()) {
       signal: controller.signal
     });
     assertPlaybackCurrent(playback);
-    if (!r.ok) throw new Error(await r.text());
-    const blob = await r.blob();
+    if (!r.ok) throw await responseError(r, { signal: controller.signal,
+      isCurrent: () => state.controller === controller });
+    const blob = await readResponseBlob(r, { signal: controller.signal,
+      isCurrent: () => state.controller === controller });
     assertPlaybackCurrent(playback);
     status($('ttsStatus'), 'Playing buffered WAV…', 'warn');
     await playBufferedAudio(blob, controller.signal);

@@ -345,7 +345,7 @@ function wireSettingsInputs() {
     saveConfigSoon();
   };
   const sttDeviceEl = $('sttDevice');
-  if (sttDeviceEl) sttDeviceEl.onchange = () => { status($('sttStatus'), `STT device set to ${sttDevice()}. Next transcription will use it. First use may load a second model.`, 'warn'); health(); saveConfigSoon(); };
+  if (sttDeviceEl) sttDeviceEl.onchange = () => { status($('sttStatus'), `STT device set to ${sttDevice()}. The selected model loads after active transcription finishes; retry if busy.`, 'warn'); health(); saveConfigSoon(); };
   const sttModelEl = $('sttModel');
   if (sttModelEl) sttModelEl.onchange = () => { status($('sttStatus'), `Whisper model set to ${sttModel()}. First use downloads/loads that model.`, 'warn'); health(); saveConfigSoon(); };
   const sttBackendEl = $('sttBackend');

@@ -602,7 +602,7 @@ test('a failed permission answer can retry successfully with one canonical histo
     }
     assert.equal(url, 'http://speech.test/v1/audio/speech', 'permission acceptance owns follow-up; do not submit a second transcript');
     speechRequests++;
-    return { ok: true, blob: async () => new Blob(['fixture audio']) };
+    return new Response(new Blob(['fixture audio']));
   };
   await assert.rejects(askAndSpeak('yes'), /Agent unavailable/);
   const pending = askAndSpeak('yes');

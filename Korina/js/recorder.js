@@ -6,6 +6,8 @@ import { resetAdaptiveVad, drawWave } from "./vad.js";
 import { sttDevice, sttModel, sttBackend, effectiveSttLlmModel } from "./settings-ui.js";
 import { recordSttBackend } from "./api.js";
 import { createBoundedRecorder } from "./bounded-recorder.js";
+import { readJsonEvents } from "./sse.js";
+import { responseError } from "./response-body.js";
 
 let microphoneGeneration = 0;
 let microphoneSetup = null;
@@ -126,49 +128,42 @@ export async function transcribeBlob(blob, { signal, isCurrent = () => true } = 
   }
   assertCurrent();
   if (!r.ok) {
-    let j;
-    try { j = await r.json(); } catch { try { j = { detail: await r.text() }; } catch { j = { detail: 'unknown' }; } }
+    const error = await responseError(r, { signal, isCurrent: current });
     assertCurrent();
-    recordSttBackend(null, j.detail || JSON.stringify(j));
-    throw new Error(j.detail || JSON.stringify(j));
+    recordSttBackend(null, error.message);
+    throw error;
   }
-  const reader = r.body.getReader(), dec = new TextDecoder();
-  let buf = '', final = null, pieces = [];
+  let final = null;
+  const pieces = [];
   try {
-    while (true) {
-      const { done, value } = await reader.read();
+    for await (const { event, data: payload } of readJsonEvents(r.body, { isCurrent: current })) {
       assertCurrent();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      const events = buf.split('\n\n');
-      buf = events.pop();
-      for (const raw of events) {
-        let ev = 'message', data = '';
-        for (const line of raw.split('\n')) {
-          if (line.startsWith('event: ')) ev = line.slice(7);
-          else if (line.startsWith('data: ')) data += line.slice(6);
+      if (event === 'status') {
+        if (typeof payload.message !== 'string') throw new Error('Invalid STT status event.');
+        status($('sttStatus'), `STT: ${payload.message}…`, 'warn');
+      } else if (event === 'segment') {
+        if (typeof payload.text !== 'string') throw new Error('Invalid STT transcript segment.');
+        if (payload.text) pieces.push(payload.text);
+        $('transcript').value = pieces.join(' ').trim();
+        status($('sttStatus'), `Streaming STT segment ${payload.index}: ${payload.text}`, 'warn');
+        $('transcriptInfo').textContent = 'Receiving final STT segments…';
+      } else if (event === 'done') {
+        if (typeof payload.text !== 'string') throw new Error('Invalid STT final result.');
+        for (const field of ['seconds', 'duration', 'samples', 'sample_rate']) {
+          if (payload[field] !== undefined && (!Number.isFinite(payload[field]) || payload[field] < 0)) {
+            throw new Error(`Invalid STT final result: ${field}.`);
+          }
         }
-        if (!data) continue;
-        const payload = JSON.parse(data);
-        if (ev === 'status') status($('sttStatus'), `STT: ${payload.message}…`, 'warn');
-        else if (ev === 'segment') {
-          if (payload.text) pieces.push(payload.text);
-          $('transcript').value = pieces.join(' ').trim();
-          status($('sttStatus'), `Streaming STT segment ${payload.index}: ${payload.text}`, 'warn'); $('transcriptInfo').textContent = 'Receiving final STT segments…';
-        } else if (ev === 'done') {
-          final = payload;
-          recordSttBackend(payload, undefined);
-        } else if (ev === 'error') {
-          recordSttBackend(null, payload.detail || 'streaming transcription failed');
-          throw new Error(payload.detail || 'streaming transcription failed');
-        }
+        final = payload;
+        recordSttBackend(payload, undefined);
+      } else if (event === 'error') {
+        throw new Error(typeof payload.detail === 'string' ? payload.detail : 'streaming transcription failed');
       }
     }
   } catch (error) {
     assertCurrent();
+    recordSttBackend(null, error.message);
     throw error;
-  } finally {
-    if (!current()) { try { Promise.resolve(reader.cancel()).catch(() => {}); } catch {} }
   }
   assertCurrent();
   if (!final) throw new Error('streaming transcription ended without final result');

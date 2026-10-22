@@ -28,7 +28,12 @@ export function llmReasoningEnabled() { return $('llmReasoningEnabled')?.checked
 export function sttLlmReasoningEnabled() { return $('sttLlmReasoningEnabled')?.checked ? 'on' : 'off' }
 export function effectiveSttLlmProvider() { return sttLlmProvider() || llmProvider() }
 export function effectiveSttLlmBaseUrl() { return sttLlmBaseUrl() || llmBaseUrl() }
-export function effectiveSttLlmApiKeyEnv() { return sttLlmApiKeyEnv() || String($('llmApiKeyEnv')?.value || '').trim() }
+export function effectiveSttLlmApiKeyEnv() {
+  if (sttLlmApiKeyEnv()) return sttLlmApiKeyEnv();
+  const base = value => String(value).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
+  return base(effectiveSttLlmBaseUrl()) === base(llmBaseUrl())
+    ? String($('llmApiKeyEnv')?.value || '').trim() : '';
+}
 export function effectiveSttLlmModel() {
   const explicit = sttLlmModel();
   if (explicit) return explicit;
