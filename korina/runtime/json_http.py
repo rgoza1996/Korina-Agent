@@ -8,6 +8,7 @@ and slow response bodies. The transport creates no background request workers.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 import time
@@ -206,7 +207,15 @@ def request_bytes(
         headers=headers, json_body=json_body, max_bytes=max_bytes,
         is_current=is_current,
     )
-    return anyio.run(_run_owned_request, operation, is_current)
+    # A worker may inherit sniffio's async-library context marker without
+    # inheriting an event loop. Use the actual asyncio thread state here.
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError('provider HTTP requests cannot run inside a running event loop')
+    return asyncio.run(_run_owned_request(operation, is_current))
 
 
 def request_json(

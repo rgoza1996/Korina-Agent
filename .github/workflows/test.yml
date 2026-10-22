@@ -37,6 +37,27 @@ jobs:
           name: coverage-python-${{ matrix.python-version }}
           path: coverage.xml
 
+  minimum-dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install FFmpeg and declared dependency floors
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          python -m pip install -e '.[test]' -c tests/constraints/minimum.txt
+          python -m pip check
+      - name: Run minimum-dependency tests
+        run: python -m pytest -q --junitxml=minimum-dependencies.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: minimum-dependencies
+          path: minimum-dependencies.xml
+
   lint:
     runs-on: ubuntu-24.04
     steps:

@@ -1,11 +1,14 @@
 """Exercise real sockets: inactivity timeouts alone cannot pass these tests."""
 from __future__ import annotations
 
+import asyncio
+import gc
 import json
 import socket
 import socketserver
 import threading
 import time
+import warnings
 from contextlib import contextmanager
 
 import pytest
@@ -48,6 +51,40 @@ def send_response(connection, body, *, status=200, extra_headers=b''):
         f'HTTP/1.1 {status} Status\r\nContent-Length: {len(body)}\r\n'.encode()
         + extra_headers + b'Connection: close\r\n\r\n' + body
     )
+
+
+def test_worker_http_accepts_copied_async_library_marker():
+    import sniffio
+
+    main_thread = threading.get_ident()
+    with server_for(lambda connection, request: send_response(connection, b'{"ok":true}')) as base:
+        def request_from_worker():
+            assert threading.get_ident() != main_thread
+            assert sniffio.current_async_library() == 'asyncio'
+            with pytest.raises(RuntimeError):
+                asyncio.get_running_loop()
+            return json_http.request_json(base, timeout=1)
+
+        async def run():
+            token = sniffio.current_async_library_cvar.set('asyncio')
+            try:
+                return await asyncio.to_thread(request_from_worker)
+            finally:
+                sniffio.current_async_library_cvar.reset(token)
+
+        assert asyncio.run(run()) == {'ok': True}
+
+
+def test_sync_http_rejects_running_loop_without_unawaited_coroutine_warning():
+    async def run():
+        with pytest.raises(RuntimeError, match='running event loop'):
+            json_http.request_json('http://127.0.0.1:1', timeout=1)
+
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter('always', RuntimeWarning)
+        asyncio.run(run())
+        gc.collect()
+    assert not any('was never awaited' in str(warning.message) for warning in recorded)
 
 
 @pytest.mark.parametrize('phase', ['headers', 'body', 'chunk-header'])
