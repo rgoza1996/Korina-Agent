@@ -49,6 +49,14 @@ korina
 
 Wheels include the frontend, example configuration, and acknowledgement manifest. Generated state lives under `${XDG_DATA_HOME:-~/.local/share}/korina`, so the installed package can be read-only. Editable/source installs keep generated state alongside the tracked `Korina/` assets. `KORINA_APP_DIR` overrides both with a complete runtime tree.
 
+The base wheel serves the UI and API; Whisper and Kokoro remain optional dependencies. For voice, install `ffmpeg`, `espeak-ng`, and the appropriate Torch distribution as described above, then install the wheel with speech extras. Use the actual wheel filename if its version differs:
+
+```bash
+python -m pip install './dist/korina_agent-0.1.0.dev0-py3-none-any.whl[whisper,tts]'
+```
+
+Run `korina` for the app and `korina-tts` in a second terminal with the same environment for Kokoro. The installed TTS launcher needs no source-checkout script. A separately supplied response LLM and model warm-up are still required.
+
 ## Check the stack
 
 ```bash
@@ -107,6 +115,44 @@ From an activated environment in the source checkout:
 ```
 
 The installer records the checkout, runtime directory, and interpreter paths. Relative `KORINA_APP_DIR` values are anchored to the caller's directory before wrappers change directory or write units; `~` expands and symlink traversal is preserved. It uses the active environment, checkout `.venv`, or `python3`; set `KORINA_PYTHON` and optionally `KORINA_TTS_PYTHON` for separate interpreters. Invalid explicit overrides abort installation.
+
+Other shell exports are not copied into the installed units. API keys named by `llm_api_key_env` or `stt_llm_api_key_env`, Whisper/model-path overrides, and TTS/CORS settings must also exist in the relevant service environment. Create private files for those settings:
+
+```bash
+mkdir -p ~/.config/korina
+touch ~/.config/korina/app.env ~/.config/korina/tts.env
+chmod 600 ~/.config/korina/app.env ~/.config/korina/tts.env
+```
+
+Use `NAME=value` lines without `export`. For example:
+
+```ini
+# ~/.config/korina/app.env
+OPENAI_API_KEY=replace-with-your-key
+WHISPER_CPU_THREADS=4
+```
+
+```ini
+# ~/.config/korina/tts.env
+OMP_NUM_THREADS=4
+KORINA_TTS_ALLOWED_ORIGINS=http://127.0.0.1:8001,http://localhost:8001
+```
+
+Set the key variable name in Settings to match the app file. Run `systemctl --user edit korina-voice-lab.service` and add:
+
+```ini
+[Service]
+EnvironmentFile=%h/.config/korina/app.env
+```
+
+Run `systemctl --user edit kokoro-streaming-server.service` and add:
+
+```ini
+[Service]
+EnvironmentFile=%h/.config/korina/tts.env
+```
+
+Apply the changes with `systemctl --user daemon-reload` and `systemctl --user restart korina-voice-lab.service kokoro-streaming-server.service`, then run the read-only stack check. Keep secrets outside Git. These files configure the service processes; the source-checkout shell wrappers still use their caller's environment for provider activation.
 
 Bundled units use `127.0.0.1:8001` for Korina and `127.0.0.1:8880` for Kokoro. Foreground `KORINA_HOST`/`KORINA_PORT` and TTS bind overrides do not reconfigure installed units. Startup requires the relevant installed units and returns an error if their start command or TCP wait fails. For manually customized unit ports, use `--no-wait` and check their actual URL with `scripts/check_stack.py --base URL`.
 

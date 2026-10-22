@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -29,8 +30,8 @@ if [ "$2" = start ] && [ "$3" = "${FAILING_UNIT:-}" ]; then exit 1; fi
 if [ "$2" = stop ] && [ "$3" = "${FAILING_STOP_UNIT:-}" ]; then exit 1; fi
 exit 0
 ''')
-    # A one-iteration wait drives the existing loop through timeout promptly;
-    # fake listeners keep this test independent of services on the host.
+    # One wait iteration keeps timeout checks fast; the ss fixture is used
+    # only by the shutdown wrapper's optional listener report.
     for name, body in [('ss', 'exit 0'), ('sleep', 'exit 0'), ('seq', 'echo 1')]:
         (binary / name).write_text('#!/bin/sh\n' + body + '\n')
     for path in binary.iterdir():
@@ -41,8 +42,8 @@ exit 0
                 PATH=str(binary) + os.pathsep + os.environ['PATH'])
 
 
-def start(env, *args):
-    return subprocess.run(['bash', str(REPO / 'Korina/start.sh'), *args], env=env,
+def start(env, *args, script=REPO / 'Korina/start.sh'):
+    return subprocess.run(['bash', str(script), *args], env=env,
                           capture_output=True, text=True, timeout=10)
 
 
@@ -70,14 +71,36 @@ def test_start_command_failure_does_not_report_success(tmp_path):
 
 def test_failed_readiness_is_nonzero_and_no_wait_explicitly_skips_it(tmp_path):
     env = setup_runtime(tmp_path)
-    waited = start(env)
-    assert waited.returncode != 0
-    assert 'TIMEOUT: Korina' in waited.stderr
-    assert 'Bundled Korina page:' not in waited.stdout
-    no_wait = start(env, '--no-wait')
-    assert no_wait.returncode == 0
-    assert 'readiness was not checked' in no_wait.stdout
-    assert 'TIMEOUT' not in no_wait.stderr
+    # Exercise the production TCP probe on an ephemeral socket, avoiding any
+    # service listening on the real bundled port. Only the wait's port changes.
+    checkout = tmp_path / 'tcp-checkout'
+    scripts = checkout / 'Korina'
+    scripts.mkdir(parents=True)
+    shutil.copyfile(REPO / 'Korina/service-common.sh', scripts / 'service-common.sh')
+    ss_log = tmp_path / 'unexpected-ss.log'
+    env['FAKE_SS_LOG'] = str(ss_log)
+    fake_ss = Path(env['PATH'].split(os.pathsep)[0]) / 'ss'
+    fake_ss.write_text('#!/bin/sh\nprintf "invoked\\n" > "$FAKE_SS_LOG"\nexit 1\n')
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+        script = scripts / 'start.sh'
+        script.write_text((REPO / 'Korina/start.sh').read_text().replace(
+            'wait_port 8001 "Korina"', f'wait_port {port} "Korina"'))
+        waited = start(env, script=script)
+        assert waited.returncode != 0
+        assert 'TIMEOUT: Korina' in waited.stderr
+        assert 'Bundled Korina page:' not in waited.stdout
+        no_wait = start(env, '--no-wait', script=script)
+        assert no_wait.returncode == 0
+        assert 'readiness was not checked' in no_wait.stdout
+        assert 'TIMEOUT' not in no_wait.stderr
+        listener.listen()
+        ready = start(env, script=script)
+        assert ready.returncode == 0, ready.stderr
+        assert f'OK: Korina listening on :{port}' in ready.stdout
+        assert 'Required TCP listeners are available' in ready.stdout
+    assert not ss_log.exists(), 'Startup must not depend on ss for readiness or diagnostics'
 
 
 def test_dry_run_creates_no_config_and_calls_no_manager(tmp_path):

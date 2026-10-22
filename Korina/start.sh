@@ -65,7 +65,18 @@ print('' if v is None else v)
 PY
 }
 
-is_listening() { ss -ltn "sport = :$1" 2>/dev/null | grep -q ":$1"; }
+is_listening() {
+  "$PYTHON_BIN" - "$1" <<'PY'
+import socket
+import sys
+
+try:
+    with socket.create_connection(('127.0.0.1', int(sys.argv[1])), timeout=0.2):
+        pass
+except OSError:
+    raise SystemExit(1)
+PY
+}
 wait_port() {
   local port="$1" label="$2" max_iters="${3:-120}"
   [[ "$NO_WAIT" -eq 1 || "$DRY_RUN" -eq 1 ]] && return 0
@@ -163,9 +174,6 @@ case "$LLM_PROVIDER" in
 esac
 wait_port 8001 "Korina"
 
-echo
-echo "Relevant listeners:"
-ss -ltnp 2>/dev/null | grep -E ':(8001|8880|8080|1234|11434)' || echo "  (none)"
 echo
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "Dry run complete; no services were started."
