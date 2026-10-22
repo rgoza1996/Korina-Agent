@@ -4,15 +4,23 @@ Work is tracked in [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24) a
 
 ## Deterministic and browser checks
 
-Immutable checkpoint `5d0c7a4` passed **960 Python tests with 93% coverage on Python 3.12.3**, **324 executable Node tests**, and **60 real Chromium tests**. Clean Python 3.10.20, 3.11.15, and 3.13.14 environments each passed 959 tests with one intentional skip: the optional actual Whisper decoder is installed and exercised in 3.12. Real FFmpeg compressed-audio limits ran in every environment. Every matrix run has a separate JUnit report and isolated runtime state.
+Immutable checkpoint `96a8d5c` passed **1051 Python tests with 94% coverage on Python 3.12.3**, **357 executable Node tests**, and **76 real Chromium tests**. Clean Python 3.10.20, 3.11.15, and 3.13.14 environments each passed 1050 tests with one intentional skip: the optional actual Whisper decoder is installed and exercised in 3.12. Real FFmpeg compressed-audio limits ran in every environment. Every matrix run has a separate JUnit report and isolated runtime state.
 
-Ruff correctness checks across production code, tests, scripts, and package entrypoints; projectwide mypy over 66 modules; ESLint; and isolated source/wheel builds passed. A separate installed-wheel environment verified all **29 bundled assets**, byte-identical to the committed snapshot, every served JavaScript module, protocol discovery, rejected-settings disk preservation, and writable state outside the package.
+Ruff correctness checks across production code, tests, scripts, and package entrypoints; projectwide mypy over 66 modules; ESLint; and isolated source/wheel builds passed. A separate installed-wheel environment verified all **30 bundled assets**, byte-identical to the committed snapshot, every served JavaScript module, protocol discovery, rejected-settings disk preservation, and writable state outside the package.
 
 Chromium used immutable assets and a freshly started isolated backend. Coverage includes native MediaRecorder/VAD capture, full decodable auto-stop and silent-idle rotation, buffered WAV/PCM SSE playback, suspended AudioContext resume and Stop, settings bootstrap/draft/save ownership, Done/Escape/backdrop close, activation failure/retry, model discovery/candidate credentials, channel discovery/save ownership, permissions, and agent off/on cancellation. Replaced source-text assertions now execute those behaviors; lower Python counts from deleting duplicate harnesses do not remove their runtime coverage.
 
 Backend tests include role-aware provider retention, protected refresh/config conflicts, atomic model-folder edits, bounded catalogs/metadata/completions/events, shared STT capability/fallback policy, resident Whisper leases, malformed ACK recovery, generation-safe permission admission, executor-start retry, explicit channel recovery, connected agent/ACK/TTS cleanup, and real chat/STT socket disconnect/cancellation with the same pool worker recovering. ACK rebuild transactions survive client timeouts; waiting on their health snapshot does not freeze unrelated HTTP requests. Current health ownership rejects old successes and failures before they can change provider status, capture limits, or ACK results.
 
 GitHub Actions jobs did not start because the account payment/spending limit blocked them. These local results do not claim a passing hosted run. The earlier fully passing `fb996a1` checkpoint and actual model observations below remain historical evidence for their stated snapshots.
+
+## Synthesis and channel ownership
+
+At `96a8d5c`, buffered WAV, streamed WAV, and PCM SSE synthesis share request ownership through model preparation and playback. Twenty-four real HTTP fixture cases cover disconnect and AnyIO cancellation during load, first inference, and a later step, plus raw task cancellation for both stream formats. They verify one ASGI receive consumer, no later native step after retirement, retained inference admission until active work drains, and a fresh successful request on the same cached runtime. Eight preparation-error cases retain JSON HTTP 400/500/503 responses before stream headers.
+
+The original four-case streaming audit also reproduced the boundary: previously, closing a client during held model loading still admitted a new first inference step and left fresh speech at HTTP 503. After the fix, loading may finish safely, but its retired request starts no first step; the same cached runtime serves fresh speech. A first step already running finishes before cleanup. These cases use controlled native-work fixtures and do not establish model latency or force cancellation of native computation.
+
+Built-in channel tests cover overlapping HTTP work, reset/off-on transitions, completed reports between initial polling and admission, duplicate suppression followed by newer HTTP output, and event-ring eviction. Admission captures its cursor atomically while the worker is idle; busy requests admit no work and can retry. Reset cancels the old wait, duplicate status carries its own bounded report, and lost history requires explicit recovery. Custom adapter memory and legacy HTTP coalescing retain their existing contracts.
 
 ## Transcription disconnect recovery
 
@@ -120,6 +128,18 @@ Immutable `d14a371` completed the same actual CPU model pipeline in **27.537 sec
 Final Whisper handled 8.82 seconds / 141,120 samples in 4.669 seconds and returned the same transcript and known opening-word error. Actual response inference took 5.491 seconds (217 prompt / 9 generated tokens). Kokoro produced 61,200 samples at 24 kHz; the 2.55-second native buffer had nonzero RMS and reached `ended`. Actual agent inference took 20.278 seconds (465 / 64 tokens), and its report appeared exactly once in the next actual response (328 / 10 tokens, 7.079 seconds inference). All six read-only smoke requests passed, including enabled-agent readiness. Stop released capture, no page/console errors occurred, and disposable services shut down.
 
 The response and agent still mostly echoed input. This repeat verifies the refactored transport, state, and playback together; it does not establish useful presentation-model quality or physical microphone/speaker performance.
+
+### Repeat at `96a8d5c`
+
+The same pinned CPU weights and fake-microphone input completed another actual-model run after the synthesis and channel ownership changes. Native playback finished **36.608 seconds** after Live was clicked. Whisper handled 8.82 seconds / 141,120 samples in 3.241 seconds, returning “The Long World. This is a local speech test. The Blue Mysicle is beside the garden.” Both the opening and bicycle recognition differ from the intended speech. The response mostly repeated that input; its 218 prompt / 21 generated tokens took 8.443 seconds.
+
+Kokoro returned three real SSE chunks totaling 161,400 samples at 24 kHz, or 6.725 seconds of speech. All three native buffers had nonzero RMS and reached `ended`. The response and audio were longer than the earlier repeat, so these single observations do not establish a performance regression or improvement.
+
+Actual agent inference completed in 18.653 seconds (480 / 54 tokens), and its 235-character report entered the next actual response exactly once. That response took 8.125 seconds (331 / 21 tokens). Full read-only readiness passed with the agent enabled; no page/console errors occurred, Stop released capture, and all three disposable service ports closed.
+
+Two additional checks used the same running services. Buffered Kokoro returned HTTP 200 with valid mono 24 kHz, 16-bit WAV: 60,600 frames, nonzero RMS, 4.543 seconds generation. A separate in-process Python channel completed actual agent inference and returned a finished nonempty report without error in 13.687 seconds; its model call took 13.526 seconds (437 / 36 tokens). Its worker shut down afterward.
+
+The tiny model still echoed input and reporting instructions. This verifies actual inference, transport, completion ownership, and native playback. Useful presentation-model quality and physical audio still require rehearsal.
 
 ## Agent and permission integration
 
