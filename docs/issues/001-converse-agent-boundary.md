@@ -1,8 +1,10 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Issue: Converse Should Be a Generic Chat/Voice Channel
 
 ## Status
 
-Draft — repo-tracked. gh CLI unavailable on roggoz; paste body into GitHub manually.
+Draft — repo-tracked. gh CLI unavailable on demo host; paste body into GitHub manually.
 Labels: architecture, refactor, agent-adapter, converse
 Milestone: Converse channel compatibility
 
@@ -84,7 +86,7 @@ package, one frontend bundle, and one shared mutable singleton.
 ## Non-Goals
 
 - Do not rewrite all agent logic in this issue.
-- Do not break the live roggoz service.
+- Do not break the live demo host service.
 - Do not move or rename runtime data directories.
 - Do not create separate repos yet.
 

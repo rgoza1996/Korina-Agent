@@ -1,6 +1,8 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Phase 1.10 Verification
 
-Verified on roggoz at `2026-06-22 21:00 PDT` on branch `beta`.
+Verified on demo host at `2026-06-22 21:00 PDT` on branch `beta`.
 
 ## Commit baseline
 
@@ -18,7 +20,7 @@ Verified on roggoz at `2026-06-22 21:00 PDT` on branch `beta`.
 Command:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 tests/regression_smoke.py
 ```
 

@@ -1,22 +1,24 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Phase 5 — Process Supervision Unification Plan
 
 > **For Hermes:** Use `subagent-driven-development` to implement this plan task-by-task. Use a fresh subagent for each task and verify against the live runtime after every operational change.
 
 **Goal:** Standardize Korina-owned long-running processes on one supervisor so start/stop/restart behavior is reliable, auditable, and boot-friendly.
 
-**Architecture:** Phase 5 standardizes on `systemd --user` because roggoz already uses it for `korina-voice-lab.service` and `llama-server.service`. Tracked unit files live under `deploy/systemd/`; `Korina/install-services.sh` installs them into `~/.config/systemd/user/`; `Korina/start.sh` and `Korina/stop.sh` become compatibility wrappers around `systemctl --user`.
+**Architecture:** Phase 5 standardizes on `systemd --user` because demo host already uses it for `korina-voice-lab.service` and `llama-server.service`. Tracked unit files live under `deploy/systemd/`; `Korina/install-services.sh` installs them into `~/.config/systemd/user/`; `Korina/start.sh` and `Korina/stop.sh` become compatibility wrappers around `systemctl --user`.
 
 **Tech Stack:** Bash, `systemd --user`, FastAPI/Uvicorn service on `:8001`, Kokoro streaming TTS on `:8880`, existing provider-manager systemd integration for llama.cpp.
 
 **Target branch:** `beta`
 
-**Runtime/source split:** Source checkout is `/home/roggoz/Korina-Agent`; live runtime is `/home/roggoz/Korina`. Editing source does **not** update runtime until files are synced. Phase 5 changes under `Korina/` must be copied to `/home/roggoz/Korina/` before live wrapper tests.
+**Runtime/source split:** Source checkout is `/path/to/Korina-Agent`; live runtime is `/path/to/Korina`. Editing source does **not** update runtime until files are synced. Phase 5 changes under `Korina/` must be copied to `/path/to/Korina/` before live wrapper tests.
 
 **Current evidence baseline (2026-06-23):**
 
 - `korina-voice-lab.service` already exists and is enabled under `systemd --user`, but it currently `Wants=llama-server.service` and is not tracked in the repo.
 - Kokoro streaming TTS is running as a direct Python process on `:8880`; the existing disabled `kokoro-tts.service` points at old `miniconda3/envs/xttsenv` and `kokoro-server.py` paths and is **not** the current Korina Kokoro server.
-- `Korina/start.sh` and `Korina/stop.sh` are stale: both reference `/home/roggoz/korina_voice_lab.py`, but the live entrypoint is `/home/roggoz/Korina/korina_voice_lab.py`.
+- `Korina/start.sh` and `Korina/stop.sh` are stale: both reference `/home/demo/korina_voice_lab.py`, but the live entrypoint is `/path/to/Korina/korina_voice_lab.py`.
 - `llama-server.service` remains provider-managed by `korina/services/provider_manager.py`; Phase 5 must not make the UI always start a heavyweight local model server.
 
 **Pre-execution audit gate:** A post-Phase-4 audit found Phase 4 follow-up issues in the audio-probe path. They are not process-supervision blockers, but the executor should report them before starting Phase 5 code execution so the user can decide whether to patch Phase 4 first.
@@ -55,7 +57,7 @@ Out of scope:
 **Verification:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 grep -n "systemd --user\|llama-server" README.md docs/refactor/PROGRESS.md
 ```
 
@@ -76,7 +78,7 @@ grep -n "systemd --user\|llama-server" README.md docs/refactor/PROGRESS.md
 **Step:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 mkdir -p deploy/systemd
 ```
 
@@ -182,7 +184,7 @@ Expected: no errors.
 **Commands:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add deploy/systemd/korina-voice-lab.service deploy/systemd/kokoro-streaming-server.service
 git commit -m "chore: add systemd user units for Korina services"
 git push origin beta
@@ -225,7 +227,7 @@ require_unit() {
   if [[ ! -f "$UNIT_SRC/$file" ]]; then
     echo "ERROR: missing $UNIT_SRC/$file" >&2
     echo "Run this script from the source checkout, e.g.:" >&2
-    echo "  cd /home/roggoz/Korina-Agent && ./Korina/install-services.sh" >&2
+    echo "  cd /path/to/Korina-Agent && ./Korina/install-services.sh" >&2
     exit 1
   fi
 }
@@ -287,7 +289,7 @@ Note: script intentionally has no `--help` handler in the first version; `bash -
 **Commands:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add Korina/install-services.sh
 git commit -m "chore: add Korina systemd service installer"
 git push origin beta
@@ -318,7 +320,7 @@ require_unit() {
   if ! systemctl --user cat "$unit" >/dev/null 2>&1; then
     echo "ERROR: $unit is not installed." >&2
     echo "Install tracked units from the source checkout:" >&2
-    echo "  cd /home/roggoz/Korina-Agent && ./Korina/install-services.sh" >&2
+    echo "  cd /path/to/Korina-Agent && ./Korina/install-services.sh" >&2
     exit 1
   fi
 }
@@ -412,7 +414,7 @@ bash -n Korina/stop.sh
 **Commands:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add Korina/start.sh Korina/stop.sh
 git commit -m "chore: route Korina lifecycle scripts through systemd"
 git push origin beta
@@ -447,7 +449,7 @@ Korina-owned long-running services are managed with `systemd --user`:
 Install/update user units from the source checkout:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 ./Korina/install-services.sh
 ```
 
@@ -498,7 +500,7 @@ grep -n "Process supervision\|kokoro-streaming-server.service\|journalctl" READM
 **Commands:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add README.md
 git commit -m "docs: document Korina systemd user service flow"
 git push origin beta
@@ -510,14 +512,14 @@ git push origin beta
 
 ## Phase 5.6 — Runtime installation and verification
 
-### Task 5.6.1 — Install units on roggoz
+### Task 5.6.1 — Install units on demo host
 
 **Objective:** Apply tracked units to the user systemd directory.
 
 **Commands:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 ./Korina/install-services.sh
 ```
 
@@ -537,21 +539,21 @@ Expected: both units exist; both are enabled.
 
 ### Task 5.6.2 — Sync runtime wrappers
 
-**Objective:** Ensure `/home/roggoz/Korina/start.sh` and `/home/roggoz/Korina/stop.sh` match source.
+**Objective:** Ensure `/path/to/Korina/start.sh` and `/path/to/Korina/stop.sh` match source.
 
 **Commands:**
 
 ```bash
-rsync -av /home/roggoz/Korina-Agent/Korina/start.sh /home/roggoz/Korina/start.sh
-rsync -av /home/roggoz/Korina-Agent/Korina/stop.sh /home/roggoz/Korina/stop.sh
-chmod +x /home/roggoz/Korina/start.sh /home/roggoz/Korina/stop.sh
+rsync -av /path/to/Korina-Agent/Korina/start.sh /path/to/Korina/start.sh
+rsync -av /path/to/Korina-Agent/Korina/stop.sh /path/to/Korina/stop.sh
+chmod +x /path/to/Korina/start.sh /path/to/Korina/stop.sh
 ```
 
 **Verification:**
 
 ```bash
-cmp -s /home/roggoz/Korina-Agent/Korina/start.sh /home/roggoz/Korina/start.sh && echo start-sync-ok
-cmp -s /home/roggoz/Korina-Agent/Korina/stop.sh /home/roggoz/Korina/stop.sh && echo stop-sync-ok
+cmp -s /path/to/Korina-Agent/Korina/start.sh /path/to/Korina/start.sh && echo start-sync-ok
+cmp -s /path/to/Korina-Agent/Korina/stop.sh /path/to/Korina/stop.sh && echo stop-sync-ok
 ```
 
 ---
@@ -566,7 +568,7 @@ cmp -s /home/roggoz/Korina-Agent/Korina/stop.sh /home/roggoz/Korina/stop.sh && e
 systemctl --user stop korina-voice-lab.service || true
 
 # Exact-match only: do not kill broad python processes.
-pids=$(pgrep -f '^/home/roggoz/kokoro-env4/bin/python /home/roggoz/kokoro-streaming-server.py$' || true)
+pids=$(pgrep -f '^/home/demo/kokoro-env4/bin/python /home/demo/kokoro-streaming-server.py$' || true)
 if [[ -n "$pids" ]]; then
   kill $pids
 fi
@@ -598,8 +600,8 @@ ss -ltnp | grep -E ':8001|:8880'
 
 **Expected:**
 
-- `:8001` is served by `/home/roggoz/kokoro-env4/bin/python /home/roggoz/Korina/korina_voice_lab.py`
-- `:8880` is served by `/home/roggoz/kokoro-env4/bin/python /home/roggoz/kokoro-streaming-server.py`
+- `:8001` is served by `/home/demo/kokoro-env4/bin/python /path/to/Korina/korina_voice_lab.py`
+- `:8880` is served by `/home/demo/kokoro-env4/bin/python /home/demo/kokoro-streaming-server.py`
 - no restart loop in `systemctl --user status`
 
 ---
@@ -633,7 +635,7 @@ PY
 **Commands:**
 
 ```bash
-cd /home/roggoz/Korina
+cd /path/to/Korina
 ./stop.sh
 ss -ltnp | grep -E ':8001|:8880' || true
 
@@ -654,7 +656,7 @@ curl -fsS http://127.0.0.1:8880/health >/tmp/kokoro-health-after-wrapper.json
 **Commands:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe
 ```
 
@@ -681,7 +683,7 @@ journalctl --user -u kokoro-streaming-server.service --since "10 minutes ago" --
 
 - no restart loops
 - no missing file errors
-- no stale `/home/roggoz/korina_voice_lab.py` path
+- no stale `/home/demo/korina_voice_lab.py` path
 - Uvicorn started on `0.0.0.0:8001`
 - Kokoro started on `0.0.0.0:8880`
 
@@ -702,17 +704,17 @@ journalctl --user -u kokoro-streaming-server.service --since "10 minutes ago" --
 ```markdown
 ## Phase 5 — Process supervision unification
 
-Phase 5 result: Korina Voice Lab and Kokoro streaming TTS are both managed by `systemd --user`. `Korina/start.sh` and `Korina/stop.sh` are compatibility wrappers around `systemctl --user`. Runtime services were installed from tracked units under `deploy/systemd/` and verified on roggoz.
+Phase 5 result: Korina Voice Lab and Kokoro streaming TTS are both managed by `systemd --user`. `Korina/start.sh` and `Korina/stop.sh` are compatibility wrappers around `systemctl --user`. Runtime services were installed from tracked units under `deploy/systemd/` and verified on demo host.
 
 - [✓] 5.1 supervisor decision — standardized on `systemd --user`; llama.cpp remains managed by provider activation; LM Studio/Ollama behavior unchanged.
 - [✓] 5.2 unit files — added `deploy/systemd/korina-voice-lab.service`, `deploy/systemd/kokoro-streaming-server.service`, and `Korina/install-services.sh`; updated lifecycle scripts and README.
-- [✓] 5.3 verify — installed units on roggoz, stopped old/manual processes, restarted units, verified `:8001` and `:8880`, `/api/health`, Kokoro `/health`, frontend static assets, lifecycle wrappers, and regression smoke.
+- [✓] 5.3 verify — installed units on demo host, stopped old/manual processes, restarted units, verified `:8001` and `:8880`, `/api/health`, Kokoro `/health`, frontend static assets, lifecycle wrappers, and regression smoke.
 ```
 
 **Commit:**
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add docs/refactor/PROGRESS.md
 git commit -m "docs: mark Phase 5 process supervision complete"
 git push origin beta
@@ -731,7 +733,7 @@ When Phase 5 execution completes, report:
 5. health endpoint output summary
 6. wrapper lifecycle test result
 7. regression smoke command and pass count
-8. whether user lingering is enabled (`loginctl show-user roggoz -p Linger`)
+8. whether user lingering is enabled (`loginctl show-user demo host -p Linger`)
 
 ---
 
@@ -739,7 +741,7 @@ When Phase 5 execution completes, report:
 
 - **Do not use broad process kills.** Only stop exact known Korina/Kokoro processes or systemd units.
 - **Do not make `korina-voice-lab.service` want/require `llama-server.service` unless the user explicitly approves.** Provider activation owns local LLM lifecycle.
-- **Do not treat source edits as live.** Sync runtime wrappers before testing `/home/roggoz/Korina/start.sh` and `/home/roggoz/Korina/stop.sh`.
+- **Do not treat source edits as live.** Sync runtime wrappers before testing `/path/to/Korina/start.sh` and `/path/to/Korina/stop.sh`.
 - **Do not overwrite runtime `config.json`.** Phase 5 should not touch runtime config.
 - **Do not reuse old `kokoro-tts.service` without explicitly migrating it.** It points to old paths and a different server script.
 - **If full regression fails only because the configured chat endpoint is down, do not claim Phase 5 broke chat.** Re-run the supervision-focused smoke with `--no-chat --no-transcribe`, and report the endpoint availability separately.

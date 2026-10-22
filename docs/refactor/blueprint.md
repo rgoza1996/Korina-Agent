@@ -1,3 +1,5 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Korina Agent Refactor Blueprint
 
 > Companion to `architecture-report.md`. Reads that first for the "why". This document is the "what" and the "in what order".
@@ -146,7 +148,7 @@ This is technically Phase 2 work but it's a one-line fix that's directly part of
 
 After all Phase 0 commits:
 
-- [ ] Run the regression checklist from the prior session against roggoz live.
+- [ ] Run the regression checklist from the prior session against demo host live.
 - [ ] Confirm `/api/health` reports correctly.
 - [ ] Confirm provider activation still works.
 - [ ] Confirm barge-in still interrupts.
@@ -327,7 +329,7 @@ The repo has been invoking `python3 korina_voice_lab.py` to start the server.
 
 ### Step 1.10 — Phase 1 verification
 
-- [ ] **Run** regression from Phase 0.7 on roggoz.
+- [ ] **Run** regression from Phase 0.7 on demo host.
 - [ ] **Verify** `/api/health`, `/api/config`, `/api/models`, `/api/chat`, `/api/transcribe*`, `/api/acks*`, `/api/agent*` all behave identically to before.
 - [ ] **Diff** the OpenAPI schema (`/openapi.json`) before and after; only new tags should differ, not paths or response shapes.
 
@@ -617,7 +619,7 @@ Korina/
 
 ### Step 5.3 — Phase 5 verification
 
-- [ ] On roggoz, run `install-services.sh` and `systemctl --user daemon-reload`.
+- [ ] On demo host, run `install-services.sh` and `systemctl --user daemon-reload`.
 - [ ] Stop the old nohup processes, start the new units.
 - [ ] Verify the same functional behavior.
 
@@ -725,7 +727,7 @@ Copy this into `docs/refactor/PROGRESS.md` and tick as you go.
 - [ ] Phase 0.4 agent_api_key docs
 - [ ] Phase 0.5 secrets contract
 - [ ] Phase 0.6 display label for agent
-- [ ] Phase 0.7 verify on roggoz
+- [ ] Phase 0.7 verify on demo host
 - [ ] Phase 1.1 directory layout
 - [ ] Phase 1.2 paths/config
 - [ ] Phase 1.3 runtime state

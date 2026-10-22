@@ -1,3 +1,5 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Plan: Converse Agent Channel Adapter Separation
 
 ## Overview
@@ -8,7 +10,7 @@ protocol. Korina Agent becomes `KorinaAgentAdapter`. Future adapters (Hermes,
 OpenClaw) are added as new files without touching Converse.
 
 **Constraints:**
-- Never break the live roggoz service.
+- Never break the live demo host service.
 - Preserve all `/api/agent/*` endpoints as aliases during migration.
 - Migrate flat `agent_*` config keys with backward-compat aliases.
 - Never touch runtime data (`config.json`, `Ack/`, `logs/`).
@@ -23,7 +25,7 @@ OpenClaw) are added as new files without touching Converse.
 ### 0.1 — Test baseline
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 -m pytest -q 2>&1 | tee /tmp/baseline-pytest.txt
 ```
 
@@ -76,7 +78,7 @@ git commit -m "docs(phase0): baseline inventory"
 ## Phase 1 — Schema Contract
 
 **Goal:** Define wire protocol in `korina/schemas.py`.
-Pydantic v2 confirmed on roggoz (`pydantic==2.13.0`).
+Pydantic v2 confirmed on demo host (`pydantic==2.13.0`).
 
 ```python
 import time
@@ -287,7 +289,7 @@ wraps typed `AgentEvent` back into dict for the frontend — no frontend change 
 ## Phase 6 — Config Namespace Migration
 
 **Goal:** Flat `agent_*` keys -> `agents: { current, adapters: {...} }` with
-backward-compat aliases so existing roggoz installs keep working.
+backward-compat aliases so existing demo host installs keep working.
 
 **Current flat keys (from Phase 0):**
 `agent_provider`, `agent_model`, `agent_yolo_mode`, `agent_thinking_level`,
@@ -480,7 +482,7 @@ docs/
 ## Rollback
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git log --oneline -3   # find last good commit
 git reset --hard <sha>
 bash scripts/phase2_autopilot.sh

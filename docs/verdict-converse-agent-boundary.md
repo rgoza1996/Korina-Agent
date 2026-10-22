@@ -53,7 +53,7 @@ The Phase 3+4 work is necessary but not sufficient. Without a package split, the
 
 The Korina Actions pipeline has been red since `49ac4a8` (2026-07-04), well before any Converse/Agent split work. Two distinct bugs:
 
-- **Hardcoded local paths in frontend tests** — three tests referenced `/home/roggoz/...` instead of repo-relative paths. Fixed in `526409d` via `Path(__file__).resolve().parents[2]` + a `_node_bin()` helper that `pytest.skip()`-cleanly when node isn't available.
+- **Hardcoded local paths in frontend tests** — three tests referenced `/home/demo/...` instead of repo-relative paths. Fixed in `526409d` via `Path(__file__).resolve().parents[2]` + a `_node_bin()` helper that `pytest.skip()`-cleanly when node isn't available.
 - **`FakeWav(Path)` subclassing in `test_silent_empty_fallback.py`** — Python 3.11 `pathlib.Path` rejects subclasses that don't call `super().__new__()`.
 
 Neither is causally related to the Converse/Agent split.

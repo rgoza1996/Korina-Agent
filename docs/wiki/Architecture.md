@@ -1,37 +1,35 @@
-# Architecture Overview
+# Architecture
 
-Full source-grounded report: [docs/refactor/architecture-report.md](../refactor/architecture-report.md)
-
-## Product split
-
-- **Korina Converse** — local-first voice/design chat channel for agents. It owns the human-facing loop: microphone, VAD, STT, response LLM, TTS, barge-in, interrupts, and permission prompts.
-- **Korina Agent** — local-first agent designed around Korina Converse's voice-input focus. It currently maintains state reports/events and is planned to grow into a fuller execution runtime.
-
-## Runtime shape
+Korina Converse owns the human-facing voice loop. Korina Agent receives bounded conversation snapshots and emits background reports, injection context, or permission requests. The current agent does not execute external tools.
 
 ```text
-Browser / Korina Converse UI
-  -> FastAPI backend on :8001
-    -> STT path: faster-whisper or compatible multimodal/audio LLM
-    -> Response LLM path: local/OpenAI-compatible provider
-    -> TTS path: Kokoro/OpenAI-compatible endpoint
-    -> Agent side channel: /api/agent/* events, injections, permission answers
+Browser ES modules
+  microphone → adaptive VAD → STT upload/stream
+                           → response LLM → Kokoro/OpenAI-compatible TTS
+  transcript snapshots → agent adapter → bounded worker → cursor-based events
+
+FastAPI routes → small service functions → configured model endpoints
 ```
 
-## Current implementation highlights
+## Boundaries
 
-- Python backend package under `korina/` with route modules and service modules.
-- Browser frontend split into native ES modules under `Korina/js/`.
-- Backend-owned provider registry exposed by `GET /api/capabilities`.
-- Model catalog/capability helpers for endpoint-loaded models, local GGUFs, LM Studio catalogs, and mmproj sidecars.
-- CI-safe pytest suite plus separate live regression smoke script.
+- `app_factory.create_app()` composes routes, static assets, CORS, request limits, and lifecycle cleanup.
+- `routes/stt.py` prepares audio and selects streaming/fallback paths; shared Whisper helpers produce consistent buffered/partial/SSE results. Blocking model work runs outside the event loop.
+- `services/agent_service.py` owns one worker, one coalesced follow-up prompt, at most five pending injections, a 100-event ring, and reset generation tokens. Session reset invalidates stale in-flight results.
+- `agents/` defines adapters. `converse/` defines channel registration and cursor-based response delivery. Hermes remains a stub.
+- `services/provider_manager.py` owns local provider activation. Path discovery and executable/socket ownership checks replace personal host assumptions and broad process patterns.
+- `runtime/limits.py` rejects oversized bodies before request parsing: 2 MiB JSON/control requests and 50 MiB transcription uploads. Schemas also bound fields and conversation turns.
+- `tts/` owns optional Kokoro runtime, bounded synthesis admission, and streaming/buffered responses.
+- `Korina/js/state.js` holds active UI state. `agent-ui.js` is the agent delivery path; a dormant duplicate EventBus was removed.
 
-## Main follow-up themes
+## Health and readiness
 
-1. Formal agent protocol for third-party agents.
-2. Korina Agent execution/runtime layer beyond state reports.
-3. Composite readiness across backend, LLM, STT, TTS, ACK, and static assets.
-4. Portable install/config paths.
-5. Probe-backed model capabilities.
-6. Optional live/self-hosted regression tier.
-7. Public-doc vs internal-runbook cleanup.
+`GET /api/health` remains HTTP 200 for a live backend with unavailable models. Independent provider probes run concurrently; matching endpoint/model/credentials reuse a probe within that request. Runtime blocks describe response LLM, audio-model STT, agent, TTS, Whisper, and ACK state.
+
+`GET /api/ready` returns a check map for frontend assets, response LLM, selected STT dependencies, TTS, and enabled agent. It returns 503 when a required check fails. A reachable lazy Kokoro pipeline counts as available; rehearsal must warm actual models.
+
+## Assets and state
+
+Source checkouts serve tracked `Korina/` files. Built wheels contain the same allowlisted assets; generated config/audio goes into the user data directory. `KORINA_APP_DIR` selects a complete alternate runtime tree. Optional binaries and model roots come from configuration, environment overrides, or discovery.
+
+See [setup](../../README.md), [testing](../testing.md), [hackathon rehearsal](../hackathon.md), and [tracker #23](https://github.com/rgoza1996/Korina-Agent/issues/23). Earlier architecture reports and phase plans are historical records, not the current deployment contract.

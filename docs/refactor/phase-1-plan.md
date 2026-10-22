@@ -1,3 +1,5 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Phase 1 — Backend Modularization Implementation Plan
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
@@ -19,10 +21,10 @@
 Before starting Task 1.1, the controller verifies:
 
 1. Source checkout on `beta`, working tree clean.
-2. Live runtime `/home/roggoz/Korina/` matches source `Korina/`.
+2. Live runtime `/path/to/Korina/` matches source `Korina/`.
 3. `systemctl --user is-active korina-voice-lab.service` returns `active`.
 4. `curl -fsS http://127.0.0.1:8001/api/health` returns `{"ok": true, ...}`.
-5. SSH key on roggoz is set up; `git push origin beta` works from roggoz.
+5. SSH key on demo host is set up; `git push origin beta` works from demo host.
 
 If any check fails, stop and surface to the user before dispatching the first subagent.
 
@@ -44,7 +46,7 @@ If any check fails, stop and surface to the user before dispatching the first su
 
 1. Verify monolith still starts: `systemctl --user is-active korina-voice-lab.service` and `curl -fsS http://127.0.0.1:8001/api/health`.
 2. Create directories and `touch` each `__init__.py` and module file.
-3. Verify import works: `cd /home/roggoz/Korina-Agent && python3 -c "import korina; print(korina.__file__)"`.
+3. Verify import works: `cd /path/to/Korina-Agent && python3 -c "import korina; print(korina.__file__)"`.
 4. Verify live service is still up after the new package directory exists.
 5. Commit: `git add korina/ && git commit -m "refactor: scaffold korina/ package layout (no behavior change)" && git push origin beta`.
 

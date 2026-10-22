@@ -1,3 +1,5 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Phase 2 — Single Source of Truth for Provider/Model Metadata
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task. Each task = one commit on `beta`. All work is behavior-preserving; no new runtime dependencies, no new globals.
@@ -16,7 +18,7 @@
 
 - `beta` HEAD: `95c6957` (Phase 1 follow-up: clean service imports, critical-cue ordering, config.json git-hygiene check)
 - Phase 0+1: complete. `korina/korina_voice_lab.py` is the 3-line shim; real app in `korina/app_factory.py`.
-- Live runtime at `/home/roggoz/Korina/` matches source for all code files; `config.json` is the only diff (expected, runtime user data — do not touch).
+- Live runtime at `/path/to/Korina/` matches source for all code files; `config.json` is the only diff (expected, runtime user data — do not touch).
 - `korina/util/presets.py` currently has `_PROVIDER_PRESETS` (response-LLM only, 3 entries) and `_LOCAL_BASE_URLS` — these are the *Python* source of truth today.
 - `Korina/index.html:355` has a parallel JS `PROVIDER_BASE_URL_PRESETS` (same 3 entries). The two are duplicated.
 - `setBaseUrlEditability()` at `Korina/index.html:371` hardcodes `llmProvider()=="openai-compatible"` for response-LLM and `sttLlmProvider()=="openai-compatible"` for multimodal-STT. Agent provider has **no** base-URL editability rule at all (real bug Phase 2 should fix).
@@ -206,7 +208,7 @@ def capabilities_for_section(section: str) -> dict[str, dict[str, Any]]:
 **Step 2:** Verify compile + import surface:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 -m py_compile korina/util/presets.py
 PYTHONPATH=. python3 -c "
 from korina.util.presets import (
@@ -236,8 +238,8 @@ Expected: `presets registry OK`. Any other output is a failure.
 **Step 3:** Smoke-check the live service still serves `/api/health` (no restart needed — `presets.py` isn't imported at module-load time by any route, only by `provider_manager` on demand):
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net 'curl -fsS http://127.0.0.1:8001/api/health | head -c 80 && echo'
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net 'curl -fsS http://127.0.0.1:8001/api/health | head -c 80 && echo'
 ```
 
 Expected: `{"ok":true,...`.
@@ -245,7 +247,7 @@ Expected: `{"ok":true,...`.
 **Step 4:** Commit:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add korina/util/presets.py
 git commit -m "feat(capabilities): add PROVIDER_CAPABILITIES registry
 
@@ -326,7 +328,7 @@ class CapabilitiesResponse(BaseModel):
 **Step 2:** Compile and import check:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 -m py_compile korina/schemas_capabilities.py
 PYTHONPATH=. python3 -c "
 from korina.schemas_capabilities import (
@@ -347,7 +349,7 @@ Expected: `sections: ['llama.cpp', 'lmstudio', 'ollama', 'openai-compatible'] | 
 **Step 3:** Commit:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add korina/schemas_capabilities.py
 git commit -m "feat(capabilities): add Pydantic schemas for /api/capabilities
 
@@ -411,7 +413,7 @@ Then in the `create_app()` body where the routers are mounted (look for `app.inc
 **Step 3:** Verify py_compile:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 -m py_compile korina/routes/capabilities.py
 python3 -m py_compile korina/app_factory.py
 ```
@@ -419,13 +421,13 @@ python3 -m py_compile korina/app_factory.py
 **Step 4:** Sync to live and restart:
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net '
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net '
     set -e
-    cp /home/roggoz/Korina-Agent/korina/util/presets.py       /home/roggoz/Korina/korina/util/presets.py
-    cp /home/roggoz/Korina-Agent/korina/schemas_capabilities.py /home/roggoz/Korina/korina/schemas_capabilities.py
-    cp /home/roggoz/Korina-Agent/korina/routes/capabilities.py  /home/roggoz/Korina/korina/routes/capabilities.py
-    cp /home/roggoz/Korina-Agent/korina/app_factory.py         /home/roggoz/Korina/korina/app_factory.py
+    cp /path/to/Korina-Agent/korina/util/presets.py       /path/to/Korina/korina/util/presets.py
+    cp /path/to/Korina-Agent/korina/schemas_capabilities.py /path/to/Korina/korina/schemas_capabilities.py
+    cp /path/to/Korina-Agent/korina/routes/capabilities.py  /path/to/Korina/korina/routes/capabilities.py
+    cp /path/to/Korina-Agent/korina/app_factory.py         /path/to/Korina/korina/app_factory.py
     systemctl --user restart korina-voice-lab.service
     sleep 1
     systemctl --user is-active korina-voice-lab.service
@@ -438,8 +440,8 @@ Expected: `active`, then `{"ok":true,...`.
 **Step 5:** Probe the new endpoint:
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net '
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net '
     curl -fsS http://127.0.0.1:8001/api/capabilities | python3 -m json.tool
 '
 ```
@@ -449,7 +451,7 @@ Expected: a JSON object with `providers` (4 entries: llama.cpp, lmstudio, ollama
 **Step 6:** Commit:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add korina/routes/capabilities.py korina/app_factory.py
 git commit -m "feat(capabilities): serve /api/capabilities
 
@@ -507,7 +509,7 @@ def test_29_capabilities_endpoint():
 **Step 4:** Compile + run:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 -m py_compile tests/regression_smoke.py
 python3 tests/regression_smoke.py
 ```
@@ -517,7 +519,7 @@ Expected: `29/29 passed` (or whatever the existing run summary says, with +1). A
 **Step 5:** Commit:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add tests/regression_smoke.py
 git commit -m "test: cover /api/capabilities contract
 
@@ -580,11 +582,11 @@ function getAgentProviderCaps(provider){
 **Step 4:** Verify HTML still parses + extract the JS and run `node --check`:
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net '
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net '
     python3 -c "
 import re
-with open(\"/home/roggoz/Korina-Agent/Korina/index.html\") as f:
+with open(\"/path/to/Korina-Agent/Korina/index.html\") as f:
     html = f.read()
 m = re.search(r\"<script>([\\s\\S]*?)</script>\", html)
 open(\"/tmp/index.html.js\",\"w\").write(m.group(1))
@@ -599,7 +601,7 @@ Expected: `JS syntax OK`.
 **Step 5:** Commit (frontend still has the old presets fallback — the registry + fetch alone, not yet wired to all call sites):
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add Korina/index.html
 git commit -m "feat(frontend): fetch /api/capabilities on boot
 
@@ -682,10 +684,10 @@ function providerPresetBaseUrl(provider){
 **Step 7:** Sync to live, restart, smoke:
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net '
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net '
     set -e
-    cp /home/roggoz/Korina-Agent/Korina/index.html /home/roggoz/Korina/index.html
+    cp /path/to/Korina-Agent/Korina/index.html /path/to/Korina/index.html
     systemctl --user restart korina-voice-lab.service
     sleep 1
     systemctl --user is-active korina-voice-lab.service
@@ -701,7 +703,7 @@ Expected: `active`, then `{"ok":true,...`, then a count >= 1 for `loadCapabiliti
 **Step 8:** Commit:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add Korina/index.html
 git commit -m "refactor(frontend): source response-LLM and STT provider rules from /api/capabilities
 
@@ -772,7 +774,7 @@ def test_31_capabilities_set_base_url_editability_for_agent():
 **Step 3:** Run the suite:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 tests/regression_smoke.py
 ```
 
@@ -781,7 +783,7 @@ Expected: 30/30 (or 30/N where N=30) passed. Any new failure = stop and report.
 **Step 4:** Commit:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add tests/regression_smoke.py
 git commit -m "test: cover /api/capabilities frontend wiring
 
@@ -932,7 +934,7 @@ asking that, read this first.
 **Step 2:** Commit:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add docs/capabilities.md
 git commit -m "docs: provider switch contract for Phase 2 capabilities
 
@@ -985,7 +987,7 @@ def test_32_capabilities_anthropic_default_and_editability():
 **Step 3:** Run:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 python3 tests/regression_smoke.py
 ```
 
@@ -994,7 +996,7 @@ Expected: 31/31 passed.
 **Step 4:** Commit:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add tests/regression_smoke.py
 git commit -m "test: pin editable_base_url contract across all providers
 
@@ -1018,13 +1020,13 @@ git commit -m "test: pin editable_base_url contract across all providers
 **Step 1:** Push the work-in-progress branch and verify it landed:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git push origin beta
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net '
-    git -C /home/roggoz/Korina-Agent ls-remote --heads origin beta
-    git -C /home/roggoz/Korina-Agent rev-parse --abbrev-ref --symbolic-full-name @{u}
-    git -C /home/roggoz/Korina-Agent log --oneline -8
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net '
+    git -C /path/to/Korina-Agent ls-remote --heads origin beta
+    git -C /path/to/Korina-Agent rev-parse --abbrev-ref --symbolic-full-name @{u}
+    git -C /path/to/Korina-Agent log --oneline -8
 '
 ```
 
@@ -1033,14 +1035,14 @@ Verify with the recipe in the `korina-converse-dev` skill: `git ls-remote --head
 **Step 2:** Sync the live runtime and restart:
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net '
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net '
     set -e
     # Mirror the package, not just the changed files
-    rm -rf /home/roggoz/Korina/korina
-    cp -r /home/roggoz/Korina-Agent/korina /home/roggoz/Korina/korina
-    cp /home/roggoz/Korina-Agent/Korina/index.html /home/roggoz/Korina/index.html
-    cp /home/roggoz/Korina-Agent/tests/regression_smoke.py /home/roggoz/Korina/tests/regression_smoke.py
+    rm -rf /path/to/Korina/korina
+    cp -r /path/to/Korina-Agent/korina /path/to/Korina/korina
+    cp /path/to/Korina-Agent/Korina/index.html /path/to/Korina/index.html
+    cp /path/to/Korina-Agent/tests/regression_smoke.py /path/to/Korina/tests/regression_smoke.py
     systemctl --user restart korina-voice-lab.service
     sleep 1
     systemctl --user is-active korina-voice-lab.service
@@ -1062,8 +1064,8 @@ Expected: `active`, `{"ok":true,...`, `capabilities OK`.
 **Step 3:** Run the regression suite on live:
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net 'cd /home/roggoz/Korina-Agent && python3 tests/regression_smoke.py'
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net 'cd /path/to/Korina-Agent && python3 tests/regression_smoke.py'
 ```
 
 Expected: 31/31 passed. Stop and report any new failure.
@@ -1071,11 +1073,11 @@ Expected: 31/31 passed. Stop and report any new failure.
 **Step 4:** Functional smoke (provider lifecycle still works end-to-end):
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net '
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net '
     set -e
     # Switch response provider to llama.cpp
-    MODEL=$(ls /home/roggoz/Disks/SN750/models/lmstudio-community/gemma-4-E2B-it-GGUF/*.gguf | head -1)
+    MODEL=$(ls /home/demo/Disks/SN750/models/lmstudio-community/gemma-4-E2B-it-GGUF/*.gguf | head -1)
     curl -fsS -X POST http://127.0.0.1:8001/api/llm/provider/activate \
         -H "Content-Type: application/json" \
         -d "{\"provider\":\"llama.cpp\",\"model\":\"$MODEL\"}" \
@@ -1093,8 +1095,8 @@ Expected: provider activation JSON, then `chat ok: <something>`.
 **Step 5:** Functional smoke (OpenAPI is stable — only the new path was added):
 
 ```bash
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net '
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net '
     curl -fsS http://127.0.0.1:8001/openapi.json | python3 -c "
 import json, sys
 spec = json.load(sys.stdin)
@@ -1141,7 +1143,7 @@ Expected: prior path count + 1 (with `/api/capabilities` added) and every prior 
   canonical reference. Covers endpoints, invariants, new-provider
   checklist, response-LLM and agent user flows, and what's out of
   scope for Phase 2.
-- [✓] 2.4 verify — full live regression passed 31/31 on roggoz;
+- [✓] 2.4 verify — full live regression passed 31/31 on demo host;
   `/api/capabilities` returns 200; `/api/chat` still works after
   provider activation; OpenAPI path count is Phase 1 baseline + 1
   (`/api/capabilities`) and all prior paths remain.
@@ -1163,12 +1165,12 @@ provider behavior is identical to Phase 1 for current users.
 **Step 3:** Commit + push:
 
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 git add docs/refactor/PROGRESS.md
 git commit -m "docs: mark Phase 2 complete in PROGRESS.md"
 git push origin beta
-ssh -F /dev/null -o User=roggoz -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
-    roggoz.bunny-bowfin.ts.net 'git ls-remote --heads origin beta'
+ssh -F /dev/null -o User=demo host -o IdentitiesOnly=yes -i ~/.ssh/id_ed25519 \
+    demo host.bunny-bowfin.ts.net 'git ls-remote --heads origin beta'
 ```
 
 Verify the push landed; the SHA should match the local `beta` tip.
@@ -1191,7 +1193,7 @@ Verify the push landed; the SHA should match the local `beta` tip.
 - [ ] `docs/refactor/PROGRESS.md` updated.
 - [ ] No new runtime dependencies.
 - [ ] No new globals in `korina/runtime/state.py`.
-- [ ] Live runtime `/home/roggoz/Korina/` mirrors source (only `config.json` differs, as expected).
+- [ ] Live runtime `/path/to/Korina/` mirrors source (only `config.json` differs, as expected).
 
 ## Pitfalls (from `korina-converse-dev` skill + Phase 1 lessons)
 
@@ -1199,8 +1201,8 @@ Verify the push landed; the SHA should match the local `beta` tip.
   `index.html.bak-*` snapshots are user data. Verify-regen paths use
   temp copies, not the live file.
 - **Mirror the whole `korina/` package on sync, not just changed files.**
-  After every package-creation step, `rm -rf /home/roggoz/Korina/korina
-  && cp -r /home/roggoz/Korina-Agent/korina /home/roggoz/Korina/korina`.
+  After every package-creation step, `rm -rf /path/to/Korina/korina
+  && cp -r /path/to/Korina-Agent/korina /path/to/Korina/korina`.
   Otherwise Python may not find new submodules.
 - **Don't conflate Phase 2 with Phase 4.** Phase 2 is metadata about
   providers; Phase 4 is metadata about individual models

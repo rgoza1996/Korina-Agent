@@ -1,21 +1,37 @@
 # Refactor Progress
 
+## Active hackathon refactor — 2026-10-22
+
+- Branch: `codex/hackathon-refactor`, based on `alpha` at `2cca809`.
+- Review: [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24).
+- Tracker: [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23).
+- Current setup: [README](../../README.md); current behavior: [architecture](../wiki/Architecture.md).
+- Core refactor is pushed through `22b401c`; PR #24 contains portability, STT/TTS/ACK bounds, agent and frontend lifecycle fixes, accurate readiness, packaging, and CI changes.
+- Final local validation and repository documentation are being completed. Hosted Actions is blocked by account billing/spending limits; no job started on `22b401c`.
+- Baseline: 233 Python tests on alpha. Verified on `22b401c`: 347 Python tests, 85% coverage, 38 executable Node tests (+17 label assertions), 10 real Chromium smoke tests, mypy across 54 modules, Ruff/ESLint, source/wheel build, and an isolated wheel UI/config/entrypoint smoke passed. Python 3.10/3.11/3.13 are being checked locally because hosted CI cannot start. Evidence is maintained in issue #23.
+- Real microphone/model/GPU rehearsal is pending. No historical live-host result below is evidence for this branch.
+
+## Historical phase log
+
+The following June 2026 entries describe earlier snapshots. Paths are placeholders; use the current source-checkout or wheel install rather than copying the old deployment recipes.
+
+
 Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is completed and keep a short evidence note so future work can resume without reconstructing git history.
 
 **Branch:** `beta`
 **Current `beta` HEAD:** `77c40bc` — `ci: add pytest workflow`
 **Last code-touching commit:** `cb60b4d` — `fix(start.sh): wait for ports to bind after systemctl start`
-**Last full verification:** 2026-06-23 on roggoz. `tests/regression_smoke.py` passed **38/38** with real `/api/chat` enabled; `/api/chat` returned HTTP 200 with a live LLM reply in 0.18s. OpenAPI exposes 20 paths (Phase 1 baseline 19 + `/api/capabilities`); all prior paths present, none removed. Provider activation works: `started: ['llama-server.service']`, `stopped: ['lmstudio', 'ollama']`.
+**Last full verification:** 2026-06-23 on demo host. `tests/regression_smoke.py` passed **38/38** with real `/api/chat` enabled; `/api/chat` returned HTTP 200 with a live LLM reply in 0.18s. OpenAPI exposes 20 paths (Phase 1 baseline 19 + `/api/capabilities`); all prior paths present, none removed. Provider activation works: `started: ['llama-server.service']`, `stopped: ['lmstudio', 'ollama']`.
 
 ## Phase 0 — Stabilization
 
-- [✓] 0.1 barge-in thresholds — completed before Phase 1; validated on roggoz.
+- [✓] 0.1 barge-in thresholds — completed before Phase 1; validated on demo host.
 - [✓] 0.2 injection migration — steer/delivery wording migrated to injection terminology where required.
 - [✓] 0.3 config role split — runtime config separated from tracked example config.
 - [✓] 0.4 agent_api_key docs — documented API key/env contract.
 - [✓] 0.5 secrets contract — runtime secrets excluded from tracked config; README updated.
 - [✓] 0.6 display label for agent — model labels normalized for display.
-- [✓] 0.7 verify on roggoz — Phase 0 verified and committed at `b065ea0`.
+- [✓] 0.7 verify on demo host — Phase 0 verified and committed at `b065ea0`.
 
 ## Phase 1 — Backend modularization
 
@@ -37,13 +53,13 @@ Mirror of the checklist at the bottom of `blueprint.md`. Tick as each step is co
 - [✓] 2.1 capabilities endpoint — `GET /api/capabilities` serves the `PROVIDER_CAPABILITIES` registry split into `providers` (4 response-LLM) and `agent_providers` (2 agent); Pydantic schema in `korina/schemas_capabilities.py`; route in `korina/routes/capabilities.py`; registry in `korina/util/presets.py`. Commits: `af94507` (registry), `7f26835` (schemas), `a08f4e2` (route + factory wiring), `e295968` (regression test).
 - [✓] 2.2 frontend reads capabilities — `loadCapabilities()` fetches once at boot and caches; `getResponseLlmProviderCaps()` / `getAgentProviderCaps()` look up providers from the cache; `setBaseUrlEditability()` is async and now controls `llmBaseUrl`, `sttLlmBaseUrl`, AND `agentBaseUrl` (the pre-Phase-2 bug — agent base URL was never wired to any editability logic); `maybeApplyProviderPreset()` uses the right section (agentProvider → `agent_providers`, everything else → `providers`); legacy `PROVIDER_BASE_URL_PRESETS` constant deleted; `initApp` not modified (boot warm-up via top-level `loadCapabilities().then(()=>setBaseUrlEditability())`). Commits: `b90cbf2` (2.2.1 helpers + fallback), `06bac04` (2.2.2 migrate consumers + remove fallback).
 - [✓] 2.3 switch contract documented — `docs/capabilities.md` is the canonical reference. Covers endpoints, the registry table, 7 invariants, the new-provider checklist, the response-LLM and agent user flows, the bug class this contract prevents, the verification recipe, and what's out of scope. Plus 4 new regression tests (3 frontend + 1 edge-case). Commits: `e85c739` (2.2.3 frontend tests + 3 latent regression-script bugs fixed), `b0023dd` (2.3.1 docs), `2b77d95` (2.3.2 edge-case test).
-- [✓] 2.4 verify — full live regression passed 38/38 on roggoz; `/api/capabilities` returns 200; `/api/chat` still works after provider activation; OpenAPI path count is Phase 1 baseline + 1 (`/api/capabilities`) and all prior paths remain.
+- [✓] 2.4 verify — full live regression passed 38/38 on demo host; `/api/capabilities` returns 200; `/api/chat` still works after provider activation; OpenAPI path count is Phase 1 baseline + 1 (`/api/capabilities`) and all prior paths remain.
 
 **Phase 2 result:** single source of truth for provider rules is live. The agent provider's base-URL field is now properly controlled by `/api/capabilities` (the bug the blueprint flagged). Response-LLM provider behavior is identical to Phase 1 for current users — the legacy hardcoded `llmProvider() === 'openai-compatible'` check is replaced by `editable_base_url` from the cache, which yields the same value for all current response-LLM providers. Three latent regression-script bugs (a `SystemExit(0)` from the factory stub that silently skipped every test after the factory block; a missing return at the end of `run()` that produced a false-green exit 0; an undefined `BASE` module constant) were fixed as part of 2.2.3 wiring the new tests to actually run. The regression suite is now actually exercising the full route catalog for the first time since 2.1.4.
 
 **Post-Phase-2 doc fixes (no code change):** `e828647` updated `README.md` for the modular package layout, single-source-of-truth registry, and agent request-shape clarification; `e21fc2f` corrected `docs/refactor/blueprint.md` to state that the refactor series targets `beta` (the blueprint was written before Phase 0 and still said `alpha`).
 
-**Pre-Phase-3 housekeeping:** `13c51e6` further updated `PROGRESS.md` to track current HEAD and disambiguate doc-only vs code-touching commits; `1f21a67` corrected the blueprint `Status:` line to reflect that Phases 0/1/2 are complete on `beta`. The runtime `/home/roggoz/Korina/tests/regression_smoke.py` was also synced from source — the runtime copy had been frozen at a pre-Phase-1.10 snapshot and was missing the Phase 2.2.3 frontend tests and the `SystemExit(0)` bug fix. **Note:** `regression_smoke.py` must be run from a git checkout (source `Korina-Agent/`, not the runtime `Korina/` deploy dir) because the blueprint check uses `git ls-files` resolved relative to the script's `parent.parent`. Running it from the runtime fails that one check.
+**Pre-Phase-3 housekeeping:** `13c51e6` further updated `PROGRESS.md` to track current HEAD and disambiguate doc-only vs code-touching commits; `1f21a67` corrected the blueprint `Status:` line to reflect that Phases 0/1/2 are complete on `beta`. The runtime `/path/to/Korina/tests/regression_smoke.py` was also synced from source — the runtime copy had been frozen at a pre-Phase-1.10 snapshot and was missing the Phase 2.2.3 frontend tests and the `SystemExit(0)` bug fix. **Note:** `regression_smoke.py` must be run from a git checkout (source `Korina-Agent/`, not the runtime `Korina/` deploy dir) because the blueprint check uses `git ls-files` resolved relative to the script's `parent.parent`. Running it from the runtime fails that one check.
 
 ## Phase 3 — Frontend modularization
 
@@ -56,7 +72,7 @@ Phase 3 result: frontend modularization complete on `beta`. The inline `<script>
 - [✓] 3.5 verify — full live regression passed (`tests/regression_smoke.py` against `http://127.0.0.1:8001`, `--no-chat --no-transcribe`); `/api/health` returns 200; `/api/health` exposes Phase 2 capabilities unchanged (5 whisper models, 200 response, etc.); 18 frontend files changed, 0 backend files changed (`git diff --stat 65df94d..HEAD -- korina/ tests/` is empty); total 22 Phase 3 commits on `beta`.
 
 
-**Post-Phase-3 deployment fixes (pre-Phase-4 baseline):** Phase 3's modularized frontend was committed to `beta` source but never propagated to the runtime at `/home/roggoz/Korina/`. The runtime kept serving a pre-Phase-3 monolithic `index.html` (with Phase 2 inline patches). Two pre-existing latent issues surfaced once the modularized frontend was actually deployed:
+**Post-Phase-3 deployment fixes (pre-Phase-4 baseline):** Phase 3's modularized frontend was committed to `beta` source but never propagated to the runtime at `/path/to/Korina/`. The runtime kept serving a pre-Phase-3 monolithic `index.html` (with Phase 2 inline patches). Two pre-existing latent issues surfaced once the modularized frontend was actually deployed:
 
 - `8a976f7` — added `/js` StaticFiles mount and `/styles.css` route to `korina/app_factory.py`. Without these, the modularized `<script type="module" src="./js/app.js">` and `<link rel="stylesheet" href="./styles.css">` 404'd in the browser.
 - `c64dac6` — updated Phase 2 frontend tests to read from `/js/providers-ui.js` and `/js/api.js` (where the helpers live after Phase 3 modularization) instead of trying to parse an inline `<script>` block. Also fixed `global failures` NameError bug that would crash the regression script on its first test failure.
@@ -72,29 +88,29 @@ Phase 4 result: capability registry for model selection is live on `beta`. The u
 - [✓] 4.3 frontend `capability-filter.js` + `?All models` toggle (multimodal STT dropdown only) — `Korina/js/capability-filter.js` exports `filterModelsByCapability`/`sttLlmModelRequirement`/`setCapabilityFilterOverride`; `providers-ui.js` filters `sttLlmModel` dropdown; `index.html` adds checkbox; `app.js` wires the toggle. Response-LLM and agent dropdowns unchanged. Commits: `c055f7c` (4.3.1), `17d3258` (4.3.2), `1dea1c8` (4.3.3), `7dbcf8d` (4.3.4 test).
 - [✓] 4.4 `provider_supports_model()` + activate endpoint raises 400 on incompatible combos — `korina/services/provider_manager.py` adds the pre-flight check; `korina/routes/providers.py:activate_provider` raises `HTTPException(400, detail={"error":"incompatible_provider_model", ...})` before delegating to `activate_llm_provider`. Commits: `5021cd8` (4.4.1), `353068c` (4.4.2), `2ba7035` (4.4.3 test).
 - [✓] 4.5 runtime audio probe + graceful fallback to whisper + persistent cache — `korina/config.py` adds `audio_unsupported` slot + 4 helpers; `korina/services/audio_probe.py` defines `classify_failure` (regex on body for 400/422, status 415 short-circuit) + `triple_key` + `maybe_fallback_to_whisper` orchestrator; `korina/routes/stt.py` wraps the multimodal STT path; `korina/routes/providers.py` clears the probe cache on activate and exposes `GET /api/audio-probe` (list) + `DELETE /api/audio-probe` (clear one entry, query-param form to avoid the two-`:path`-converter URL-greed bug); frontend gets dropdown badges + clear-and-retry button. Commits: `b7e3a49` (4.5.1), `9ddfecf` (4.5.2), `415d77f` (4.5.3), `a6fcbaa` (4.5.4 + 4.5.5), `15f00c8` (4.5.6), `86e740a` (4.5.6 fixup — `state.llmProvider` is undefined on state; replaced with `effectiveSttLlmProvider()` so the badge triple-key matches the backend’s `triple_key`), `2219469` (4.5.7 test).
-- [✓] 4.6 verify (service restart + regression + manual smoke + PROGRESS.md close-out) — service restarted on roggoz after `rsync -a --delete korina/` from source checkout to runtime (`/home/roggoz/Korina/korina/`); new PID 104060; `/api/health` returns 200; full live regression passes; 5 manual smoke checks pass: `*_models_capabilities` populated (29 entries; gemma-4-E2B shows `supports_audio_input: true, source: local_gguf, has_mmproj: true, approx_vram_gb: 4.0`), `/api/llm/provider/activate` returns HTTP 400 with `incompatible_provider_model` for `llama.cpp + qwen/qwen3-14b`, `sttCapabilityFilterOverride` and `clearProbeBtn` toggles present in served HTML, `capability-filter.js` serves cleanly, `/api/audio-probe` returns `{"entries":{}}` on fresh install. Commit: this close-out.
+- [✓] 4.6 verify (service restart + regression + manual smoke + PROGRESS.md close-out) — service restarted on demo host after `rsync -a --delete korina/` from source checkout to runtime (`/path/to/Korina/korina/`); new PID 104060; `/api/health` returns 200; full live regression passes; 5 manual smoke checks pass: `*_models_capabilities` populated (29 entries; gemma-4-E2B shows `supports_audio_input: true, source: local_gguf, has_mmproj: true, approx_vram_gb: 4.0`), `/api/llm/provider/activate` returns HTTP 400 with `incompatible_provider_model` for `llama.cpp + qwen/qwen3-14b`, `sttCapabilityFilterOverride` and `clearProbeBtn` toggles present in served HTML, `capability-filter.js` serves cleanly, `/api/audio-probe` returns `{"entries":{}}` on fresh install. Commit: this close-out.
 
 **Total: 20 Phase 4 commits on `beta` (a0aecd7 .. 86e740a), plus this close-out.**
 
 **Pre-Phase-4 housekeeping resolved during 4.5**: `korina.config` uses a `CONFIG_KEYS` allowlist filter inside `save_config()` — any new key must also be added to `DEFAULT_CONFIG` or it would be silently stripped on the next save. The 4.5.1 implementer caught this and added `audio_unsupported: {}` to `DEFAULT_CONFIG` alongside the getter/setter functions; otherwise the probe cache would have been wiped on every `save_config()` call.
 
-**Deployment note (from 4.6.1)**: the Phase 4 prompt’s frontend-sync recipe (`cp -p Korina/js/*.js /home/roggoz/Korina/js/`) handled only the frontend, not the backend. The Python service reads `korina/` from `/home/roggoz/Korina/korina/` (not from `/home/roggoz/Korina-Agent/korina/`). After committing all Phase 4 changes to `beta` source, the runtime `korina/` tree was stale and the service returned the pre-Phase-4 shape on every endpoint. Resolved by `rsync -a --delete /home/roggoz/Korina-Agent/korina/ /home/roggoz/Korina/korina/` + clearing `__pycache__/` + restarting. Future phases should bake backend sync into the per-task recipe, not leave it as a 4.6 surprise.
+**Deployment note (from 4.6.1)**: the Phase 4 prompt’s frontend-sync recipe (`cp -p Korina/js/*.js /path/to/Korina/js/`) handled only the frontend, not the backend. The Python service reads `korina/` from `/path/to/Korina/korina/` (not from `/path/to/Korina-Agent/korina/`). After committing all Phase 4 changes to `beta` source, the runtime `korina/` tree was stale and the service returned the pre-Phase-4 shape on every endpoint. Resolved by `rsync -a --delete /path/to/Korina-Agent/korina/ /path/to/Korina/korina/` + clearing `__pycache__/` + restarting. Future phases should bake backend sync into the per-task recipe, not leave it as a 4.6 surprise.
 
 ## Phase 5 — Process supervision unification
 
-Phase 5 result: Korina Voice Lab and Kokoro streaming TTS are both managed by `systemd --user`. `Korina/start.sh` and `Korina/stop.sh` are compatibility wrappers around `systemctl --user`. Runtime services were installed from tracked units under `deploy/systemd/` and verified on roggoz.
+Phase 5 result: Korina Voice Lab and Kokoro streaming TTS are both managed by `systemd --user`. `Korina/start.sh` and `Korina/stop.sh` are compatibility wrappers around `systemctl --user`. Runtime services were installed from tracked units under `deploy/systemd/` and verified on demo host.
 
 - [✓] 5.1 supervisor decision — standardized on `systemd --user`; llama.cpp remains managed by provider activation; LM Studio/Ollama behavior unchanged.
 - [✓] 5.2 unit files — added `deploy/systemd/korina-voice-lab.service`, `deploy/systemd/kokoro-streaming-server.service`, and `Korina/install-services.sh`; updated lifecycle scripts and README.
-- [✓] 5.3 verify — installed units on roggoz, stopped old/manual processes, restarted units, verified `:8001` and `:8880`, `/api/health`, Kokoro `/health`, frontend static assets, lifecycle wrappers, and regression smoke.
+- [✓] 5.3 verify — installed units on demo host, stopped old/manual processes, restarted units, verified `:8001` and `:8880`, `/api/health`, Kokoro `/health`, frontend static assets, lifecycle wrappers, and regression smoke.
 
 ## Phase 6 — Testing + CI
 
-Phase 6 result: pytest and CI are live on `beta`. The repo now has editable-install packaging (`pyproject.toml`), isolated pytest fixtures that avoid live `/home/roggoz/Korina` state, backend unit tests, FastAPI TestClient API tests, static frontend smoke tests, a GitHub Actions pytest workflow, and testing docs. Live roggoz regression was synced source → runtime (including `Korina/js/`) and verified against the running service.
+Phase 6 result: pytest and CI are live on `beta`. The repo now has editable-install packaging (`pyproject.toml`), isolated pytest fixtures that avoid live `/path/to/Korina` state, backend unit tests, FastAPI TestClient API tests, static frontend smoke tests, a GitHub Actions pytest workflow, and testing docs. Live demo host regression was synced source → runtime (including `Korina/js/`) and verified against the running service.
 
 - [✓] 6.1 scaffold — added `pyproject.toml` with `.[test]`, `tests/conftest.py`, temp `KORINA_APP_DIR`, temp model roots, and ACK startup monkeypatching.
 - [✓] 6.2 backend tests — added unit coverage for config migrations/load-save/audio probe cache, provider synchronization and model resolution, model capability/catalog detection, audio probe fallback, agent priority/sanitization, voice-reply formatting, and labels/slug helpers.
 - [✓] 6.3 API tests — added TestClient coverage for app/static mounts, `/api/config`, `/api/capabilities`, `/api/models` capability fields, `/api/audio-probe`, provider activation compatibility errors, and validation failures.
 - [✓] 6.4 frontend smoke — added static tests for module entrypoint, stylesheet link, module import integrity, fragile UI marker IDs, adaptive barge-in threshold names, and the no-refresh-on-focus model-dropdown regression.
-- [✓] 6.5 CI — added `.github/workflows/test.yml` for Python 3.10/3.11/3.12 and documented local pytest vs. live roggoz regression in `docs/testing.md`.
+- [✓] 6.5 CI — added `.github/workflows/test.yml` for Python 3.10/3.11/3.12 and documented local pytest vs. live demo host regression in `docs/testing.md`.
 - [✓] 6.6 live verification — source → runtime sync completed; `/api/health` returned `ok: true`; `/js/app.js`, `/js/state.js`, `/js/providers-ui.js`, `/js/capability-filter.js`, and `/styles.css` all returned HTTP 200; pytest passed **55/55** (`25` warnings); no-chat/no-transcribe regression smoke passed **48/48**. Full chat/transcribe regression was skipped because `llama-server.service` was inactive and `:8080` was unreachable.
