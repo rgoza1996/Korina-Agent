@@ -14,14 +14,19 @@ Both invocations work today::
 from __future__ import annotations
 
 import uvicorn
+import os
 
 from korina.app_factory import create_app
 
 
-def main(host: str = "0.0.0.0", port: int = 8001) -> None:
+def main(host: str | None = None, port: int | None = None) -> None:
     """Build the Korina app via :func:`create_app` and run it under uvicorn."""
+    resolved_host = host if host is not None else os.environ.get('KORINA_HOST', '127.0.0.1')
+    resolved_port = port if port is not None else int(os.environ.get('KORINA_PORT', '8001'))
+    if not 1 <= resolved_port <= 65535:
+        raise ValueError('KORINA_PORT must be between 1 and 65535')
     app = create_app()
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=resolved_host, port=resolved_port)
 
 
 if __name__ == "__main__":

@@ -1,15 +1,8 @@
-"""FastAPI application factory for Korina Voice Lab.
-
-Phase 1.9 moves the FastAPI ``app`` instance, CORS middleware, ``/Ack``
-static mount, and the startup hook out of ``korina/korina_voice_lab.py``
-(where the monolith owned them via module globals). The package now
-owns app construction, and ``korina_voice_lab.py`` is a 3-line shim.
-
-``create_app()`` is the canonical builder. ``korina.app.main()`` calls it
-before handing the app to uvicorn.
-"""
+"""Compose the HTTP API, static UI, request policy, and runtime lifecycle."""
 
 from __future__ import annotations
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,6 +22,7 @@ from korina.routes import models as _models_routes
 from korina.routes import providers as _providers_routes
 from korina.routes import stt as _stt_routes
 from korina.services.ack_service import enqueue_missing_acks
+from korina.runtime.limits import RequestSizeLimit
 from korina.util.paths import ACK_DEFAULT_VOICE, ACK_DIR, APP_DIR
 
 # NOTE: `load_config` and `save_config` are deliberately NOT imported at
@@ -42,14 +36,38 @@ def _startup_generate_default_acks() -> None:
     """Enqueue any missing ACK WAVs for the configured default voice."""
     import korina.config as _cfg
     ACK_DIR.mkdir(parents=True, exist_ok=True)
-    enqueue_missing_acks(str(_cfg.load_config().get('voice') or ACK_DEFAULT_VOICE))
+    config = _cfg.load_config()
+    if config.get('ack_enabled') == 'on':
+        enqueue_missing_acks(str(config.get('voice') or ACK_DEFAULT_VOICE))
 
 
 def create_app() -> FastAPI:
     """Build and return the fully-wired Korina Voice Lab FastAPI app."""
     import korina.config as _cfg  # late-bound so tests can monkeypatch
+
+    @asynccontextmanager
+    async def lifespan(app):
+        from korina.converse import ensure_default_registered, set_active_converse_channel
+        from korina.converse.registry import list_channels
+        from korina.services.agent_service import shutdown_agent_worker
+
+        _startup_generate_default_acks()
+        ensure_default_registered()
+        converse = _cfg.load_config().get('converse') or {}
+        saved = converse.get('channel') if isinstance(converse, dict) else None
+        channels = list_channels()
+        if saved in channels:
+            set_active_converse_channel(saved)
+        elif 'korina' in channels:
+            set_active_converse_channel('korina')
+        try:
+            yield
+        finally:
+            shutdown_agent_worker()
+
     app = FastAPI(
         title='Korina Voice Lab: Built-in Whisper, multimodal STT, llama.cpp, and Kokoro',
+        lifespan=lifespan,
     )
 
     cfg = _cfg.load_config()
@@ -57,6 +75,7 @@ def create_app() -> FastAPI:
     allowed_origins = (
         _converse_block.get("allowed_origins") if _converse_block else None
     ) or ['http://127.0.0.1:8001', 'http://localhost:8001']
+    app.add_middleware(RequestSizeLimit)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(allowed_origins),
@@ -65,14 +84,12 @@ def create_app() -> FastAPI:
         # audit). Credentials flow through env-var API keys at the
         # backend boundary, not browser cookie jars.
         allow_credentials=False,
-        allow_methods=['*'],
-        allow_headers=['*'],
+        allow_methods=['GET', 'POST', 'DELETE'],
+        allow_headers=['Content-Type', 'Authorization'],
     )
     ACK_DIR.mkdir(parents=True, exist_ok=True)
     app.mount('/Ack', StaticFiles(directory=str(ACK_DIR)), name='ack')
-    # Phase 3+ frontend: serve the ES modules under /js and the external
-    # stylesheet. APP_DIR points at the runtime (/home/roggoz/Korina/) which
-    # has js/ and styles.css alongside index.html.
+    # APP_DIR resolves to a checkout, wheel assets, or explicit runtime tree.
     js_dir = APP_DIR / 'js'
     if js_dir.is_dir():
         app.mount('/js', StaticFiles(directory=str(js_dir)), name='js')
@@ -84,31 +101,6 @@ def create_app() -> FastAPI:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail='styles.css missing')
         return FileResponse(path)
-
-    @app.on_event('startup')
-    def _startup() -> None:
-        _startup_generate_default_acks()
-        # Phase 5 (Converse/Agent boundary): ensure the default
-        # ConverseChannel is registered before routes serve traffic.
-        from korina.converse import ensure_default_registered, set_active_converse_channel
-        from korina.converse.registry import list_channels
-        ensure_default_registered()
-        # WS1.2: restore the saved channel selection from config.json.
-        # Legacy configs without a converse block skip this step and
-        # fall through to the default already set by
-        # ensure_default_registered().
-        cfg = _cfg.load_config()
-        _converse = cfg.get("converse") if isinstance(cfg.get("converse"), dict) else None
-        saved = _converse.get("channel") if _converse else None
-        if saved and saved in list_channels():
-            set_active_converse_channel(saved)
-        elif "korina" in list_channels():
-            # No saved channel (or saved channel is not registered).
-            # Ensure the default `korina` channel is active; this is
-            # explicit because ensure_default_registered() only sets the
-            # active channel if no other channel has been registered
-            # first, and tests register test channels in fixtures.
-            set_active_converse_channel("korina")
 
     for module in (
         _index_routes, _health_routes, _config_routes, _models_routes,
