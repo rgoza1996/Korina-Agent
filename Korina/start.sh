@@ -153,4 +153,4 @@ echo
 echo "Relevant listeners:"
 ss -ltnp 2>/dev/null | grep -E ':(8001|8880|8080|1234|11434)' || echo "  (none)"
 echo
-echo "Korina page: http://$(hostname):8001/"
+echo "Korina page: http://${KORINA_HOST:-127.0.0.1}:${KORINA_PORT:-8001}/"

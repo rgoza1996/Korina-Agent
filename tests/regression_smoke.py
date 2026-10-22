@@ -471,7 +471,7 @@ def run(base: str, do_chat: bool, do_transcribe: bool) -> int:
         ok_main = (
             len(captured) == 1
             and captured[0]["title"] and captured[0]["title"].startswith("Korina")
-            and captured[0]["host"] == "0.0.0.0"
+            and captured[0]["host"] == "127.0.0.1"
             and captured[0]["port"] == 8001
         )
         if not assert_status(
@@ -989,8 +989,8 @@ def test_phase4_audio_probe_cache_source_contracts() -> bool:
     if "chat/completions" not in api_src or "normalizeTripleBaseUrl" not in api_src:
         print("  [FAIL] frontend normalizeTripleBaseUrl must mirror backend /chat/completions normalization")
         return False
-    if "config = load_config()  # reload after cache clear" not in providers_src:
-        print("  [FAIL] activate_provider must reload config after clearing probe cache to avoid stale save")
+    if "select_response_provider(provider, req.model)" not in providers_src or "@_config_transaction\ndef select_response_provider" not in config_src:
+        print("  [FAIL] activate_provider must atomically merge provider selection and probe cache changes")
         return False
 
     print("  [PASS] Phase 4 audio-probe source contracts: base-key, preflight cache, stale-save guard")

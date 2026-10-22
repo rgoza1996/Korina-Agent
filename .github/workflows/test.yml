@@ -2,23 +2,88 @@ name: tests
 
 on:
   push:
-    branches: [beta, alpha, master]
+    branches: [beta, alpha, master, 'codex/**']
   pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   pytest:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Install FFmpeg for real decode-bound regression
+        if: matrix.python-version == '3.12'
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e '.[test]'
       - name: Run pytest
-        run: pytest -q
+        run: python -m pytest --cov=korina --cov-report=term-missing --cov-report=xml -q
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python-${{ matrix.python-version }}
+          path: coverage.xml
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e '.[dev]'
+      - run: ruff check korina
+      - run: mypy --ignore-missing-imports korina
+      - run: python -m build
+      - name: Verify installed UI assets
+        run: |
+          python -m venv /tmp/korina-wheel
+          /tmp/korina-wheel/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/korina-wheel/bin/python -c "from korina.util.paths import INDEX_PATH; assert INDEX_PATH.is_file(), INDEX_PATH"
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm test
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: python -m pip install -e '.[test]'
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failures
+          path: test-results/
