@@ -2,7 +2,17 @@
 
 Work is tracked in [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23). This page records observed local evidence; it does not claim event eligibility, physical microphone behavior, GPU performance, or a passing hosted Actions run.
 
-## Deterministic and browser checks
+## Budget stop and current draft
+
+Work stopped at the requested **15% weekly usage remaining** on October 22. The latest code snapshot is `f06abe1`; it includes later ownership/settings/readiness fixes, corrected dependency floors, and an explicit Meta Model API profile. **The complete matrix has not been rerun after the final changes.** The new native Meta dropdown/save case exists but is unrun. Authenticated Meta access, selected-model output, and physical presentation audio remain unverified.
+
+Later archived evidence is separate from the last complete checkpoint below. At `268e274`, Python 3.12 passed 1083 tests / 94% coverage; Python 3.10 and 3.11 each passed 1082 plus the optional decoder skip. Its 389 Node tests, lint/types over 67 modules, source/wheel builds, and all 30 installed assets passed. Python 3.13 found a shared-port test race, corrected at `9678acd` and verified with four concurrent Python versions. All 81 Chromium cases passed at `7b97ed6`. An earlier short-deadline fixture failure was corrected at `268e274`; production deadlines were unchanged.
+
+Minimum-dependency investigation reproduced actual streamed-upload failure before FastAPI 0.118 and cancellation failure before Starlette 0.42. Supported-floor API/config/converse and ownership subsets passed; the asyncio HTTP entry fix passed 72 focused checks in both current and floor environments. The new minimum-dependency CI job runs the full constrained suite, which is still pending locally and blocked remotely by account billing.
+
+Meta preparation passed 131 focused Python checks and 392 Node checks before the final frontend auth correction. After that correction, 33 focused Node checks passed, including actual discovery-query construction and custom/generic credential isolation. Native Meta UI and a complete final checkpoint remain pending. These fixtures establish request contracts, not an actual Meta model call or cache hit. The [focused rehearsal guide](hackathon.md) records the agreed scope, public event sources, pre-event baseline ledger, and remaining evidence.
+
+## Last complete archived checkpoint
 
 Immutable checkpoint `96a8d5c` passed **1051 Python tests with 94% coverage on Python 3.12.3**, **357 executable Node tests**, and **76 real Chromium tests**. Clean Python 3.10.20, 3.11.15, and 3.13.14 environments each passed 1050 tests with one intentional skip: the optional actual Whisper decoder is installed and exercised in 3.12. Real FFmpeg compressed-audio limits ran in every environment. Every matrix run has a separate JUnit report and isolated runtime state.
 

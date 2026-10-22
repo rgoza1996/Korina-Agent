@@ -1,44 +1,57 @@
-# Hackathon rehearsal
+# Meta hackathon preparation and rehearsal
 
-Updated 2026-10-22. The refactor is tracked in [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) and the `codex/hackathon-refactor` branch. The event-specific Meta requirements have not yet been supplied; this guide prepares the existing local voice product without claiming a particular Meta integration or eligibility.
+Updated 2026-10-22 for the [Meta Global AI Developer Hackathon](https://dev.meta.ai/events/global-hackathon), organized with [Cerebral Valley](https://cerebralvalley.ai/e/meta-ai-developer-hackathon). Preparation is tracked in [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) and [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24).
 
-## Demo story
+## Agreed prototype
 
-Korina separates a responsive voice conversation from a background agent. The presenter talks naturally, receives spoken answers, interrupts a reply, and shows an agent report entering the next response without recursive self-triggering. The agent currently maintains reports and permission requests; tool execution is future work.
+Demonstrate one useful Korina voice interaction using **Meta Model API**, conversational context, and one remembered fact. Keep the scope small enough to show the full path: microphone → transcription → Meta response using supplied context → spoken answer. The existing report-producing agent is optional for this demonstration; tool execution and a complete long-term assistant are outside this prototype.
 
-## Before the event
+For the first rehearsal, remembered information means a fact retained in the current conversation. Korina's existing history/report state does not establish durable memory across a restart. Meta Chat Completions is stateless: Korina must send the relevant context. Prompt caching reuses token prefixes; it is separate from remembering user information.
 
-1. Install from the [README](../README.md), including `ffmpeg`, Whisper, Kokoro, and a separately managed response LLM.
-2. Select the exact model IDs and endpoints in Settings. Prefer Whisper CPU for the first rehearsal; use audio-model STT only after verifying actual support.
-3. Keep microphone access on localhost or HTTPS. Check browser-visible TTS access and configured CORS origins for a remote UI.
-4. Warm the selected Whisper model and Kokoro voice, then send a real chat turn. Finish any model downloads before presenting.
-5. Run `python scripts/check_stack.py`. Resolve every false check from `/api/ready`.
-6. Save a known working configuration outside Git and keep a spare headset and a typed-input fallback available.
+## Event and starting point
 
-## Rehearsal sequence
+The published schedule has kickoff on **October 26**, submission on **November 4 at 9 PM Eastern / November 5 at 02:00 UTC**, and finals on November 9. The exact kickoff hour is unresolved because the organizer header's timezone wording differs from Eastern daylight time. Dates can change, and final Official Rules are still promised before October 26.
 
-| Step | Expected evidence |
+The [public waiver](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/waiver) permits building upon existing open source with its licenses respected. It requires Meta AI products; the direct Model API interaction is this project's explicit commitment. Judging weights are impact 30%, Meta tooling 25%, technical execution 20%, and demo 25%. The final rules and submission portal still need checking for the complete artifact checklist and preparation restrictions.
+
+Korina is an existing MIT-licensed project. The refactor, provider integration, tests, and documentation completed before kickoff are **pre-event preparation**, not event-built features. At kickoff, record the actual starting commit with `git rev-parse HEAD`; use the final verified preparation commit recorded in issue #23 as context, rather than treating the older `alpha` branch as the event baseline.
+
+Maintain this ledger during the event:
+
+| Item | Record |
 | --- | --- |
-| Open the UI | Module/CSS requests load; provider pills show server-resolved URLs |
-| Speak a short request | Transcript and audible reply; no console ReferenceError |
-| Ask a second question | Response follows the new turn and uses the current conversation context |
-| Interrupt during speech | Audio stops, interruption is transcribed, live capture resumes |
-| Enable the agent | Transcript delivery appears in debug panel; cursor advances once |
-| Receive a report | Context is injected once into the next successful response |
-| Clear the session mid-report | Old in-flight output does not reappear in the new session |
-| Change an endpoint while model discovery is pending | Old results do not replace the current picker or model selection |
-| Stop the response provider | Live status identifies the failed provider; no silent success |
-| Restart the provider | One successful poll restores accurate readiness |
-| Speak again | Model, audio, and agent flow recover without a page reload |
+| Event starting commit | Pending kickoff; full commit SHA |
+| Existing functionality | Voice capture/STT/TTS, conversation history, bounded agent reports, provider infrastructure, preparation tests |
+| Event additions | Feature, commit, date, and behavior added after the recorded start |
+| Demonstration evidence | Actual Meta model ID, context supplied, observed result, timings, and video link |
+| Third-party work | Existing code, model/services used, licenses, and attribution |
 
-Record actual model IDs, device, first-turn and warm-turn timings, browser, and any unresolved failures in issue #23. The local CPU and browser smoke results are recorded in [verification](verification.md); the presentation hardware still needs this rehearsal.
+This ledger does not claim any future implementation or submission is complete.
 
-Keep spoken turns below the advertised server limit (five minutes by default). Korina stops a complete recording before its duration/byte budget, processes confirmed speech as one turn, and rotates silent idle captures. If a background tab delivers an oversized or late recording, the whole file is discarded with recovery text. Browser replies also have a ten-minute playback limit and bounded downloads.
+## Configure the focused demo
 
-## Current verification boundary
+1. Install from the [README](../README.md), including FFmpeg, Whisper, and Kokoro.
+2. Select the explicit **Meta Model API** response provider. Its canonical API base is `https://api.meta.ai/v1`; authentication uses a Bearer key from `MODEL_API_KEY` by default. Configure that variable privately in the API process environment or existing service environment file. Explicit role credentials retain their normal scope.
+3. Load models through authenticated discovery and select a model actually enabled for the team. Documentation examples do not prove account access. Keep Whisper for STT and Kokoro for TTS; the Meta text-model demonstration does not require Meta audio output.
+4. Leave Meta reasoning to its model default. Korina's local-provider `reasoning` field is not Meta's documented `reasoning_effort`, and Muse Spark does not accept `reasoning_effort: "none"`.
+5. Warm Whisper/Kokoro, make a real Meta response request, then run `python scripts/check_stack.py`. Resolve failed readiness checks. Model access, useful output, and live API compatibility require this authenticated rehearsal.
 
-The refactor adds portable checkout/wheel assets, shared STT payloads and SSE handling, bounded background agent work, request validation/body caps, accurate health/readiness, executable frontend checks, and portable service templates. The optional Kokoro implementation removes shared temporary WAV files and unbounded request threads.
+See [API reference](https://dev.meta.ai/docs/api-reference), [Chat Completions](https://dev.meta.ai/docs/protocols/chat-completions), and [available models](https://dev.meta.ai/docs/models). The API accepts the existing `max_tokens` alias, but its budget includes model-dependent completion work; measure whether the selected model needs a larger budget for a useful spoken answer.
 
-Real CPU Whisper transcription and Kokoro synthesis passed local API smoke checks. Chromium live turns completed native MediaRecorder/VAD capture, Whisper partial/final transcription, Kokoro SSE, and native WebAudio playback without JavaScript errors. A separate run used pinned local SmolLM2 inference for both response and agent roles, completed next-response injection, and passed the full read-only readiness gate. The tiny model mostly echoed input; it establishes integration rather than useful presentation-model quality. Physical microphone/speaker behavior, the chosen presentation models, and human interruption timing still require rehearsal. Exact model revisions, recognition errors, and CPU timings are recorded in [verification](verification.md).
+## One interaction to demonstrate
 
-GPU behavior, remote HTTPS deployment, and event-specific requirements also remain unverified. Do not describe Hermes stub support or saved execution settings as working tool execution.
+1. Start a clean conversation and say: “Remember that this demo uses a headset, and I want answers in two sentences.”
+2. Ask: “Given what I told you, what should I rehearse first?”
+3. Verify the actual Meta request includes the earlier fact and current question once. Hear a useful answer that respects both constraints.
+4. Show the selected Meta model and explain which context Korina supplied. If demonstrating an agent report, show that it enters the next response once.
+5. Stop Live and verify capture/playback release. Repeat once on the presentation headset without a page reload.
+
+Record first/warm turn timings, model ID, browser, device, recognition errors, and failures in issue #23. Keep turns within the server's advertised recording budget. Physical audibility, human interruption, and presentation-model quality need rehearsal on the actual hardware.
+
+## Caching and evidence
+
+Meta documents automatic prefix caching. Keep stable instructions/context first and changing input last. Measure actual hits using `usage.prompt_tokens_details.cached_tokens`; the current Korina response UI does not expose that provider usage field. Optional `prompt_cache_key` and additional cache observability are possible event additions, not existing demonstrated features. Do not infer a cache hit or latency saving from repeated text or one faster run. [Prompt caching](https://dev.meta.ai/docs/prompt-caching).
+
+The [verification record](verification.md) contains local software checks and real CPU Whisper/SmolLM2/Kokoro integration. Those observations do not establish authenticated Meta access or presentation quality. A final demo should include an actual Meta call and useful context-dependent speech, with the pre-event baseline and event additions visible.
+
+Submit through the [organizer portal](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/hackathon/submit) only after checking its current requirements and final rules. The current public material does not establish a required video length or a mandatory public-repository format.
