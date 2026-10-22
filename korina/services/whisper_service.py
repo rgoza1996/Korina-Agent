@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 import json
@@ -15,6 +16,7 @@ from korina.config import load_config
 
 from korina.runtime import state
 from korina.runtime.limits import bounded_seconds, resolve_audio_limits
+from korina.runtime.request_owner import check_current
 
 from korina.services.multimodal_stt import lmstudio_transcribe_wav
 from korina.services.stt_resolution import resolve_multimodal_transcription
@@ -203,11 +205,29 @@ def audio_metadata(wav: Path) -> dict:
     }
 
 
+def owned_whisper_segments(parts, *, is_current: Callable[[], bool] | None = None):
+    """Finish an active native step, but admit no later step for a retired owner."""
+    try:
+        iterator = iter(parts)
+        while True:
+            check_current(is_current)
+            try:
+                segment = next(iterator)
+            except StopIteration:
+                return
+            check_current(is_current)
+            yield segment
+    finally:
+        close = getattr(parts, 'close', None)
+        if close is not None:
+            close()
+
+
 def whisper_payload(parts, info, *, metadata: dict, started: float,
                     device: Optional[str] = None, model_id: Optional[str] = None,
-                    backend: str = 'faster-whisper') -> dict:
+                    backend: str = 'faster-whisper', is_current: Callable[[], bool] | None = None) -> dict:
     """Build the common buffered/streaming Whisper result contract."""
-    parts = list(parts)
+    parts = list(owned_whisper_segments(parts, is_current=is_current))
     if isinstance(info, WhisperInferenceInfo):
         resolved_device = info.device
         resolved_model = info.model_id
@@ -234,14 +254,18 @@ def whisper_payload(parts, info, *, metadata: dict, started: float,
     }
 
 
-def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, device: Optional[str] = None, model_id: Optional[str] = None, backend: str = 'whisper', llm_model: Optional[str] = None) -> dict:
+def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, device: Optional[str] = None, model_id: Optional[str] = None, backend: str = 'whisper', llm_model: Optional[str] = None,
+                           is_current: Callable[[], bool] | None = None) -> dict:
+    check_current(is_current)
     with tempfile.TemporaryDirectory(prefix='korina-stt-') as td:
         td_path = Path(td)
         src = td_path / f'input{suffix}'
         wav = td_path / 'input-16k.wav'
         with src.open('wb') as f:
             shutil.copyfileobj(audio_file, f)
+        check_current(is_current)
         convert_to_16k_wav(src, wav)
+        check_current(is_current)
         metadata = audio_metadata(wav)
         if backend == 'llm':
             config = load_config()
@@ -253,19 +277,23 @@ def transcribe_upload_file(audio_file, suffix: str, *, vad_filter: bool = True, 
                     parts, info, metadata=metadata, started=started,
                     device=device, model_id=model_id or config.get('stt_model'),
                     backend='whisper-fallback',
+                    is_current=is_current,
                 )
             result = resolve_multimodal_transcription(
                 wav, model=llm_model, fallback=whisper_fallback,
                 transcribe=lmstudio_transcribe_wav, config=config,
+                is_current=is_current,
             )
             result.update({**metadata, 'partial_capable': True})
             return result
 
+        check_current(is_current)
         started = time.time()
         parts, info = transcribe_wav_segments(wav, vad_filter=vad_filter, device=device, model_id=model_id)
         return whisper_payload(
             parts, info, metadata=metadata, started=started,
             device=device, model_id=model_id,
+            is_current=is_current,
         )
 
 

@@ -66,11 +66,13 @@ def test_model_discovery_uses_selected_endpoint_and_auth(capture_transport, monk
     config, wav, calls = capture_transport
     config['stt_llm_model'] = ''
     discovered = []
-    monkeypatch.setattr(multimodal_stt, 'llm_models_for', lambda base, env: discovered.append((base, env)) or ['candidate-model'])
+    current = lambda: True
+    monkeypatch.setattr(multimodal_stt, 'llm_models_for', lambda base, env, **kwargs:
+                        discovered.append((base, env, kwargs['is_current'])) or ['candidate-model'])
     multimodal_stt.lmstudio_transcribe_wav(
-        wav, base_url='https://candidate.test/custom/chat/completions', api_env='CANDIDATE_KEY',
+        wav, base_url='https://candidate.test/custom/chat/completions', api_env='CANDIDATE_KEY', is_current=current,
     )
-    assert discovered == [('https://candidate.test/custom', 'CANDIDATE_KEY')]
+    assert discovered == [('https://candidate.test/custom', 'CANDIDATE_KEY', current)]
     assert calls[0]['payload']['model'] == 'candidate-model'
 
 

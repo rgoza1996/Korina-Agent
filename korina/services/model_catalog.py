@@ -5,7 +5,7 @@ import os
 import selectors
 import subprocess
 import time
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from contextlib import closing
 
 from korina.model_ids import MAX_MODEL_IDS, ModelIds, limit_model_ids, normalize_model_id
@@ -253,7 +253,8 @@ def find_mmproj_for_model(model_path: str) -> str:
 
 # --- Phase 1.5 helper moved from korina.config ---
 
-def llm_models_for(base_url: str, api_env: str, *, pinned: Iterable[object] = ()) -> list:
+def llm_models_for(base_url: str, api_env: str, *, pinned: Iterable[object] = (),
+                   is_current: Callable[[], bool] | None = None) -> list:
     base = str(base_url or "").strip().rstrip("/")
     if not base:
         return []
@@ -263,11 +264,14 @@ def llm_models_for(base_url: str, api_env: str, *, pinned: Iterable[object] = ()
     from korina.runtime.http import auth_headers_from_env
     headers = auth_headers_from_env(api_env)
     from korina.runtime.json_http import request_json
-    body = request_json(url, headers=headers, timeout=15)
+    from korina.runtime.request_owner import check_current
+    body = request_json(url, headers=headers, timeout=15, is_current=is_current)
     if not isinstance(body, dict) or not isinstance(body.get('data', []), list):
         raise ValueError('Invalid provider model list')
     models = limit_model_ids((item.get('id') if isinstance(item, dict) else item for item in body.get('data', [])), pinned=pinned)
+    check_current(is_current)
     if base == "http://127.0.0.1:8080/v1":
         local = discover_local_gguf_models(pinned=pinned)
         models = limit_model_ids([*models, *local], pinned=pinned, sources=[models, local])
+    check_current(is_current)
     return models

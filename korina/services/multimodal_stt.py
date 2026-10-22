@@ -6,6 +6,7 @@ import base64
 import math
 import re
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +23,7 @@ from korina.config import (
 from korina.runtime.http import auth_headers_from_env
 from korina.runtime.json_http import HTTPStatusError, request_json
 from korina.runtime.completion import openai_text_completion
+from korina.runtime.request_owner import check_current
 from korina.services.model_catalog import llm_models_for
 
 
@@ -76,7 +78,8 @@ def resolve_stt_api_env(config: dict, base_url: str, api_env: str | None) -> str
     return ''
 
 
-def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url: Optional[str] = None, api_env: Optional[str] = None, timeout: float = 120.0) -> dict:
+def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url: Optional[str] = None, api_env: Optional[str] = None, timeout: float = 120.0,
+                           is_current: Callable[[], bool] | None = None) -> dict:
     """Attempt audio transcription through a multimodal STT model endpoint.
 
     OpenAI-compatible multimodal endpoints definitely support text/images. Audio input
@@ -90,6 +93,7 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
     use this to classify silent-empty failures (HTTP 200 + empty content +
     finish_reason != 'stop') as structurally audio-incompatible.
     """
+    check_current(is_current)
     config = load_config()
     resolved_base_url = str(base_url if base_url is not None else config_stt_llm_chat_url(config)).strip()
     from urllib.parse import urlsplit
@@ -102,10 +106,11 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
     resolved_api_env = resolve_stt_api_env(config, resolved_base_url, api_env)
     selected_model = (model or config_stt_llm_model(config)).strip()
     if not selected_model:
-        available = llm_models_for(normalize_api_base_url(resolved_base_url), resolved_api_env)
+        available = llm_models_for(normalize_api_base_url(resolved_base_url), resolved_api_env, is_current=is_current)
         selected_model = available[0].strip() if available else ''
     if not selected_model:
         raise RuntimeError('No multimodal STT model available for the selected endpoint')
+    check_current(is_current)
     data = wav.read_bytes()
     b64 = base64.b64encode(data).decode('ascii')
     started = time.time()
@@ -131,10 +136,13 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
     }
     headers = {'Content-Type': 'application/json'} | auth_headers_from_env(resolved_api_env)
     try:
-        body = request_json(resolved_base_url, method='POST', headers=headers, json_body=payload, timeout=timeout)
+        body = request_json(resolved_base_url, method='POST', headers=headers, json_body=payload, timeout=timeout,
+                            is_current=is_current)
     except HTTPStatusError as e:
         raise MultimodalSttError(selected_model, e.status_code, e.detail) from e
+    check_current(is_current)
     completion = openai_text_completion(body)
+    check_current(is_current)
     text, finish_reason = completion.text, completion.finish_reason
     return {
         'text': text,
