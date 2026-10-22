@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -23,7 +24,9 @@ def setup_runtime(tmp_path, *, tts='custom', provider='openai-compatible'):
     (binary / 'systemctl').write_text('''#!/bin/sh
 printf '%s\n' "$*" >> "$FAKE_SYSTEMCTL_LOG"
 if [ "$2" = cat ] && [ "$3" = "${MISSING_UNIT:-}" ]; then exit 1; fi
+if [ "$2" = cat ] && [ "${ALL_UNITS_MISSING:-0}" = 1 ]; then exit 1; fi
 if [ "$2" = start ] && [ "$3" = "${FAILING_UNIT:-}" ]; then exit 1; fi
+if [ "$2" = stop ] && [ "$3" = "${FAILING_STOP_UNIT:-}" ]; then exit 1; fi
 exit 0
 ''')
     # A one-iteration wait drives the existing loop through timeout promptly;
@@ -112,3 +115,128 @@ def test_invalid_explicit_interpreter_does_not_reach_service_manager(tmp_path, s
     assert result.returncode != 0
     assert 'KORINA_PYTHON' in result.stderr
     assert not Path(env['FAKE_SYSTEMCTL_LOG']).exists()
+
+
+def copied_service_checkout(tmp_path):
+    """The copied provider fixture can never supervise actual host processes."""
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    for name in ('Korina', 'korina'):
+        shutil.copytree(REPO / name, checkout / name,
+                        ignore=shutil.ignore_patterns('__pycache__', 'config.json', '*.wav'))
+    (checkout / 'korina/services/provider_manager.py').write_text('''
+import json
+import os
+from pathlib import Path
+from types import SimpleNamespace
+
+def record(action, **kwargs):
+    with Path(os.environ['PROVIDER_LOG']).open('a') as log:
+        log.write(json.dumps({'action': action, 'runtime': os.environ['KORINA_APP_DIR'], **kwargs}) + '\\n')
+    with Path(os.environ['FAKE_SYSTEMCTL_LOG']).open('a') as log:
+        log.write('provider ' + action + '\\n')
+
+def activate_llm_provider(provider, config, model=None):
+    record('activate', voice=config['voice'])
+    return {}
+
+def stop_lmstudio_server():
+    record('lmstudio-server')
+    outcome = os.environ.get('PROVIDER_OUTCOME', 'success')
+    if outcome == 'exception':
+        raise OSError('fixture stop failed')
+    return SimpleNamespace(warnings=['fixture stop unconfirmed'] if outcome == 'warning' else [],
+                           stop_requested=['fixture-process'] if outcome == 'unconfirmed' else [])
+
+def stop_lmstudio():
+    record('lmstudio')
+    return SimpleNamespace(warnings=[], stop_requested=[])
+
+def stop_ollama(*, stop_service=True):
+    assert stop_service is False, 'the wrapper owns unit eligibility'
+    record('ollama-process')
+    return SimpleNamespace(warnings=[], stop_requested=[])
+''')
+    return checkout
+
+
+def stop_fixture(tmp_path):
+    env = setup_runtime(tmp_path)
+    checkout = copied_service_checkout(tmp_path)
+    env['PROVIDER_LOG'] = str(tmp_path / 'providers.jsonl')
+    env['KORINA_LLAMA_SERVER_USER_UNIT'] = str(tmp_path / 'custom-llama.service')
+    return env, checkout
+
+
+def stopped(env, checkout, *args, cwd=None):
+    return subprocess.run(['bash', str(checkout / 'Korina/stop.sh'), *args], cwd=cwd, env=env,
+                          capture_output=True, text=True, timeout=10)
+
+
+def test_stop_reports_unit_failure_after_attempting_remaining_cleanup(tmp_path):
+    env, checkout = stop_fixture(tmp_path)
+    env['FAILING_STOP_UNIT'] = 'korina-voice-lab.service'
+    result = stopped(env, checkout)
+    assert result.returncode != 0
+    assert 'stop command failed' in result.stderr
+    assert 'shutdown incomplete' in result.stderr
+    commands = Path(env['FAKE_SYSTEMCTL_LOG']).read_text()
+    for unit in ['korina-voice-lab.service', 'kokoro-streaming-server.service',
+                 'custom-llama.service', 'llama-server.service', 'ollama.service']:
+        assert '--user stop ' + unit in commands
+        assert commands.index('--user stop ' + unit) < commands.index('provider lmstudio-server'), (
+            'stop every owning unit before entering provider process fallback, even when a stop fails'
+        )
+    assert [json.loads(line)['action'] for line in Path(env['PROVIDER_LOG']).read_text().splitlines()] == [
+        'lmstudio-server', 'lmstudio', 'ollama-process',
+    ]
+
+
+@pytest.mark.parametrize('outcome', ['exception', 'warning', 'unconfirmed'])
+def test_stop_reports_provider_failure_without_skipping_later_services(tmp_path, outcome):
+    env, checkout = stop_fixture(tmp_path)
+    env['PROVIDER_OUTCOME'] = outcome
+    result = stopped(env, checkout)
+    assert result.returncode != 0
+    assert 'shutdown incomplete' in result.stderr
+    assert 'fixture' in result.stderr
+    assert '--user stop ollama.service' in Path(env['FAKE_SYSTEMCTL_LOG']).read_text()
+    assert len(Path(env['PROVIDER_LOG']).read_text().splitlines()) == 3
+
+
+def test_missing_units_are_normal_and_dry_run_never_stops_or_imports_providers(tmp_path):
+    env, checkout = stop_fixture(tmp_path)
+    env['ALL_UNITS_MISSING'] = '1'
+    result = stopped(env, checkout)
+    assert result.returncode == 0, result.stderr
+    assert 'Skipping custom-llama.service' in result.stdout
+    assert ' stop ' not in Path(env['FAKE_SYSTEMCTL_LOG']).read_text()
+    Path(env['PROVIDER_LOG']).unlink()
+    env.pop('ALL_UNITS_MISSING')
+    env['FAILING_STOP_UNIT'] = 'korina-voice-lab.service'
+    env['PROVIDER_OUTCOME'] = 'exception'
+    result = stopped(env, checkout, '--dry-run')
+    assert result.returncode == 0, result.stderr
+    assert not Path(env['PROVIDER_LOG']).exists()
+    assert ' stop ' not in Path(env['FAKE_SYSTEMCTL_LOG']).read_text()
+
+
+def test_start_and_stop_pass_the_original_relative_runtime_into_provider_processes(tmp_path):
+    env = setup_runtime(tmp_path, provider='llama.cpp')
+    checkout = copied_service_checkout(tmp_path)
+    runtime = Path(env['KORINA_APP_DIR'])
+    config = json.loads((runtime / 'config.json').read_text())
+    config['voice'] = 'sentinel-voice'
+    (runtime / 'config.json').write_text(json.dumps(config))
+    alias = tmp_path / 'runtime alias'
+    alias.symlink_to(runtime, target_is_directory=True)
+    env.update(KORINA_APP_DIR=alias.name, PROVIDER_LOG=str(tmp_path / 'providers.jsonl'))
+    result = subprocess.run(['bash', str(checkout / 'Korina/start.sh'), '--no-wait'], cwd=tmp_path,
+                            env=env, capture_output=True, text=True, timeout=10)
+    assert result.returncode == 0, result.stderr
+    result = stopped(env, checkout, cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    records = [json.loads(line) for line in Path(env['PROVIDER_LOG']).read_text().splitlines()]
+    assert records[0] == {'action': 'activate', 'runtime': str(alias), 'voice': 'sentinel-voice'}
+    assert all(record['runtime'] == str(alias) for record in records)
+    assert not (checkout / alias.name).exists()

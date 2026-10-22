@@ -7,6 +7,8 @@ UNIT_SRC="$REPO_ROOT/deploy/systemd"
 UNIT_DST="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 PYTHON_BIN="$(korina_select_python KORINA_PYTHON "${KORINA_PYTHON:-}" "${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python")"
 TTS_PYTHON_BIN="$(korina_select_python KORINA_TTS_PYTHON "${KORINA_TTS_PYTHON:-}" "$PYTHON_BIN")"
+KORINA_APP_DIR="$(korina_normalize_app_dir "$PYTHON_BIN" "${KORINA_APP_DIR:-$REPO_ROOT/Korina}")"
+export KORINA_APP_DIR
 
 require_unit() {
   local file="$1"

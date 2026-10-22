@@ -54,6 +54,52 @@ def test_install_services_renders_checkout_and_interpreter(tmp_path):
     assert f'"{REPO}/kokoro-streaming-server.py"' in tts
 
 
+@pytest.mark.parametrize('runtime_input', ['runtime $alias%', '~/runtime $alias%', 'runtime $alias%/../chosen'])
+def test_relative_runtime_uses_original_caller_and_preserves_symlink_traversal(tmp_path, runtime_input):
+    env = service_environment(tmp_path)
+    checkout = tmp_path / 'checkout'
+    checkout.mkdir()
+    for name in ('Korina', 'korina', 'deploy'):
+        shutil.copytree(REPO / name, checkout / name,
+                        ignore=shutil.ignore_patterns('__pycache__', 'config.json', '*.wav'))
+    caller = tmp_path / 'caller'
+    caller.mkdir()
+    storage = tmp_path / 'storage'
+    for name in ('runtime', 'chosen'):
+        shutil.copytree(REPO / 'Korina', storage / name,
+                        ignore=shutil.ignore_patterns('__pycache__', 'config.json', '*.wav'))
+        (storage / name / 'config.json').write_text(json.dumps({
+            'voice': 'sentinel-' + name, 'ack_enabled': 'off', 'agent_enabled': 'off',
+        }))
+    alias = caller / 'runtime $alias%'
+    alias.symlink_to(storage / 'runtime', target_is_directory=True)
+    env.update(HOME=str(caller), KORINA_APP_DIR=runtime_input)
+    subprocess.run(['bash', str(checkout / 'Korina/install-services.sh')], cwd=caller, env=env,
+                   check=True, capture_output=True, text=True)
+    unit = Path(env['XDG_CONFIG_HOME']) / 'systemd/user/korina-voice-lab.service'
+    line = next(line for line in unit.read_text().splitlines() if 'KORINA_APP_DIR=' in line)
+    rendered = shlex.split(line.partition('=')[2])[0].partition('=')[2].replace('%%', '%')
+    expected = caller / runtime_input.removeprefix('~/')
+    assert rendered == str(expected), 'retain the alias and .. rather than resolving or collapsing them'
+    service_env = dict(env, KORINA_APP_DIR=rendered)
+    result = subprocess.run([sys.executable, '-c', '''
+import json
+from fastapi.testclient import TestClient
+from korina.app_factory import create_app
+from korina.config import load_config
+from korina.util.paths import CONFIG_PATH
+with TestClient(create_app()) as client:
+    response = client.get('/')
+    print(json.dumps({'status': response.status_code, 'voice': load_config()['voice'],
+                      'config_path': str(CONFIG_PATH.resolve())}))
+'''], cwd=checkout, env=service_env, capture_output=True, text=True, check=True, timeout=10)
+    payload = json.loads(result.stdout)
+    selected = 'chosen' if '..' in runtime_input else 'runtime'
+    assert payload == {'status': 200, 'voice': 'sentinel-' + selected,
+                       'config_path': str(storage / selected / 'config.json')}
+    assert not (checkout / 'runtime $alias%').exists()
+
+
 @pytest.mark.parametrize('setting', ['KORINA_PYTHON', 'KORINA_TTS_PYTHON'])
 @pytest.mark.parametrize('invalid', ['missing', 'directory', 'not-python'])
 def test_invalid_explicit_interpreter_aborts_before_changes(tmp_path, setting, invalid):

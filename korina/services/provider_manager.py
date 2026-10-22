@@ -136,8 +136,9 @@ def start_lmstudio() -> bool:
     return True
 
 
-def stop_ollama() -> LifecycleActions:
-    actions = _unit_stopped('ollama.service', 'ollama.service')
+def stop_ollama(*, stop_service: bool = True) -> LifecycleActions:
+    """Stop supervised Ollama; wrappers may handle eligible user units first."""
+    actions = _unit_stopped('ollama.service', 'ollama.service') if stop_service else LifecycleActions()
     binary = shutil.which('ollama')
     if binary:
         actions.merge(_terminated('ollama', provider_processes.terminate_executable(Path(binary), command='serve')))

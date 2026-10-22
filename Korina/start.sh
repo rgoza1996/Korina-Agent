@@ -12,7 +12,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KORINA_APP_DIR="${KORINA_APP_DIR:-$SCRIPT_DIR}"
-CONFIG="$KORINA_APP_DIR/config.json"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/service-common.sh"
 
@@ -31,6 +30,8 @@ for arg in "$@"; do
 done
 
 PYTHON_BIN="$(korina_select_python KORINA_PYTHON "${KORINA_PYTHON:-}" "${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python")"
+KORINA_APP_DIR="$(korina_normalize_app_dir "$PYTHON_BIN" "$KORINA_APP_DIR")"
+CONFIG="$KORINA_APP_DIR/config.json"
 
 if [[ ! -f "$CONFIG" ]]; then
   if [[ "$DRY_RUN" -eq 1 ]]; then

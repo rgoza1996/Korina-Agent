@@ -2,8 +2,28 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
+
+
+@pytest.mark.parametrize('default_service_stop', [True, False])
+def test_ollama_process_cleanup_can_leave_unit_eligibility_to_wrapper(monkeypatch, default_service_stop):
+    from korina.services import provider_manager as manager
+    from korina.services.provider_processes import TerminationResult
+
+    units, processes = [], []
+    monkeypatch.setattr(manager, '_systemctl', lambda *args:
+                        units.append(args) or SimpleNamespace(returncode=0))
+    monkeypatch.setattr(manager.shutil, 'which', lambda command: '/fixture/ollama')
+    monkeypatch.setattr(manager.provider_processes, 'terminate_executable', lambda executable, command:
+                        processes.append((executable, command)) or TerminationResult(signalled=[123]))
+    monkeypatch.setattr(manager.provider_processes, 'wait_for_exit', lambda pids: [])
+    actions = manager.stop_ollama() if default_service_stop else manager.stop_ollama(stop_service=False)
+    assert units == ([('stop', 'ollama.service')] if default_service_stop else [])
+    assert processes == [(Path('/fixture/ollama'), 'serve')]
+    assert actions.stopped == (['ollama.service', 'ollama'] if default_service_stop else ['ollama'])
+    assert not actions.warnings
 
 
 def test_synchronize_llm_dependents_tracks_provider_transition(config_module):
