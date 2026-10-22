@@ -1,7 +1,7 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
-import { saveConfigNow, loadConfig } from '../../Korina/js/api.js';
+import { saveConfigNow, loadConfig, initializeSettingsForm } from '../../Korina/js/api.js';
 import { applyConfig } from '../../Korina/js/settings-ui.js';
 import { askLM, deliverTranscriptToAgent, handleAgentEvent, handlePermissionAnswerIfAny,
   maybeReleaseDeferredAgentInterrupt, pollAgentEvents, setAgentEnabledFromUi } from '../../Korina/js/agent-ui.js';
@@ -19,7 +19,7 @@ beforeEach(() => {
     return elements.get(id);
   }, createElement: () => ({}) };
   element('agentEnabled').checked = true;
-  Object.assign(state, { appConfig: { agent_enabled: 'on' }, history: [{ role: 'user', content: 'Keep this conversation.' }],
+  Object.assign(state, { appConfig: { agent_enabled: 'on' }, settingsBootstrap: null, history: [{ role: 'user', content: 'Keep this conversation.' }],
     agentSession: 10, agentActivityEpoch: 0, agentActivityBlocked: false, agentControlPending: false,
     agentResetBlocked: false, agentEventCursor: 0, agentFirstDelivered: false, agentLastDeliveredTurn: 0,
     agentLastDeliveryAt: 0, agentTurnCount: 3, pendingAgentStateReport: '', pendingAgentReportVersion: 0,
@@ -39,6 +39,7 @@ beforeEach(() => {
     if (url === '/api/chat') return response({ reply: 'Normal reply.' });
     throw new Error('Unexpected request: ' + url);
   };
+  initializeSettingsForm();
 });
 async function toggle(enabled) { element('agentEnabled').checked = enabled; return setAgentEnabledFromUi(); }
 
@@ -73,6 +74,7 @@ test('rapid off/on persists both transitions, keeps generic saves from overridin
   state.deferredAgentInterrupt = { message: 'Retire interrupt' };
   const off = toggle(false); await started.promise;
   const on = toggle(true);
+  element('speed').value = '1.1';
   const generic = saveConfigNow();
   assert.equal(state.agentActivityBlocked, true);
   assert.equal(state.pendingAgentStateReport, '');

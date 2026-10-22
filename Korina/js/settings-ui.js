@@ -108,12 +108,14 @@ export function collectConfig() {
 
 // applyConfig
 
-export function applyConfig(c = {}) {
+export function applyConfig(c = {}, { preserveKeys = [], updateSnapshot = true, snapshot = c } = {}) {
   if (state.agentControlPending) {
     c = { ...c };
     delete c.agent_enabled;
   }
   state.appConfig = { ...state.appConfig, ...c };
+  c = { ...c };
+  for (const key of preserveKeys) delete c[key];
   if (c.voice && $('voice')) $('voice').value = c.voice;
   if (c.speed && $('speed')) { $('speed').value = c.speed; $('speedDisplay').textContent = parseFloat(c.speed).toFixed(1) + '×'; }
   if (c.ack_enabled && $('ackEnabled')) $('ackEnabled').value = c.ack_enabled;
@@ -123,13 +125,13 @@ export function applyConfig(c = {}) {
   if (c.stt_llm_provider !== undefined && $('sttLlmProvider')) $('sttLlmProvider').value = c.stt_llm_provider || '';
   if (c.stt_llm_base_url !== undefined && $('sttLlmBaseUrl')) $('sttLlmBaseUrl').value = c.stt_llm_base_url || '';
   if (c.stt_llm_api_key_env !== undefined && $('sttLlmApiKeyEnv')) $('sttLlmApiKeyEnv').value = c.stt_llm_api_key_env || '';
-  if ($('sttLlmReasoningEnabled')) $('sttLlmReasoningEnabled').checked = String(c.stt_llm_reasoning || 'off') === 'on';
-  if ($('sttLlmModel')) {
-    const sttModelValue = c.stt_llm_model !== undefined ? c.stt_llm_model : '';
+  if (c.stt_llm_reasoning !== undefined && $('sttLlmReasoningEnabled')) $('sttLlmReasoningEnabled').checked = String(c.stt_llm_reasoning || 'off') === 'on';
+  if (c.stt_llm_model !== undefined && $('sttLlmModel')) {
+    const sttModelValue = c.stt_llm_model;
     if (sttModelValue && !$('sttLlmModel').querySelector(`option[value="${CSS.escape(sttModelValue)}"]`)) { const o = document.createElement('option'); o.value = sttModelValue; o.textContent = prettyModelLabel(sttModelValue); $('sttLlmModel').appendChild(o); }
     $('sttLlmModel').value = sttModelValue || '';
   }
-  if (c.lm_model && $('lmModel')) { if (!$('lmModel').querySelector(`option[value="${CSS.escape(c.lm_model)}"]`)) { const o = document.createElement('option'); o.value = c.lm_model; o.textContent = prettyModelLabel(c.lm_model); $('lmModel').appendChild(o); } $('lmModel').value = c.lm_model; }
+  if (c.lm_model !== undefined && $('lmModel')) { if (c.lm_model && !$('lmModel').querySelector(`option[value="${CSS.escape(c.lm_model)}"]`)) { const o = document.createElement('option'); o.value = c.lm_model; o.textContent = prettyModelLabel(c.lm_model); $('lmModel').appendChild(o); } $('lmModel').value = c.lm_model || ''; }
   if (c.tts_device && $('ttsDevice')) $('ttsDevice').value = c.tts_device;
   if (c.tts_provider && $('ttsProvider')) {
     const select = $('ttsProvider');
@@ -148,7 +150,7 @@ export function applyConfig(c = {}) {
   if (c.llm_provider && $('llmProvider')) $('llmProvider').value = c.llm_provider;
   if (c.llm_base_url && $('llmBaseUrl')) $('llmBaseUrl').value = c.llm_base_url;
   if (c.llm_api_key_env !== undefined && $('llmApiKeyEnv')) $('llmApiKeyEnv').value = c.llm_api_key_env || '';
-  if ($('llmReasoningEnabled')) $('llmReasoningEnabled').checked = String(c.llm_reasoning || 'off') === 'on';
+  if (c.llm_reasoning !== undefined && $('llmReasoningEnabled')) $('llmReasoningEnabled').checked = String(c.llm_reasoning || 'off') === 'on';
   if (c.stt_cloud_base_url !== undefined && $('sttCloudBaseUrl')) $('sttCloudBaseUrl').value = c.stt_cloud_base_url || '';
   if (c.stt_cloud_model !== undefined && $('sttCloudModel')) $('sttCloudModel').value = c.stt_cloud_model || '';
   if (c.stt_api_key_env !== undefined && $('sttApiKeyEnv')) $('sttApiKeyEnv').value = c.stt_api_key_env || '';
@@ -195,19 +197,15 @@ export function applyConfig(c = {}) {
   // (the function parameter `c`), not a free variable. This was a
   // regression previously (used `current.X` which threw
   // ReferenceError on every modal close).
-  state.appConfigSnapshot = {
-    llm_provider: c.llm_provider,
-    lm_model: c.lm_model,
-    llm_base_url: c.llm_base_url,
-    llm_reasoning: c.llm_reasoning || 'off',
-    stt_llm_provider: c.stt_llm_provider,
-    stt_llm_base_url: c.stt_llm_base_url,
-    stt_llm_model: c.stt_llm_model,
-    tts_provider: c.tts_provider,
-    tts_base_url: c.tts_base_url,
-    tts_port: c.tts_port,
-    tts_model: c.tts_model,
-  };
+  if (updateSnapshot) {
+    const next = { ...state.appConfigSnapshot };
+    for (const key of ['llm_provider', 'lm_model', 'llm_base_url', 'llm_reasoning',
+      'stt_llm_provider', 'stt_llm_base_url', 'stt_llm_model', 'tts_provider',
+      'tts_base_url', 'tts_port', 'tts_model']) {
+      if (snapshot[key] !== undefined) next[key] = snapshot[key];
+    }
+    state.appConfigSnapshot = next;
+  }
 }
 
 // Idle activity tracking

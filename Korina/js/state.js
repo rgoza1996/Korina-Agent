@@ -1,6 +1,8 @@
 // Shared conversation, recording, playback, settings, and agent state.
 
 export const state = {
+  // Form ownership while saved settings load or save asynchronously.
+  settingsBootstrap: null,
   // --- TTS / playback ---
   mode: 'sse',
   controller: null,

@@ -5,7 +5,7 @@ import { apiErrorMessage } from './api-errors.js';
 import { $, status, setDot, log, setSectionHidden, clamp } from "./dom.js";
 import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from "./labels.js";
 import {
-  loadConfig, saveConfigNow, saveConfigSoon, health,
+  loadConfig, saveConfigNow, saveConfigSoon, health, initializeSettingsForm,
   activateSelectedProvider, initApp,
   refreshProviderCapabilities,
   listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl,
@@ -121,6 +121,11 @@ async function _closeSettingsImpl() {
     do {
       settingsApplyQueued = false;
       await saveConfigNow(); // A failed save must prevent provider side effects.
+      if (!initializeSettingsForm().loaded) {
+        $('settingsActionStatus').textContent = 'Saved settings have not loaded. Open Settings to retry before provider activation.';
+        await health();
+        continue;
+      }
       const response = {
         llm_provider: llmProvider(), lm_model: lmModel(), llm_base_url: llmBaseUrl(),
         llm_reasoning: llmReasoningEnabled(),
@@ -151,6 +156,7 @@ async function _closeSettingsImpl() {
 async function openSettings() {
   $('settingsModal')?.classList.add('open');
   syncConverseSettingsUI();
+  if (!initializeSettingsForm().loaded) void loadConfig();
   if (!await refreshProviderCapabilities()) return;
   loadAgentModelOptions();
 }
@@ -525,6 +531,7 @@ if (clearBtn) {
 }
 
 // --- Boot ---
+initializeSettingsForm();
 wireUiHandlers();
 wireLocalModelsUi();
 void refreshProviderCapabilities();

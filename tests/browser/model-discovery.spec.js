@@ -42,7 +42,10 @@ test('native response/STT pickers and cache retain the newest discovery when req
   await page.evaluate(() => window.newDiscovery);
   await requests[0].fulfill({ json: payload('old') });
   await page.evaluate(() => window.oldDiscovery);
-  await expect(page.locator('#lmModel')).toHaveValue('new-response');
+  await expect(page.locator('#lmModel')).toHaveValue('saved-response');
+  expect(await page.locator('#lmModel option').evaluateAll(options => options.map(option => option.value)))
+    .toEqual(['new-response', 'saved-response']);
+  await expect(page.locator('#lmModel option[value="saved-response"]')).toHaveAttribute('data-unlisted', 'true');
   expect(await page.locator('#sttLlmModel option').evaluateAll(options => options.map(option => option.value))).toEqual(['', 'new-audio']);
   expect(await page.evaluate(() => window.pickerState.lastModelsPayload)).toEqual(payload('new'));
   expect(new URLSearchParams(await page.evaluate(() => window.pickerState.lastModelsQuery)).get('llm_base_url')).toBe('http://new.example/v1');
@@ -85,7 +88,10 @@ test('an HTTP model discovery failure stays visible and the next ordinary picker
   expect(await page.evaluate(() => window.pickerState.lastModelsPayload)).toBeNull();
   await page.evaluate(() => window.pickers.loadModelOptions());
   expect(calls).toBe(2);
-  await expect(page.locator('#lmModel')).toHaveValue('recovered-response');
+  await expect(page.locator('#lmModel')).toHaveValue('saved-response');
+  expect(await page.locator('#lmModel option').evaluateAll(options => options.map(option => option.value)))
+    .toEqual(['recovered-response', 'saved-response']);
+  expect(await page.evaluate(() => window.pickerState.lastModelsPayload)).toEqual(payload('recovered'));
 });
 
 test('agent discovery uses the current form through the real backend while a settings save is pending', async ({ page, request }) => {
@@ -113,6 +119,8 @@ test('agent discovery uses the current form through the real backend while a set
     await page.evaluate(async saved => {
       window.pickerState.appConfig = saved;
       window.settingsApi = await import('/js/api.js');
+      document.getElementById('agentBaseUrl').value = saved.agent_base_url;
+      window.settingsApi.initializeSettingsForm();
     }, { ...original, ...savedValues });
     await page.route('**/api/config', async route => {
       if (route.request().method() !== 'POST') return route.continue();

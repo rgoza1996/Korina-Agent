@@ -11,7 +11,7 @@ async function mockProviders(page, request) {
     agent_provider: 'openai-compatible', agent_base_url: 'http://agent.example/v1',
   };
   const capabilities = await (await request.get('/api/capabilities')).json();
-  const scenario = { config, configReads: 0, configBarrier: null, healthCalls: 0, agentModelCalls: 0, agentModelCompletions: 0, agentModelBarrier: null, ackBarrier: null, capabilities, capabilityFailures: 0, capabilityCalls: 0, capabilityBarrier: null, saves: [], activations: [], activeChannel: 'korina', failSave: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0, resets: 0, polls: 0, deliveries: 0, failReset: false, resetBarrier: null, agentEvents: [] };
+  const scenario = { config, configReads: 0, configFailures: 0, configBarrier: null, healthCalls: 0, agentModelCalls: 0, agentModelCompletions: 0, agentModelBarrier: null, ackBarrier: null, capabilities, capabilityFailures: 0, capabilityCalls: 0, capabilityBarrier: null, saves: [], activations: [], activeChannel: 'korina', failSave: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0, resets: 0, polls: 0, deliveries: 0, failReset: false, resetBarrier: null, agentEvents: [] };
   await page.route('**/api/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -29,8 +29,11 @@ async function mockProviders(page, request) {
       else { Object.assign(config, payload); body = { ...config }; }
     } else if (endpoint === '/api/config') {
       scenario.configReads++;
+      body = { ...config };
+      if (scenario.configFailures > 0) {
+        scenario.configFailures--; status = 503; body = { detail: 'Saved settings temporarily unavailable' };
+      }
       if (scenario.configBarrier) await scenario.configBarrier;
-      body = config;
     }
     else if (endpoint === '/api/capabilities') {
       scenario.capabilityCalls++;
@@ -194,6 +197,75 @@ test('saved provider editability is refreshed when capabilities finish before co
     await expect(page.locator('#llmBaseUrl')).toBeEnabled();
     await expect(page.locator('#sttLlmBaseUrl')).toBeEnabled();
   } finally { release(); }
+});
+
+test('a completed autosave before the first config reply preserves edits and untouched saved values', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  Object.assign(scenario.config, { voice: 'af_bella', speed: 1.3 });
+  let release;
+  scenario.configBarrier = new Promise(resolve => { release = resolve; });
+  try {
+    await page.goto('/');
+    await page.locator('#settingsBtn').click();
+    await page.locator('#llmProvider').selectOption('ollama');
+    await expect.poll(() => scenario.saves.length).toBe(1);
+    expect(scenario.saves[0]).toEqual({ llm_provider: 'ollama', llm_base_url: scenario.capabilities.providers.ollama.default_base_url });
+    expect(scenario.config.voice).toBe('af_bella');
+    expect(scenario.config.speed).toBe(1.3);
+    release();
+    await expect(page.locator('#settingsInfo')).toHaveText('Loaded saved config.json settings.');
+    await expect(page.locator('#llmProvider')).toHaveValue('ollama');
+    await expect(page.locator('#speed')).toHaveValue('1.3');
+    await expect(page.locator('#voice')).toHaveValue('af_bella');
+    expect(await page.evaluate(() => window.state.appConfig.llm_provider)).toBe('ollama');
+    expect(scenario.configReads).toBe(1);
+    await page.locator('#closeSettingsBtn').click();
+    await expect.poll(() => scenario.activations.length).toBe(1);
+    expect(scenario.activations[0].provider).toBe('ollama');
+  } finally { release(); }
+});
+
+test('an unsaved field edit survives the first config reply and saves only that field', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  let release;
+  scenario.configBarrier = new Promise(resolve => { release = resolve; });
+  try {
+    await page.goto('/');
+    await page.locator('#settingsBtn').click();
+    await page.locator('[data-settings-tab="agent"]').click();
+    await page.locator('#agentMaxTokens').fill('1777');
+    release();
+    await expect(page.locator('#settingsInfo')).toHaveText('Loaded saved config.json settings.');
+    await expect(page.locator('#agentMaxTokens')).toHaveValue('1777');
+    await page.locator('#agentMaxTokens').press('Tab');
+    await expect.poll(() => scenario.saves.length).toBe(1);
+    expect(scenario.saves[0]).toEqual({ agent_max_tokens: 1777 });
+  } finally { release(); }
+});
+
+test('failed initial config reads permit partial edits and recover when Settings retries', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.configFailures = 2;
+  Object.assign(scenario.config, { voice: 'af_bella', speed: 1.3 });
+  await page.goto('/'); await waitForBoot(page);
+  await expect(page.locator('#settingsActionStatus')).toContainText('Settings load failed');
+  await page.locator('#settingsBtn').click();
+  await expect.poll(() => scenario.configReads).toBe(2);
+  await page.locator('[data-settings-tab="agent"]').click();
+  await page.locator('#agentMaxTokens').fill('1777');
+  await page.locator('#agentMaxTokens').press('Tab');
+  await expect.poll(() => scenario.saves.length).toBe(1);
+  expect(scenario.saves[0]).toEqual({ agent_max_tokens: 1777 });
+  expect(scenario.config.voice).toBe('af_bella');
+  expect(scenario.config.llm_provider).toBe('openai-compatible');
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsActionStatus')).toContainText('Open Settings to retry before provider activation');
+  expect(scenario.activations).toEqual([]);
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#settingsInfo')).toHaveText('Loaded saved config.json settings.');
+  await expect(page.locator('#agentMaxTokens')).toHaveValue('1777');
+  await expect(page.locator('#voice')).toHaveValue('af_bella');
+  expect(scenario.configReads).toBe(3);
 });
 
 test('real backend boots, lists channels, and closes settings without runtime errors', async ({ page }) => {

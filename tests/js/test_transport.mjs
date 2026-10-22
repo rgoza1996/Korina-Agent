@@ -2,7 +2,7 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
 import { transcribeBlob } from '../../Korina/js/recorder.js';
-import { loadConfig } from '../../Korina/js/api.js';
+import { loadConfig, initializeSettingsForm } from '../../Korina/js/api.js';
 
 const elements = new Map();
 function element(id) {
@@ -14,6 +14,7 @@ function element(id) {
 }
 beforeEach(() => {
   elements.clear();
+  state.settingsBootstrap = null;
   globalThis.document = { getElementById: element, querySelectorAll: () => [] };
   globalThis.location = { protocol: 'http:', hostname: 'localhost', host: 'localhost' };
 });
@@ -78,6 +79,7 @@ for (const [name, response] of [
     element('llmReasoningEnabled').checked = true;
     element('sttLlmModel').value = 'saved-stt';
     element('settingsInfo').textContent = 'Previously loaded settings.';
+    initializeSettingsForm().loaded = true;
     globalThis.fetch = async () => response;
     const warn = console.warn;
     console.warn = () => {};

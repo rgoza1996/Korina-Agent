@@ -1,7 +1,7 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { apiErrorMessage, MAX_API_ERROR_CHARS } from '../../Korina/js/api-errors.js';
-import { activateSelectedProvider, saveConfigNow } from '../../Korina/js/api.js';
+import { activateSelectedProvider, saveConfigNow, initializeSettingsForm } from '../../Korina/js/api.js';
 import { askLM, deliverTranscriptToAgent, handlePermissionAnswerIfAny } from '../../Korina/js/agent-ui.js';
 import { transcribePartialBlob } from '../../Korina/js/recorder.js';
 import { wireLocalModelsUi } from '../../Korina/js/local-models.js';
@@ -25,11 +25,12 @@ beforeEach(() => {
   globalThis.window = {};
   globalThis.location = { hostname: 'localhost', host: 'localhost', protocol: 'http:' };
   Object.assign(state, {
-    appConfig: {}, history: [], mode: 'sse', partialSeq: 0, latestPartialText: '',
+    appConfig: {}, settingsBootstrap: null, history: [], mode: 'sse', partialSeq: 0, latestPartialText: '',
     agentSession: 0, agentActivityEpoch: 0, agentActivityBlocked: false, agentResetBlocked: false,
     agentTurnCount: 1, agentLastDeliveredTurn: 0, awaitingAgentPermission: null,
     pendingAgentStateReport: '', pendingAgentReportVersion: 0,
   });
+  initializeSettingsForm();
 });
 
 function response(body, status = 422) {

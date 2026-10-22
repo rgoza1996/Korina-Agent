@@ -68,8 +68,44 @@ export async function activateSelectedProvider(provider, model = '') {
   return j;
 }
 
-// Load saved settings into the UI.
-export async function loadConfig() {
+const sameSetting = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+export function initializeSettingsForm() {
+  if (!state.settingsBootstrap) state.settingsBootstrap = {
+    observed: collectConfig(), dirty: {}, confirmed: {}, writeRevision: 0, loaded: false,
+  };
+  return state.settingsBootstrap;
+}
+
+function observeSettingsForm() {
+  const bootstrap = initializeSettingsForm();
+  const current = collectConfig();
+  for (const [key, value] of Object.entries(current)) {
+    if (key !== 'agent_enabled' && !sameSetting(value, bootstrap.observed[key])) bootstrap.dirty[key] = value;
+  }
+  bootstrap.observed = current;
+  return bootstrap;
+}
+
+function clearSavedEdits(config) {
+  const bootstrap = initializeSettingsForm();
+  for (const [key, value] of Object.entries(config)) {
+    if (sameSetting(value, bootstrap.dirty[key])) delete bootstrap.dirty[key];
+  }
+}
+
+let configReadInFlight = null;
+export function loadConfig() {
+  if (!configReadInFlight) configReadInFlight = readConfig().finally(() => { configReadInFlight = null; });
+  return configReadInFlight;
+}
+
+// A late read may fill untouched fields, but cannot replace local edits or
+// values confirmed by a newer successful save.
+async function readConfig() {
+  const bootstrap = initializeSettingsForm();
+  const writeRevision = bootstrap.writeRevision;
+  const activeSnapshot = state.appConfigSnapshot;
   const controlVersion = agentControlVersion;
   try {
     const response = await fetch('/api/config');
@@ -78,17 +114,33 @@ export async function loadConfig() {
     if (!c || typeof c !== 'object' || Array.isArray(c) || c.ok === false || Object.hasOwn(c, 'detail')) {
       throw new Error('The server returned invalid settings.');
     }
-    if (controlVersion !== agentControlVersion || state.agentControlPending) delete c.agent_enabled;
-    applyConfig(c);
+    if (state.settingsBootstrap !== bootstrap) return false;
+    observeSettingsForm();
+    const current = { ...c };
+    for (const [key, confirmed] of Object.entries(bootstrap.confirmed)) {
+      if (confirmed.revision > writeRevision) current[key] = confirmed.value;
+    }
+    if (controlVersion !== agentControlVersion || state.agentControlPending) delete current.agent_enabled;
+    applyConfig(current, { preserveKeys: Object.keys(bootstrap.dirty),
+      updateSnapshot: state.appConfigSnapshot === activeSnapshot, snapshot: c });
+    bootstrap.observed = collectConfig();
+    bootstrap.loaded = true;
     syncConverseSettingsUI();
     // Config and capabilities load independently. Re-read these selections
     // even when an overlapping capabilities refresh already applied its UI.
     if (state._capabilitiesCache) await setBaseUrlEditability();
     $('settingsInfo').textContent = 'Loaded saved config.json settings.';
+    const action = $('settingsActionStatus');
+    if (action.textContent.startsWith('Settings load failed:')
+      || action.textContent === 'Saved settings have not loaded. Open Settings to retry before provider activation.') action.textContent = '';
+    if ($('sttStatus').textContent.startsWith('Settings load failed:')) status($('sttStatus'), 'Saved settings loaded.', 'good');
+    return true;
   } catch (e) {
+    if (!bootstrap.loaded) $('settingsInfo').textContent = 'Saved settings have not loaded. Open Settings to retry.';
     $('settingsActionStatus').textContent = `Settings load failed: ${e.message}`;
     status($('sttStatus'), `Settings load failed: ${e.message}`, 'bad');
     console.warn('config load failed', e);
+    return false;
   }
 }
 
@@ -107,6 +159,7 @@ function flushConfigSaves() {
         const config = control || queuedConfig;
         if (!control) queuedConfig = null;
         if (!Object.keys(config).some(key => JSON.stringify(config[key]) !== JSON.stringify(state.appConfig[key]))) {
+          clearSavedEdits(config);
           if (control) agentControlQueue.shift();
           continue;
         }
@@ -120,7 +173,12 @@ function flushConfigSaves() {
         if (!saved || typeof saved !== 'object' || Array.isArray(saved) || saved.ok === false) {
           throw new Error('The server returned an invalid settings response.');
         }
+        const bootstrap = observeSettingsForm();
+        bootstrap.writeRevision++;
+        for (const [key, value] of Object.entries(saved)) bootstrap.confirmed[key] = { value, revision: bootstrap.writeRevision };
         state.appConfig = { ...state.appConfig, ...saved };
+        clearSavedEdits(config);
+        bootstrap.observed = collectConfig();
         if (control) agentControlQueue.shift();
       }
       return state.appConfig;
@@ -138,8 +196,7 @@ function flushConfigSaves() {
 export function saveConfigNow() {
   clearTimeout(state.saveConfigTimer);
   state.saveConfigTimer = null;
-  const { agent_enabled: _enabled, ...config } = collectConfig();
-  queuedConfig = config;
+  queuedConfig = { ...observeSettingsForm().dirty };
   return flushConfigSaves();
 }
 
@@ -152,6 +209,7 @@ export function saveAgentEnabled(enabled) {
 }
 
 export function saveConfigSoon() {
+  observeSettingsForm();
   clearTimeout(state.saveConfigTimer);
   state.saveConfigTimer = setTimeout(() => {
     saveConfigNow().catch(error => {
