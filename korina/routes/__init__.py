@@ -1,15 +1,14 @@
-"""Korina route registry.
-
-Phase 1.9: this module now only re-exports the submodules. The ``create_app()``
-function in ``korina/app_factory.py`` is responsible for wiring routers
-onto the FastAPI instance. Phase 1.6's ``register_routes(app, ctx)``
-helper is gone — route bodies no longer live in the monolith, so the
-``globals()`` indirection is no longer needed.
-"""
+"""Import-light route namespace; app_factory explicitly composes the routers."""
 
 from __future__ import annotations
 
-from . import acks, agent, chat, config, health, index, models, providers, stt
+import importlib
 
 __all__ = ["acks", "agent", "chat", "config", "health", "index",
            "models", "providers", "stt"]
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        return importlib.import_module(f"{__name__}.{name}")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
