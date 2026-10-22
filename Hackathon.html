@@ -179,7 +179,7 @@ python -m pip install -e '.[tts]'
 OMP_NUM_THREADS=4 python kokoro-streaming-server.py</code></pre>
 <p>Kokoro loads its pipeline on first speech and may download weights. Warm the selected voice before presenting. Its default port is 8880. An existing compatible endpoint can be configured instead.</p>
 <p>On Linux with a systemd user session, <code>./Korina/install-services.sh</code> renders service units for this checkout and interpreter. <code>KORINA_PYTHON</code> and optional <code>KORINA_TTS_PYTHON</code> select interpreters. The local provider lifecycle remains Linux specific.</p>
-<h2>Run a built wheel</h2>
+<p>For CPU Linux, install the system <code>espeak-ng</code> package too. Warm the speech models before presenting; select a suitable Torch build for other devices.</p><h2>Run a built wheel</h2>
 <p>From the preview checkout, build and install the package:</p>
 <pre><code>python -m pip install '.[dev]'
 python -m build
