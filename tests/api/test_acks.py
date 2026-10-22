@@ -61,7 +61,7 @@ def test_tag_query_is_bounded(client):
 
 @pytest.mark.parametrize('payload', [
     {'voice': 123}, {'voice': 'v' * 65}, {'tag': 't' * 65}, {'voice': '   '},
-    {'clear': []}, {'extra': 'not part of the contract'}, [],
+    {'clear': []}, {'require_saved_voice': 'true'}, {'extra': 'not part of the contract'}, [],
 ])
 def test_rebuild_rejects_malformed_or_unbounded_fields(payload, client):
     assert client.post('/api/acks/rebuild', json=payload).status_code == 422

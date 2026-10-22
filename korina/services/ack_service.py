@@ -4,6 +4,8 @@ import hashlib
 import logging
 import tempfile
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from korina.config import config_tts_base_url, load_config
 from korina.services.ack_manifest import AckPhrase, read_ack_manifest
@@ -27,6 +29,40 @@ logger = logging.getLogger(__name__)
 MAX_ACK_QUEUE = 128
 MAX_ACK_WAV_BYTES = 2 * 1024 * 1024
 ACK_HTTP_TIMEOUT = 30
+
+
+class AckRebuildConflictError(RuntimeError):
+    """An admitted rebuild no longer owns the cache mutation."""
+
+
+@contextmanager
+def ack_rebuild_transaction(*, saved_voice: str | None = None) -> Iterator[None]:
+    """Serialize admitted clear/voice/queue operations, even after disconnect.
+
+    Validate the manifest before entering. A newer admission retires older
+    waiting admissions; an already active transaction finishes before another
+    starts. This does not order requests still waiting in the network/server
+    pool. Browser voice changes therefore also require their saved voice.
+    """
+    def check_saved_voice() -> None:
+        if saved_voice is not None:
+            configured_voice = str(load_config().get('voice') or ACK_DEFAULT_VOICE).strip()
+            if configured_voice != saved_voice:
+                raise AckRebuildConflictError('Saved voice changed; retry the current voice selection')
+
+    check_saved_voice()
+    owner = state.ack
+    with owner.queue_lock:
+        owner.rebuild_generation += 1
+        admission = owner.rebuild_generation
+    with owner.rebuild_lock:
+        # Config reads stay outside the queue lock. A later admitted rebuild
+        # is checked below before any destructive work starts.
+        check_saved_voice()
+        with owner.queue_lock:
+            if owner is not state.ack or admission != owner.rebuild_generation:
+                raise AckRebuildConflictError('Acknowledgement rebuild was superseded by a newer request')
+            yield
 
 
 def acks_enabled() -> bool:

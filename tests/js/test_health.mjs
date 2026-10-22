@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { health } from '../../Korina/js/api.js';
 import { state } from '../../Korina/js/state.js';
+import { cancelAckPlayback, changeAckVoice, loadAcks } from '../../Korina/js/acks.js';
 
 const elements = new Map();
 globalThis.document = { getElementById(id) {
@@ -135,8 +136,28 @@ test('an old health response cannot overwrite a newer voice operation diagnostic
   let finish;
   globalThis.fetch = () => new Promise(resolve => { finish = resolve; });
   const pending = health();
-  el('ackStatus').textContent = 'Voice settings save failed: Disk unavailable';
+  await changeAckVoice(async () => { throw new Error('Disk unavailable'); });
+  const newerMessage = el('ackStatus').textContent;
   finish({ ok: true, json: async () => ({ ...healthy, ack_status: { ok: false, error: 'Older catalog error' } }) });
   await pending;
-  assert.equal(el('ackStatus').textContent, 'Voice settings save failed: Disk unavailable');
+  assert.equal(el('ackStatus').textContent, newerMessage);
+  assert.match(newerMessage, /Voice settings save failed: Disk unavailable/);
+  cancelAckPlayback();
+});
+
+test('successful catalog revalidation owns status even when its visible text is identical', async () => {
+  let finish;
+  el('voice').value = 'af_heart';
+  el('ackStatus').textContent = '1 cached acknowledgement clips available.';
+  globalThis.fetch = url => url === '/api/health' ? new Promise(resolve => { finish = resolve; })
+    : Promise.resolve(new Response(JSON.stringify({ acks: [{ url: '/Ack/current.wav', text: 'Current catalog' }] })));
+  const pending = health();
+  const revision = state.ackStatusRevision;
+  await loadAcks();
+  assert.equal(el('ackStatus').textContent, '1 cached acknowledgement clips available.');
+  assert(state.ackStatusRevision > revision);
+  finish({ ok: true, json: async () => ({ ...healthy, ack_status: { ok: false, error: 'Older catalog error' } }) });
+  await pending;
+  assert.equal(el('ackStatus').textContent, '1 cached acknowledgement clips available.');
+  assert.equal(el('ackStatus').className, 'status good');
 });

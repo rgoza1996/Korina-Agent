@@ -81,6 +81,7 @@ export const state = {
   ackBuffersByTag: {},
   ackSource: null,
   ackPlayingUntil: 0,
+  ackStatusRevision: 0,
   lastActivityAt: performance.now(),
   idleAckCount: 0,
   saveConfigTimer: null,

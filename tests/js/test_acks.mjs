@@ -237,7 +237,9 @@ test('voice rebuild waits for settings acceptance and serializes/coalesces newer
   const first = deferred(), entered = deferred(), save = deferred();
   const voices = [];
   globalThis.fetch = async (_url, options) => {
-    const voice = JSON.parse(options.body).voice;
+    const payload = JSON.parse(options.body);
+    assert.equal(payload.require_saved_voice, true);
+    const voice = payload.voice;
     voices.push(voice);
     if (voice === 'af_heart') { entered.resolve(); await first.promise; }
     return jsonResponse({ ok: true, voice, removed: 0, queued_or_missing: 1 });
@@ -255,6 +257,22 @@ test('voice rebuild waits for settings acceptance and serializes/coalesces newer
   assert.deepEqual(voices, ['af_heart', 'af_nicole']);
   assert.match(element('ackStatus').textContent, /queued for af_nicole/);
   assert.doesNotMatch(element('ackStatus').textContent, /af_heart|af_bella/);
+});
+
+test('retrying a failed voice save rebuilds only after the new save succeeds', async () => {
+  let saved = false;
+  const payloads = [];
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(saved, true);
+    const payload = JSON.parse(options.body); payloads.push(payload);
+    return jsonResponse({ ok: true, voice: payload.voice, removed: 0, queued_or_missing: 1 });
+  };
+  await changeAckVoice(async () => { throw new Error('Temporary save failure'); });
+  assert.deepEqual(payloads, []);
+  assert.match(element('ackStatus').textContent, /Voice settings save failed/);
+  await changeAckVoice(async () => { saved = true; });
+  assert.deepEqual(payloads, [{ voice: 'af_heart', clear: true, require_saved_voice: true }]);
+  assert.match(element('ackStatus').textContent, /rebuild queued for af_heart/);
 });
 
 test('a rebuild completing after session cancellation cannot publish status or schedule a catalog reload', async () => {

@@ -19,7 +19,10 @@ let nextRebuild = null;
 let rebuildWorker = null;
 
 function ackStatus(message, level = 'warn') {
-  if ($('ackStatus')) status($('ackStatus'), message, level);
+  if ($('ackStatus')) {
+    state.ackStatusRevision++;
+    status($('ackStatus'), message, level);
+  }
 }
 
 async function ackJson(response, options = {}) {
@@ -31,7 +34,8 @@ async function ackJson(response, options = {}) {
 }
 
 // Voice saves precede destructive rebuilds. One worker coalesces newer voice
-// selections and never starts a newer clear before the old request completes.
+// selections. The server serializes cache mutation after a client timeout and
+// rejects an old voice change against the latest saved voice.
 export function changeAckVoice(saveSettings) {
   cancelAckPlayback();
   const context = snapshot();
@@ -71,7 +75,7 @@ async function runRebuilds() {
     const deadline = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch('/api/acks/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ voice: context.voice, clear: true }), signal: controller.signal });
+        body: JSON.stringify({ voice: context.voice, clear: true, require_saved_voice: true }), signal: controller.signal });
       const payload = await ackJson(response, { signal: controller.signal, isCurrent: () => current(context) });
       if (!current(context)) continue;
       if (!payload || payload.ok !== true || payload.voice !== context.voice

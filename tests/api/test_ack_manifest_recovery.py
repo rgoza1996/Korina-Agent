@@ -42,6 +42,7 @@ def test_bad_catalog_routes_fail_actionably_without_touching_queue_or_cache(mani
     assert cached.read_bytes() == b'preserve existing audio'
     assert ack_service.state.ack.queue == queue
     assert ack_service.state.ack.generation == 7
+    assert ack_service.state.ack.rebuild_generation == 0
     assert ack_service.state.ack.current_voice == 'af_heart'
     assert not ack_service.state.ack.worker_running
     assert manifest.read_text() == '{'

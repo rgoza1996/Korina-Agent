@@ -36,6 +36,8 @@ class AckState:
     in_progress: dict[tuple[str, str], int] = field(default_factory=dict)
     generation: int = 0
     queue_lock: "threading.RLock" = field(default_factory=threading.RLock)
+    rebuild_generation: int = 0
+    rebuild_lock: "threading.Lock" = field(default_factory=threading.Lock)
     worker_running: bool = False
     last_error: Optional[str] = None
     last_generated: Optional[str] = None

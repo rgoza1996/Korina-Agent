@@ -12,6 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from korina.runtime import state
 from korina.services.ack_service import (
+    AckRebuildConflictError,
+    ack_rebuild_transaction,
     ack_files_for,
     ack_status,
     clear_ack_wavs,
@@ -36,6 +38,7 @@ class AckRebuildRequest(BaseModel):
     voice: str = Field(default=ACK_DEFAULT_VOICE, min_length=1, max_length=64)
     tag: str | None = Field(default=None, min_length=1, max_length=64)
     clear: bool = False
+    require_saved_voice: bool = Field(default=False, strict=True)
 
 
 @router.get('/api/acks')
@@ -59,8 +62,11 @@ def acks_status(voice: str = Query(ACK_DEFAULT_VOICE, min_length=1, max_length=6
 def acks_rebuild(payload: AckRebuildRequest):
     manifest = _manifest()  # Validate before deleting cache or invalidating work.
     voice, tag = payload.voice, payload.tag
-    removed = clear_ack_wavs() if payload.clear else 0
-    with state.ack.queue_lock:
-        state.ack.current_voice = voice
-    missing = enqueue_missing_acks(voice, tag, force=True, manifest=manifest)
-    return {'ok': True, 'voice': voice, 'tag': tag, 'removed': removed, 'queued_or_missing': missing, 'status': ack_status(voice, manifest=manifest)}
+    try:
+        with ack_rebuild_transaction(saved_voice=voice if payload.require_saved_voice else None):
+            removed = clear_ack_wavs() if payload.clear else 0
+            state.ack.current_voice = voice
+            missing = enqueue_missing_acks(voice, tag, force=True, manifest=manifest)
+            return {'ok': True, 'voice': voice, 'tag': tag, 'removed': removed, 'queued_or_missing': missing, 'status': ack_status(voice, manifest=manifest)}
+    except AckRebuildConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
