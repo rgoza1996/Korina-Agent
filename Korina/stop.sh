@@ -13,10 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KORINA_APP_DIR="${KORINA_APP_DIR:-$SCRIPT_DIR}"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PYTHON_BIN="${KORINA_PYTHON:-${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python}"
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  PYTHON_BIN="$(command -v python3)"
-fi
+source "$SCRIPT_DIR/service-common.sh"
 
 DRY_RUN=0
 for arg in "$@"; do
@@ -29,6 +26,8 @@ for arg in "$@"; do
     *) echo "Unknown arg: $arg" >&2; exit 2 ;;
   esac
 done
+
+PYTHON_BIN="$(korina_select_python KORINA_PYTHON "${KORINA_PYTHON:-}" "${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python")"
 
 run() {
   if [[ "$DRY_RUN" -eq 1 ]]; then

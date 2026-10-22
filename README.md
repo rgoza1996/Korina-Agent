@@ -104,7 +104,11 @@ From an activated environment in the source checkout:
 ./Korina/stop.sh
 ```
 
-The installer renders units with the checkout and interpreter paths. `systemd --user` is optional; foreground Python commands work without it. GUI providers need a desktop session environment. If a user service cannot open LM Studio, import the relevant display variables with `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY`.
+The installer records the checkout, runtime directory, and interpreter paths. It uses the active environment, checkout `.venv`, or `python3`; set `KORINA_PYTHON` and optionally `KORINA_TTS_PYTHON` for separate interpreters. Invalid explicit overrides abort installation.
+
+Bundled units use `127.0.0.1:8001` for Korina and `127.0.0.1:8880` for Kokoro. Foreground `KORINA_HOST`/`KORINA_PORT` and TTS bind overrides do not reconfigure installed units. Startup requires the relevant installed units and returns an error if their start command or TCP wait fails. For manually customized unit ports, use `--no-wait` and check their actual URL with `scripts/check_stack.py --base URL`.
+
+`systemd --user` is optional; foreground Python commands work without it. GUI providers need a desktop session environment. If a user service cannot open LM Studio, import the relevant display variables with `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY`.
 
 ## Code map
 

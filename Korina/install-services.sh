@@ -2,12 +2,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO_ROOT/Korina/service-common.sh"
 UNIT_SRC="$REPO_ROOT/deploy/systemd"
 UNIT_DST="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-PYTHON_BIN="${KORINA_PYTHON:-${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python}"
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  PYTHON_BIN="$(command -v python3)"
-fi
+PYTHON_BIN="$(korina_select_python KORINA_PYTHON "${KORINA_PYTHON:-}" "${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python")"
+TTS_PYTHON_BIN="$(korina_select_python KORINA_TTS_PYTHON "${KORINA_TTS_PYTHON:-}" "$PYTHON_BIN")"
 
 require_unit() {
   local file="$1"
@@ -24,12 +23,16 @@ require_unit kokoro-streaming-server.service
 mkdir -p "$UNIT_DST"
 
 # Render real checkout/interpreter paths; templates are not tied to a home layout.
-"$PYTHON_BIN" - "$REPO_ROOT" "$UNIT_SRC" "$UNIT_DST" <<'PYTHON'
+"$PYTHON_BIN" - "$REPO_ROOT" "$UNIT_SRC" "$UNIT_DST" "$TTS_PYTHON_BIN" <<'PYTHON'
 import os
+import shutil
 import sys
 from pathlib import Path
 
-repo, source, destination = map(Path, sys.argv[1:])
+repo, source, destination = map(Path, sys.argv[1:4])
+launcher = shutil.which('env', path=os.defpath)
+if not launcher:
+    raise RuntimeError('Installing Linux user services requires the env executable')
 
 def quote(value, command=False):
     if any(ord(char) < 32 for char in value):
@@ -42,8 +45,9 @@ values = {
     "REPO_ROOT": str(repo),
     "APP_DIR_ENV": "KORINA_APP_DIR=" + os.environ.get("KORINA_APP_DIR", str(repo / "Korina")),
     "PYTHON": sys.executable,
-    "TTS_PYTHON": os.environ.get("KORINA_TTS_PYTHON", sys.executable),
+    "TTS_PYTHON": sys.argv[4],
     "TTS_SCRIPT": str(repo / "kokoro-streaming-server.py"),
+    "ENV": launcher,
 }
 for name in ("korina-voice-lab.service", "kokoro-streaming-server.service"):
     text = (source / name).read_text()
