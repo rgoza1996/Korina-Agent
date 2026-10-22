@@ -50,6 +50,7 @@ test('Meta agent preset uses the same registry and preserves an explicit role ke
   assert.equal(control('agentBaseUrl').disabled, true);
   assert.equal(control('agentApiKey').value, 'explicit-fixture-key');
   assert.match(control('agentApiKey').placeholder, /MODEL_API_KEY/);
+  assert.match(control('agentApiKey').placeholder, /same-URL response key, otherwise/);
 });
 
 test('generic provider selection restores endpoint editing and legacy reasoning control', async () => {

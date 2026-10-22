@@ -62,10 +62,11 @@ function modelStatus(statusDict, modelId){
   return statusDict ? (statusDict[String(modelId || "")] || null) : null;
 }
 
-function applyModelOptionStatus(option, baseLabel, status, capability){
+function applyModelOptionStatus(option, baseLabel, status, capability, { responseModel = false } = {}){
   const summary = String(status?.summary || "").trim();
   const reasons = Array.isArray(status?.reasons) ? status.reasons.map(x => String(x || "").trim()).filter(Boolean) : [];
   const audioSupported = capability ? (capability.supports_audio_input === true) : null;
+  const unverifiedResponseAudio = responseModel && capability?.source === 'inferred' && audioSupported === false;
   option.classList.remove('modelOptionBad','modelOptionNoAudio');
   option.style.color = '';
   option.style.fontWeight = '';
@@ -73,12 +74,10 @@ function applyModelOptionStatus(option, baseLabel, status, capability){
   option.dataset.audioCapable = audioSupported === null ? '' : (audioSupported ? 'true' : 'false');
   option.textContent = baseLabel;
   option.title = '';
-  // Non-audio-capable models get a '(no audio)' suffix on the label so
-  // users see the capability at a glance — even when the 'Show all
-  // models' override is on. The label stays selectable (override is on)
-  // but the user knows what they're picking.
+  // Keep STT's capability hints, including its override view. A missing
+  // positive audio signal does not establish a response model's capabilities.
   let label = baseLabel;
-  if (audioSupported === false) {
+  if (audioSupported === false && !unverifiedResponseAudio) {
     label = `${baseLabel} (no audio)`;
     option.classList.add('modelOptionNoAudio');
   }
@@ -87,7 +86,7 @@ function applyModelOptionStatus(option, baseLabel, status, capability){
     option.style.color = '#ff7b72';
     option.style.fontWeight = '600';
     option.dataset.unusable = 'true';
-    label = `${baseLabel} (no audio) [red: ${summary || 'likely unusable'}]`;
+    label = `${label} [red: ${summary || 'likely unusable'}]`;
     option.title = reasons.join(' • ');
   }
   option.textContent = label;
@@ -113,7 +112,7 @@ export async function setBaseUrlEditability(){
   const agentEditable = agentCaps?.editable_base_url === true;
   if($("agentBaseUrl")) $("agentBaseUrl").disabled = !agentEditable;
   if($("agentApiKey")) $("agentApiKey").placeholder = agentCaps?.default_api_key_env
-    ? `Blank uses server environment ${agentCaps.default_api_key_env}` : 'Optional; saved locally in config.json';
+    ? `Blank: same-URL response key, otherwise ${agentCaps.default_api_key_env}` : 'Optional; saved locally in config.json';
 }
 
 let modelsRequest = 0;
@@ -135,13 +134,13 @@ async function discoveryJson(response, signal, isCurrent) {
   return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
 }
 
-function keepModelSelection(select, current, fallback = '', { statuses, capabilities } = {}) {
+function keepModelSelection(select, current, fallback = '', { statuses, capabilities, responseModel = false } = {}) {
   const selected = normalizeModelId(current) || normalizeModelId(fallback) || '';
   let unlisted = false;
   if (selected && !Array.from(select.options).some(option => option.value === selected)) {
     const option = document.createElement('option');
     option.value = selected;
-    applyModelOptionStatus(option, prettyModelLabel(selected), modelStatus(statuses, selected), capabilities?.[selected]);
+    applyModelOptionStatus(option, prettyModelLabel(selected), modelStatus(statuses, selected), capabilities?.[selected], { responseModel });
     option.textContent += ' (saved; not listed)';
     option.title = (option.title ? option.title + ' • ' : '') + 'Discovery did not list this saved selection. It has been retained.';
     option.dataset.unlisted = 'true';
@@ -250,7 +249,7 @@ async function discoverModelOptions(force){
       for(const m of j.llm_models){
         const o=document.createElement("option");
         o.value=m;
-        applyModelOptionStatus(o, (j.labels&&j.labels[m])||prettyModelLabel(m), modelStatus(llmStatuses, m), (j.llm_models_capabilities||{})[m]);
+        applyModelOptionStatus(o, (j.labels&&j.labels[m])||prettyModelLabel(m), modelStatus(llmStatuses, m), (j.llm_models_capabilities||{})[m], { responseModel: true });
         $("lmModel").appendChild(o);
       }
     } else if($("lmModel")){
@@ -262,14 +261,14 @@ async function discoverModelOptions(force){
           o.value=entry.id;
           const baseLabel=(j.labels&&j.labels[entry.id])||prettyModelLabel(entry.id);
           const label = entry.group !== lastGroup ? `[${entry.group}] ${baseLabel}` : baseLabel;
-          applyModelOptionStatus(o, label, modelStatus(llmStatuses, entry.id), (j.llm_models_capabilities||{})[entry.id]);
+          applyModelOptionStatus(o, label, modelStatus(llmStatuses, entry.id), (j.llm_models_capabilities||{})[entry.id], { responseModel: true });
           if(entry.group !== lastGroup){ lastGroup = entry.group; }
           $("lmModel").appendChild(o);
         }
       }
     }
     let unlistedSelection = keepModelSelection($("lmModel"), currentResponse, j.llm_default,
-      { statuses: llmStatuses, capabilities: j.llm_models_capabilities });
+      { statuses: llmStatuses, capabilities: j.llm_models_capabilities, responseModel: true });
 
     let sttFilterInfo = "";
     if($("sttLlmModel")){

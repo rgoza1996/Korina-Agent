@@ -20,7 +20,8 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
       if (url.pathname === '/api/audio-probe') return route.fulfill({ json: { entries: {} } });
       if (url.pathname === '/api/models') {
         discovery.push(Object.fromEntries(url.searchParams));
-        return route.fulfill({ json: { llm_models: ['team-text-fixture'], stt_llm_models: [] } });
+        return route.fulfill({ json: { llm_models: ['team-text-fixture'], stt_llm_models: [],
+          llm_models_capabilities: { 'team-text-fixture': { supports_audio_input: false, source: 'inferred' } } } });
       }
       if (url.pathname === '/api/agent/models') {
         agents.push(req.postDataJSON());
@@ -41,6 +42,7 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
     });
     await page.goto('/');
     await expect(page.locator('#settingsInfo')).toContainText('Loaded saved config');
+    await expect(page.locator('.sub')).not.toContainText('local response');
     await page.locator('#settingsBtn').click();
     await page.locator('#llmProvider').selectOption('meta');
     await expect(page.locator('#llmBaseUrl')).toHaveValue('https://api.meta.ai/v1');
@@ -53,6 +55,7 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
       && query.llm_base_url === 'https://api.meta.ai/v1'
       && query.llm_api_key_env === 'MODEL_API_KEY'
       && query.stt_llm_api_key_env === 'MODEL_API_KEY')).toBe(true);
+    await expect(page.locator('#lmModel option[value="team-text-fixture"]')).not.toContainText('no audio');
     await page.locator('#lmModel').selectOption('team-text-fixture');
     await page.locator('#llmMaxTokens').fill('2048');
     await page.evaluate(() => window.saveConfigNow());
@@ -63,6 +66,7 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
     await expect(page.locator('#agentBaseUrl')).toBeDisabled();
     await expect(page.locator('#agentApiKey')).toHaveValue('');
     await expect(page.locator('#agentApiKey')).toHaveAttribute('placeholder', /MODEL_API_KEY/);
+    await expect(page.locator('#agentApiKey')).toHaveAttribute('placeholder', /same-URL response key, otherwise/);
     await expect.poll(() => agents.some(candidate => candidate.agent_provider === 'meta'
       && candidate.agent_base_url === 'https://api.meta.ai/v1')).toBe(true);
     await page.locator('#agentModel').selectOption('team-text-fixture');

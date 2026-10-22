@@ -59,6 +59,38 @@ async function waitRequests(count) {
   assert.ok(pending.length >= count, `expected ${count} requests, received ${pending.length}`);
 }
 
+test('response labels omit unverified audio claims while preserving explicit metadata and STT hints', async () => {
+  const ids = ['unverified-text', 'rejected-unverified', 'known-text', 'known-audio'];
+  const capabilities = {
+    'unverified-text': { supports_audio_input: false, source: 'inferred' },
+    'rejected-unverified': { supports_audio_input: false, source: 'inferred' },
+    'known-text': { supports_audio_input: false, source: 'endpoint_loaded' },
+    'known-audio': { supports_audio_input: true, source: 'endpoint_loaded' },
+  };
+  const statuses = {
+    'rejected-unverified': { usable: false, summary: 'Not available', reasons: ['Not available'] },
+    'known-audio': { usable: false, summary: 'Insufficient memory', reasons: ['Insufficient memory'] },
+  };
+  state.capabilityFilterOverride = true;
+  const loading = loadModelOptions(true); await waitRequests(1);
+  pending[0].resolve(response({ whisper_models: ['base.en'], llm_models: ids, stt_llm_models: ids,
+    llm_models_capabilities: capabilities, stt_llm_models_capabilities: capabilities, llm_models_status: statuses }));
+  await loading;
+  const option = (select, id) => element(select).options.find(item => item.value === id);
+  for (const id of ['unverified-text', 'rejected-unverified']) {
+    assert.doesNotMatch(option('lmModel', id).textContent, /no audio/);
+    assert.match(option('sttLlmModel', id).textContent, /no audio/);
+    assert.equal(option('lmModel', id).dataset.audioCapable, 'false');
+  }
+  assert.match(option('lmModel', 'rejected-unverified').textContent, /Not available/);
+  assert.equal(option('lmModel', 'rejected-unverified').dataset.unusable, 'true');
+  assert.match(option('lmModel', 'known-text').textContent, /no audio/);
+  assert.doesNotMatch(option('lmModel', 'known-audio').textContent, /no audio/);
+  assert.match(option('lmModel', 'known-audio').textContent, /Insufficient memory/);
+  assert.deepEqual(state.lastModelsPayload.llm_models_capabilities, capabilities);
+  assert.deepEqual(state.lastModelsPayload.stt_llm_models_capabilities, capabilities);
+});
+
 test('late response/STT discovery cannot replace a newer picker or cached query', async () => {
   const old = loadModelOptions(true); await waitRequests(1);
   endpoint('new');
