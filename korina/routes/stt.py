@@ -25,6 +25,7 @@ from korina.services.multimodal_stt import (
     transient_whisper_fallback_reason,
 )
 from korina.services.whisper_service import (
+    AudioDurationLimitError,
     audio_metadata,
     convert_to_16k_wav,
     sse_event,
@@ -66,6 +67,27 @@ def _emit_payload_sse(payload: dict):
             event['backend'] = payload['backend']
         yield sse_event('segment', event)
     yield sse_event('done', {**payload, 'segments': emitted})
+
+
+def _emit_whisper_sse(parts, info, *, metadata, started, device, model):
+    """Emit each lazy segment as it arrives and share the final payload builder."""
+    collected = []
+    try:
+        for index, segment in enumerate(parts, 1):
+            collected.append(segment)
+            yield sse_event('segment', {
+                'start': segment.start, 'end': segment.end,
+                'text': segment.text.strip(), 'index': index,
+            })
+    finally:
+        close = getattr(parts, 'close', None)
+        if close is not None:
+            close()
+    payload = whisper_payload(
+        collected, info, metadata=metadata, started=started,
+        device=device, model_id=model,
+    )
+    yield sse_event('done', {**payload, 'segments': len(collected)})
 
 
 def _multimodal_payload(wav: Path, *, device, model, llm_model, started, metadata) -> dict:
@@ -149,10 +171,11 @@ def _stream_events(audio_file, suffix: str, *, device, model, backend, llm_model
                 parts, info = transcribe_wav_segments(
                     wav, vad_filter=True, device=device, model_id=model,
                 )
-                payload = whisper_payload(
+                yield from _emit_whisper_sse(
                     parts, info, metadata=metadata, started=started,
-                    device=device, model_id=model,
+                    device=device, model=model,
                 )
+                return
             yield from _emit_payload_sse(payload)
         except Exception as exc:
             yield sse_event('error', {'detail': str(exc)})
@@ -173,6 +196,8 @@ def transcribe(
             audio.file, suffix, vad_filter=True,
             device=device, model_id=model, backend=backend, llm_model=llm_model,
         ))
+    except AudioDurationLimitError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -196,6 +221,8 @@ def transcribe_partial(
         if result['duration'] < PARTIAL_MIN_SECONDS:
             result.update(text='', segments=[])
         return JSONResponse(result)
+    except AudioDurationLimitError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

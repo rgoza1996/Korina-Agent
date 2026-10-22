@@ -119,3 +119,41 @@ def test_stream_reports_upload_read_failure_as_sse():
     assert len(events) == 1
     assert events[0].startswith('event: error\n')
     assert 'upload unreadable' in events[0]
+
+
+def test_stream_yields_first_segment_before_consuming_the_rest(monkeypatch):
+    from korina.routes import stt
+
+    consumed = []
+
+    def segments():
+        consumed.append('first')
+        yield SimpleNamespace(text='Hello ', start=0, end=1)
+        consumed.append('second')
+        yield SimpleNamespace(text='world.', start=1, end=2)
+
+    stream = stt._emit_whisper_sse(
+        segments(), SimpleNamespace(language='en'),
+        metadata={'samples': 32000, 'sample_rate': 16000, 'duration': 2},
+        started=0, device='cpu', model='base.en',
+    )
+    assert 'Hello' in next(stream)
+    assert consumed == ['first']
+    rest = list(stream)
+    assert consumed == ['first', 'second']
+    assert rest[-1].startswith('event: done')
+    assert 'Hello world.' in rest[-1]
+
+
+@pytest.mark.parametrize('endpoint', ['/api/transcribe', '/api/transcribe/partial'])
+def test_decoded_duration_rejection_uses_413(client, monkeypatch, endpoint):
+    from korina.routes import stt
+    from korina.services.whisper_service import AudioDurationLimitError
+
+    def too_long(*args, **kwargs):
+        raise AudioDurationLimitError('Audio exceeds the 300s decoded duration limit')
+
+    monkeypatch.setattr(stt, 'transcribe_upload_file', too_long)
+    response = client.post(endpoint, files={'audio': ('sample.wav', b'audio', 'audio/wav')})
+    assert response.status_code == 413
+    assert '300s' in response.json()['detail']
