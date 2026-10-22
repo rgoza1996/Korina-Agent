@@ -149,7 +149,7 @@ footer code{color:var(--ink-faint)}
 <div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
 </div></nav><main class="wrap">
 <a href="index.html" class="back-link">← Back to Home</a>
-<h1>Hackathon setup and rehearsal</h1>
+<h1>Hackathon setup and rehearsal</h1><p>Before rehearsal, review the <a href="Verification.html">observed speech-runtime evidence</a> and <a href="Protocol.html">agent protocol</a>.</p>
 <div class="req-note"><strong>Hackathon refactor preview · 22 October 2026.</strong>
 Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>alpha</code>.
 These changes are not yet merged into <code>alpha</code> or the release branch.
@@ -174,8 +174,9 @@ python -m korina.app</code></pre>
 <p>Open <a href="http://localhost:8001">localhost:8001</a>. The initial runtime settings are seeded from <code>Korina/config/config.example.json</code>. Choose an available response model and endpoint in Settings. Model weights and external provider servers are separate prerequisites.</p>
 <p>For local speech output, use a second terminal in the source checkout with the same environment:</p>
 <pre><code>source .venv/bin/activate
+python -m pip install 'torch&gt;=2.4,&lt;3' --index-url https://download.pytorch.org/whl/cpu
 python -m pip install -e '.[tts]'
-python kokoro-streaming-server.py</code></pre>
+OMP_NUM_THREADS=4 python kokoro-streaming-server.py</code></pre>
 <p>Kokoro loads its pipeline on first speech and may download weights. Warm the selected voice before presenting. Its default port is 8880. An existing compatible endpoint can be configured instead.</p>
 <p>On Linux with a systemd user session, <code>./Korina/install-services.sh</code> renders service units for this checkout and interpreter. <code>KORINA_PYTHON</code> and optional <code>KORINA_TTS_PYTHON</code> select interpreters. The local provider lifecycle remains Linux specific.</p>
 <h2>Run a built wheel</h2>
@@ -205,7 +206,7 @@ python scripts/check_stack.py --base http://127.0.0.1:8001 --allow-degraded</cod
 <p>Event-specific Meta requirements have not been supplied. This preparation does not claim a particular Meta integration or hackathon eligibility.</p>
 <p>Deterministic tests cover backend contracts, fallback behavior, request limits, background-worker concurrency, frontend health behavior, module imports, portable paths, and packaging. Local checks and final CI results are recorded in <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a> and the <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">code review</a>.</p>
 <ul>
-<li>Live microphone capture, physical audio playback, real model inference, GPU selection, and provider activation on the demonstration hardware still require a rehearsal.</li>
+<li>Actual CPU Whisper and Kokoro inference and native browser capture/playback scheduling passed locally with a fake microphone and local response fixture. Physical audio devices, the selected real response/agent LLMs, GPU execution, and provider activation on the demonstration hardware still require rehearsal.</li>
 <li>The agent currently produces reports and events. A complete tool-execution runtime, durable memory, and arbitrary third-party agent support remain separate roadmap work.</li>
 <li>This preview has not been promoted to <code>alpha</code> or <code>master</code>. A passing unit suite does not establish end-to-end demo readiness.</li>
 </ul>

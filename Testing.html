@@ -146,7 +146,7 @@ footer code{color:var(--ink-faint)}
 <a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
 </div>
 <div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
-</div></nav><main class="wrap"><a href="index.html" class="back-link">← Back to Home</a><h1>Testing and CI</h1><div class="req-note"><strong>Hackathon refactor preview · 22 October 2026.</strong>
+</div></nav><main class="wrap"><a href="index.html" class="back-link">← Back to Home</a><h1>Testing and CI</h1><p>New: <a href="Verification.html">actual CPU speech and browser pipeline evidence</a>, with exact boundaries and remaining rehearsal.</p><div class="req-note"><strong>Hackathon refactor preview · 22 October 2026.</strong>
 Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>alpha</code>.
 These changes are not yet merged into <code>alpha</code> or the release branch.
 <a href="Hackathon.html">Setup and rehearsal guide</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Progress and verification evidence</a> · <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">Review PR #24</a>.</div>
@@ -165,7 +165,7 @@ python -m build</code></pre>
 <ul><li>Python tests and coverage artifacts across Python 3.10, 3.11, 3.12, and 3.13 on Ubuntu.</li><li>Python correctness lint, a baseline mypy check, and source/wheel builds, including an installed-asset check.</li><li>Node 22 frontend lint and executable JavaScript tests.</li></ul>
 <p>The configured matrix describes the workflow; successful remote runs must be confirmed in <a href="https://github.com/rgoza1996/Korina-Agent/actions">GitHub Actions</a>. Final counts and exact verification commits are tracked in <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a>.</p>
 <h2>Recorded checkpoint</h2>
-<p>The latest local checkpoint is <strong>347 Python tests, 38 JavaScript tests, 10 real Chromium smoke tests, and 85% Python coverage</strong>, including the ACK lifecycle checks. This is local verification. GitHub Actions jobs did not start because the account billing/spending limit blocked them; hardware rehearsal and successful hosted CI remain separate evidence. The current commit, final totals, and remote CI status belong to <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">PR #24</a> and <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a>.</p>
+<p>The latest local checkpoint is <strong>388 Python tests, 44 JavaScript tests, 13 real Chromium tests, and 86% Python coverage</strong>, including actual WAV decoding and bounded session lifecycle checks. This is local verification. GitHub Actions jobs did not start because the account billing/spending limit blocked them; hardware rehearsal and successful hosted CI remain separate evidence. The current commit, final totals, and remote CI status belong to <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">PR #24</a> and <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a>.</p>
 <h2>Read-only HTTP smoke</h2>
 <pre><code>python scripts/check_stack.py --base http://127.0.0.1:8001
 python scripts/check_stack.py --base http://127.0.0.1:8001 --allow-degraded</code></pre>
