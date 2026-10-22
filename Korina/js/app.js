@@ -3,7 +3,7 @@
 import { state } from "./state.js";
 import { apiErrorMessage } from './api-errors.js';
 import { $, status, setDot, log, setSectionHidden, clamp } from "./dom.js";
-import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from "./labels.js";
+import { prettyModelLabel, llmProviderLabel } from "./labels.js";
 import {
   loadConfig, saveConfigNow, saveConfigSoon, health, initializeSettingsForm,
   activateSelectedProvider, initApp,
@@ -14,10 +14,10 @@ import {
   collectConfig, applyConfig, markActivity,
   populateChannelTab, saveChannelSelection,
   syncConverseSettingsUI,
-  ttsDevice, ttsProvider, ttsBaseUrl, ttsPort, ttsModel,
+  ttsDevice,
   sttDevice, sttModel, sttBackend,
   llmProvider, llmBaseUrl, lmModel,
-  sttLlmModel, effectiveSttLlmModel, effectiveSttLlmBaseUrl, effectiveSttLlmProvider,
+  effectiveSttLlmModel, effectiveSttLlmBaseUrl,
   finalSttMode, endpointMode, minSpeechMs, partialWindowMsSetting, llmReasoningEnabled,
 } from "./settings-ui.js";
 import {
@@ -48,7 +48,7 @@ import {
 import { wireLocalModelsUi, loadLocalModelRoots } from "./local-models.js";
 import {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
-  interruptConverse, askAndSpeak, askLM, agentDebug,
+  interruptConverse, askAndSpeak, askLM, agentDebug, cancelChatRequests,
   setAgentEnabledFromUi,
 } from "./agent-ui.js";
 import { openEndpoints, closeEndpoints, populateEndpoints } from "./endpoints.js";
@@ -271,6 +271,7 @@ function stopPlayback() {
 
 async function clearSession() {
   state.agentResetBlocked = true;
+  cancelChatRequests();
   const resumeLive = state.live;
   if (resumeLive) stopLive();
   cancelBargeIn();
@@ -497,7 +498,7 @@ if (_sttOverride) {
     setCapabilityFilterOverride(_sttOverride.checked);
     // Reload the model list so the dropdown reflects the change immediately.
     (async () => {
-      try { await loadModelOptions(true); } catch (e) { /* best effort */ }
+      try { await loadModelOptions(true); } catch { /* best effort */ }
     })();
   });
 }

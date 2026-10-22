@@ -178,7 +178,7 @@ export async function handleBargeRecording(capture = currentCapture) {
     // Critical: clear the current barge state BEFORE Korina speaks the
     // after-interrupt reply, otherwise that reply cannot itself be interrupted.
     clearCapture();
-    await askAndSpeak(text, context, { isCurrent });
+    await askAndSpeak(text, context, { isCurrent, signal: delivery.controller.signal });
   } catch (e) {
     if (!isCurrent()) return;
     clearCapture();

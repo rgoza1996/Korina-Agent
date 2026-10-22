@@ -174,18 +174,21 @@ test('a current STT failure preserves its error and resumes capture once', async
 
 test('Stop Live during barge chat prevents the late reply and speech request', async () => {
   let reply;
+  let chatSignal;
   const requests = [];
   element('transcript').value = 'Earlier transcript.';
-  globalThis.fetch = async url => {
+  globalThis.fetch = async (url, options) => {
     requests.push(url);
     if (url.startsWith('/api/transcribe/stream')) return transcription('Interruption turn.');
     assert.equal(url, '/api/chat');
+    chatSignal = options.signal;
     return new Promise(resolve => { reply = resolve; });
   };
   const pending = captureInterruption();
   await tick();
   assert.equal(element('transcript').value, 'Earlier transcript.\nInterruption turn.');
   stopLive();
+  assert.equal(chatSignal.aborted, true);
   element('text').value = 'Fresh reply.';
   element('sttStatus').textContent = 'Stopped by the user.';
   reply({ ok: true, json: async () => ({ reply: 'Do not speak this old reply.' }) });

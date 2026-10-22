@@ -64,6 +64,8 @@ export function stopLive() {
   state.liveSession++;
   state.live = false; state.liveBusy = false;
   cancelBargeIn();
+  state.liveTurnController?.abort();
+  state.liveTurnController = null;
   state.liveTranscriptionController?.abort();
   state.liveTranscriptionController = null;
   stopPartialTranscriptionLoop(true);
@@ -194,7 +196,11 @@ export function liveMonitor() {
 export async function handleLiveTurn(session = state.liveSession) {
   if (!state.live || session !== state.liveSession) return;
   const agentSession = state.agentSession;
-  const isCurrent = () => state.live && session === state.liveSession && agentSession === state.agentSession;
+  const controller = new AbortController();
+  state.liveTurnController?.abort();
+  state.liveTurnController = controller;
+  const isCurrent = () => state.live && session === state.liveSession && agentSession === state.agentSession
+    && !controller.signal.aborted;
   let preserveStatus = false;
   const fullPass = finalSttMode() !== 'chunks' || state.partialNeedsFullPass;
   const recorderStopped = stopPartialTranscriptionLoop(fullPass);
@@ -255,7 +261,7 @@ export async function handleLiveTurn(session = state.liveSession) {
       return;
     }
     try {
-      const replyText = await askAndSpeak(text, '', { isCurrent });
+      const replyText = await askAndSpeak(text, '', { isCurrent, signal: controller.signal });
       if (!isCurrent()) return;
       if (replyText === null) { preserveStatus = true; return; }
       // askAndSpeak() routes through speakText() which already clears
@@ -276,7 +282,8 @@ export async function handleLiveTurn(session = state.liveSession) {
     preserveStatus = true;
     status($('sttStatus'), 'Live loop error: ' + e.message, 'bad');
   } finally {
-    if (state.live && session === state.liveSession && !state.handlingBarge) {
+    if (state.liveTurnController === controller) state.liveTurnController = null;
+    if (isCurrent() && !state.handlingBarge) {
       state.liveBusy = false;
       if (!preserveStatus) status($('sttStatus'), `Live mode armed (${endpointMode()}, ${state.endSilenceMs}ms endpoint). Start speaking…`, 'warn');
       try {

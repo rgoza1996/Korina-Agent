@@ -18,6 +18,14 @@ let eventPollInFlight = null;
 let activeInterruptSpeech = null;
 let permissionAnswerInFlight = null;
 const ownedRequests = new Set();
+const chatRequests = new Set();
+
+// Clear retires all existing conversation requests; later requests own new controllers.
+export function cancelChatRequests() {
+  const retiring = [...chatRequests];
+  chatRequests.clear();
+  for (const controller of retiring) controller.abort();
+}
 
 function agentActive() {
   return agentEnabled() === 'on' && !state.agentResetBlocked && !state.agentActivityBlocked;
@@ -390,9 +398,10 @@ export async function handlePermissionAnswerIfAny(message, { isCurrent = () => t
 
 // ChatRequest.history contains prior turns only; the backend appends message.
 // Explicit history lets callers record the visible current turn before awaiting I/O.
-export async function askLM(message, priorHistory = cleanHistoryForModel(), { isCurrent = () => true } = {}) {
+export async function askLM(message, priorHistory = cleanHistoryForModel(), { isCurrent = () => true, signal } = {}) {
   const session = state.agentSession;
-  const current = () => session === state.agentSession && isCurrent();
+  const controller = new AbortController();
+  const current = () => session === state.agentSession && !controller.signal.aborted && !signal?.aborted && isCurrent();
   if (!current()) return null;
   const report = agentActive() ? state.pendingAgentStateReport : '';
   const activityEpoch = state.agentActivityEpoch;
@@ -405,6 +414,9 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
   const includedReport = [...stripTranscriptLabels(report)].slice(0, reportBudget).join('');
   const injection = includedReport ? `${prefix}${includedReport}\n\n` : '';
   status($('sttStatus'), 'Sending transcript to configured LLM…', 'warn');
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  chatRequests.add(controller);
   try {
     const r = await fetch('/api/chat', {
       method: 'POST',
@@ -416,7 +428,8 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
         temperature: 0.7,
         model: lmModel(),
         reasoning: llmReasoningEnabled()
-      })
+      }),
+      signal: controller.signal,
     });
     if (!current()) return null;
     const j = await r.json();
@@ -434,13 +447,16 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
   } catch (error) {
     if (!current()) return null;
     throw error;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+    chatRequests.delete(controller);
   }
 }
 
 // LM round-trip + speak + post-speak interrupt drain
-export async function askAndSpeak(message, context = '', { isCurrent = () => true } = {}) {
+export async function askAndSpeak(message, context = '', { isCurrent = () => true, signal } = {}) {
   const session = state.agentSession;
-  const current = () => session === state.agentSession && isCurrent();
+  const current = () => session === state.agentSession && !signal?.aborted && isCurrent();
   if (!current()) return null;
   if (await handlePermissionAnswerIfAny(message, { isCurrent: current })) return null;
   if (!current()) return null;
@@ -451,7 +467,7 @@ export async function askAndSpeak(message, context = '', { isCurrent = () => tru
     ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}`
     : stripTranscriptLabels(message);
 
-  const rawReply = await askLM(lmMessage, priorHistory, { isCurrent: current });
+  const rawReply = await askLM(lmMessage, priorHistory, { isCurrent: current, signal });
   if (!current() || rawReply === null) return null;
   const reply = stripTranscriptLabels(rawReply);
   $('text').value = reply; log('Korina', reply);
