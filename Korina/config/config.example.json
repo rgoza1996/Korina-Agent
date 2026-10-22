@@ -42,6 +42,7 @@
   "idle_ack_step_ms": 5000,
   "llm_api_key_env": "",
   "llm_base_url": "http://127.0.0.1:8080/v1",
+  "llm_max_tokens": 180,
   "llm_provider": "llama.cpp",
   "llm_reasoning": "off",
   "lm_model": "",

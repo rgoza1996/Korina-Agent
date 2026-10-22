@@ -17,6 +17,7 @@ export function ttsProvider() { return $('ttsProvider')?.value || 'kokoro' }
 export function ttsModel() { return $('ttsModel')?.value || 'kokoro' }
 export function llmProvider() { return $('llmProvider')?.value || 'llama.cpp' }
 export function llmBaseUrl() { return $('llmBaseUrl')?.value || 'http://127.0.0.1:8080/v1' }
+export function llmMaxTokens() { return Number($('llmMaxTokens')?.value || '180') }
 const apiBase = value => String(value).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
 export function effectiveLlmApiKeyEnv() {
   const explicit = String($('llmApiKeyEnv')?.value || '').trim();
@@ -80,6 +81,7 @@ export function collectConfig() {
     llm_base_url: llmBaseUrl(),
     llm_api_key_env: String($('llmApiKeyEnv')?.value || '').trim(),
     llm_reasoning: llmReasoningEnabled(),
+    llm_max_tokens: llmMaxTokens(),
     stt_cloud_base_url: String($('sttCloudBaseUrl')?.value || '').trim(),
     stt_cloud_model: String($('sttCloudModel')?.value || '').trim(),
     stt_api_key_env: String($('sttApiKeyEnv')?.value || '').trim(),
@@ -157,6 +159,7 @@ export function applyConfig(c = {}, { preserveKeys = [], updateSnapshot = true, 
   if (c.llm_base_url && $('llmBaseUrl')) $('llmBaseUrl').value = c.llm_base_url;
   if (c.llm_api_key_env !== undefined && $('llmApiKeyEnv')) $('llmApiKeyEnv').value = c.llm_api_key_env || '';
   if (c.llm_reasoning !== undefined && $('llmReasoningEnabled')) $('llmReasoningEnabled').checked = String(c.llm_reasoning || 'off') === 'on';
+  if (c.llm_max_tokens !== undefined && $('llmMaxTokens')) $('llmMaxTokens').value = c.llm_max_tokens;
   if (c.stt_cloud_base_url !== undefined && $('sttCloudBaseUrl')) $('sttCloudBaseUrl').value = c.stt_cloud_base_url || '';
   if (c.stt_cloud_model !== undefined && $('sttCloudModel')) $('sttCloudModel').value = c.stt_cloud_model || '';
   if (c.stt_api_key_env !== undefined && $('sttApiKeyEnv')) $('sttApiKeyEnv').value = c.stt_api_key_env || '';

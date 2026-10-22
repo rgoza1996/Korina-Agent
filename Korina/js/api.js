@@ -314,7 +314,10 @@ export async function health() {
     const sttSummary = sttBackend() === 'llm'
       ? `multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()} (${sttLlmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`
       : `built-in Whisper ${sttDevice()}/${sttModel()}`;
-    const responseSummary = `${j.response_llm_provider || llmProvider()} ${j.response_llm_model || lmModel()} (${llmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`;
+    const responseProvider = j.response_llm_provider || llmProvider();
+    const responseReasoning = responseProvider === 'meta' ? 'provider-default reasoning'
+      : llmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off';
+    const responseSummary = `${responseProvider} ${j.response_llm_model || lmModel()} (${responseReasoning})`;
     $('pageHealth').textContent = `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || state.partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
 
     // hostInfo (Bug C / #19): server-resolved URLs only.

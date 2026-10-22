@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test('Meta dropdowns apply registry presets, preserve blank key controls, and save through the real config route', async ({ page, request }) => {
   const original = await (await request.get('/api/config')).json();
-  const errors = [], discovery = [], agents = [], activations = [];
+  const errors = [], discovery = [], agents = [], activations = [], chats = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
     expect((await request.post('/api/config', { data: {
@@ -25,6 +25,10 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
       if (url.pathname === '/api/agent/models') {
         agents.push(req.postDataJSON());
         return route.fulfill({ json: { ok: true, models: ['team-text-fixture'] } });
+      }
+      if (url.pathname === '/api/chat') {
+        chats.push(req.postDataJSON());
+        return route.fulfill({ json: { reply: 'Fixture reply.' } });
       }
       if (url.pathname === '/api/llm/provider/activate') {
         activations.push(req.postDataJSON());
@@ -50,6 +54,7 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
       && query.llm_api_key_env === 'MODEL_API_KEY'
       && query.stt_llm_api_key_env === 'MODEL_API_KEY')).toBe(true);
     await page.locator('#lmModel').selectOption('team-text-fixture');
+    await page.locator('#llmMaxTokens').fill('2048');
     await page.evaluate(() => window.saveConfigNow());
 
     await page.locator('[data-settings-tab="agent"]').click();
@@ -67,7 +72,11 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
     expect(saved.llm_base_url).toBe('https://api.meta.ai/v1'); expect(saved.agent_base_url).toBe('https://api.meta.ai/v1');
     expect(saved.lm_model).toBe('team-text-fixture'); expect(saved.agent_model).toBe('team-text-fixture');
     expect(saved.llm_api_key_env).toBe(''); expect(saved.agent_api_key).toBe('');
+    expect(saved.llm_max_tokens).toBe(2048);
     expect(saved.stt_backend).toBe('whisper');
+    await page.evaluate(() => window.askLM('Use the saved response budget.'));
+    expect(chats).toHaveLength(1);
+    expect(chats[0].max_tokens).toBe(2048);
     await page.locator('#closeSettingsBtn').click();
     await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
     expect(activations).toEqual([{ provider: 'meta', model: 'team-text-fixture' }]);

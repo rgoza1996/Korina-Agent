@@ -58,6 +58,7 @@ DEFAULT_CONFIG = {
     'llm_base_url': 'http://127.0.0.1:8080/v1',
     'llm_api_key_env': '',
     'llm_reasoning': 'off',
+    'llm_max_tokens': 180,
     'stt_cloud_provider': '',
     'stt_cloud_base_url': '',
     'stt_cloud_model': '',
@@ -460,6 +461,12 @@ def config_llm_api_env(config: Optional[dict] = None) -> str:
     return str(config.get('llm_api_key_env') or '').strip() or provider_default_api_key_env(
         str(config.get('llm_provider') or ''), config_llm_base_url(config),
     )
+
+
+def config_llm_max_tokens(config: Optional[dict] = None) -> int:
+    config = config if config is not None else load_config()
+    value = config.get('llm_max_tokens', 180)
+    return value if isinstance(value, int) and not isinstance(value, bool) and 1 <= value <= 8192 else 180
 
 
 def config_llm_chat_url(config: Optional[dict] = None) -> str:

@@ -4,7 +4,7 @@ import { state } from "./state.js";
 import { apiErrorMessage } from './api-errors.js';
 import { $, status, log } from "./dom.js";
 import { stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry } from "./history.js";
-import { agentEnabled, lmModel, llmReasoningEnabled } from "./settings-ui.js";
+import { agentEnabled, lmModel, llmReasoningEnabled, llmMaxTokens } from "./settings-ui.js";
 import { speakText, stopTtsNow } from "./speech.js";
 import { saveAgentEnabled } from "./api.js";
 
@@ -428,7 +428,7 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
       body: JSON.stringify({
         message: injection + userMessage,
         history: priorHistory.slice(-MAX_MODEL_HISTORY_TURNS),
-        max_tokens: 180,
+        max_tokens: llmMaxTokens(),
         temperature: 0.7,
         model: lmModel(),
         reasoning: llmReasoningEnabled()

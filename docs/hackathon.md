@@ -34,9 +34,10 @@ This ledger does not claim any future implementation or submission is complete.
 2. Select the explicit **Meta Model API** response provider. Its canonical API base is `https://api.meta.ai/v1`; authentication uses a Bearer key from `MODEL_API_KEY` by default. Configure that variable privately in the API process environment or existing service environment file. Explicit role credentials retain their normal scope.
 3. Load models through authenticated discovery and select a model actually enabled for the team. Documentation examples do not prove account access. Keep Whisper for STT and Kokoro for TTS; the Meta text-model demonstration does not require Meta audio output.
 4. Leave Meta reasoning to its model default. Korina's local-provider `reasoning` field is not Meta's documented `reasoning_effort`, and Muse Spark does not accept `reasoning_effort: "none"`.
-5. Warm Whisper/Kokoro, make a real Meta response request, then run `python scripts/check_stack.py`. Resolve failed readiness checks. Model access, useful output, and live API compatibility require this authenticated rehearsal.
+5. Set **Response token budget** deliberately for the selected model. The default is 180; the supported range is 1–8192. Meta reasoning can consume this budget before a visible answer, so rehearse a useful spoken reply before choosing the final limit. The optional agent has its own budget.
+6. Warm Whisper/Kokoro, make a real Meta response request, then run `python scripts/check_stack.py`. Resolve failed readiness checks. Model access, useful output, and live API compatibility require this authenticated rehearsal.
 
-See [API reference](https://dev.meta.ai/docs/api-reference), [Chat Completions](https://dev.meta.ai/docs/protocols/chat-completions), and [available models](https://dev.meta.ai/docs/models). The API accepts the existing `max_tokens` alias, but its budget includes model-dependent completion work; measure whether the selected model needs a larger budget for a useful spoken answer.
+See [API reference](https://dev.meta.ai/docs/api-reference), [Chat Completions](https://dev.meta.ai/docs/protocols/chat-completions), and [available models](https://dev.meta.ai/docs/models). The API accepts the existing `max_tokens` alias. An empty answer with `finish_reason: "length"` is reported as an exhausted-budget error; it is not spoken or recorded as a successful assistant answer.
 
 ## One interaction to demonstrate
 

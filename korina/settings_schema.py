@@ -86,6 +86,7 @@ class SettingsUpdate(_UpdateModel):
     llm_base_url: SettingText = _setting('llm_base_url')
     llm_api_key_env: Name = _setting('llm_api_key_env')
     llm_reasoning: Reasoning = _setting('llm_reasoning')
+    llm_max_tokens: Annotated[int, Field(ge=1, le=8192)] = _setting('llm_max_tokens')
     stt_cloud_provider: Provider = _setting('stt_cloud_provider')
     stt_cloud_base_url: SettingText = _setting('stt_cloud_base_url')
     stt_cloud_model: Name = _setting('stt_cloud_model')

@@ -310,6 +310,33 @@ test('an empty LLM reply keeps the pending report available for retry', async ()
   assert.equal(state.pendingAgentStateReport, 'Keep this report.');
 });
 
+for (const budget of [1, 2048, 8192]) {
+  test(`the next response request uses the deliberate ${budget}-token control`, async () => {
+    element('llmMaxTokens').value = String(budget);
+    let payload;
+    globalThis.fetch = async (_url, options) => {
+      payload = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ reply: 'Ready.' }) };
+    };
+    assert.equal(await askLM('What next?'), 'Ready.');
+    assert.equal(payload.max_tokens, budget);
+  });
+}
+
+test('an actionable budget error preserves context without adding or speaking a blank assistant turn', async () => {
+  state.history = [{ role: 'assistant', content: 'Earlier answer.' }];
+  handleAgentEvent({ type: 'state_report', priority: 'normal', report: 'Keep this report.' });
+  globalThis.fetch = async () => ({ ok: false, json: async () => ({
+    detail: 'Response model exhausted its output-token budget. Increase Response token budget in Settings.',
+  }) });
+  await assert.rejects(askAndSpeak('What next?'), /Response token budget in Settings/);
+  assert.deepEqual(state.history, [
+    { role: 'assistant', content: 'Earlier answer.' }, { role: 'user', content: 'What next?' },
+  ]);
+  assert.equal(state.pendingAgentStateReport, 'Keep this report.');
+  assert.equal(state.ttsSpeaking, false);
+});
+
 test('a newer report arriving during a chat request is preserved even if its text repeats', async () => {
   handleAgentEvent({ type: 'state_report', priority: 'normal', report: 'Latest status.' });
   let finish;

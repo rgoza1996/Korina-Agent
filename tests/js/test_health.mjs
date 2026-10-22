@@ -20,6 +20,14 @@ const healthy = {
   tts: { ok: true, loaded: true, provider: 'openai-compatible', base_url: 'http://tts.local', device: 'cpu' },
 };
 
+test('Meta health reports provider-default reasoning instead of the ignored local toggle', async () => {
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ...healthy, response_llm_provider: 'meta' }) });
+  el('llmReasoningEnabled').checked = false;
+  await health();
+  assert.match(el('pageHealth').textContent, /response meta demo \(provider-default reasoning\)/);
+  assert.doesNotMatch(el('pageHealth').textContent, /response meta demo \(reasoning off\)/);
+});
+
 test('health reflects server truth and survives network loss while switching provider', async () => {
   state.providerPending = true;
   globalThis.fetch = async () => ({ ok: true, json: async () => structuredClone(healthy) });

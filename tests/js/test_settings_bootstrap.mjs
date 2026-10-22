@@ -2,7 +2,7 @@ import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
 import { initializeSettingsForm, loadConfig, saveConfigNow } from '../../Korina/js/api.js';
-import { applyConfig, collectConfig, effectiveSttLlmModel } from '../../Korina/js/settings-ui.js';
+import { applyConfig, collectConfig, effectiveSttLlmModel, llmMaxTokens } from '../../Korina/js/settings-ui.js';
 
 const elements = new Map();
 function element(id) {
@@ -26,6 +26,48 @@ test('closing an untouched form before any config read sends no HTML defaults', 
   globalThis.fetch = async () => { throw new Error('Untouched defaults must not be posted'); };
   await saveConfigNow();
   assert.deepEqual(state.appConfig, {});
+});
+
+test('saved response budget loads without becoming an implicit new settings write', async () => {
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options, undefined);
+    return response({ llm_max_tokens: 2048 });
+  };
+  assert.equal(llmMaxTokens(), 180);
+  await loadConfig();
+  assert.equal(String(element('llmMaxTokens').value), '2048');
+  assert.equal(llmMaxTokens(), 2048);
+  assert.equal(collectConfig().llm_max_tokens, 2048);
+  await saveConfigNow();
+});
+
+test('a newer response-budget draft survives confirmation of an older save', async () => {
+  const pending = deferred(), posts = [];
+  globalThis.fetch = async (_url, options) => {
+    posts.push(JSON.parse(options.body));
+    return posts.length === 1 ? pending.promise : response({ llm_max_tokens: 1024 });
+  };
+  element('llmMaxTokens').value = '512';
+  const saving = saveConfigNow();
+  element('llmMaxTokens').value = '1024';
+  pending.resolve(response({ llm_max_tokens: 512 }));
+  await saving;
+  assert.equal(element('llmMaxTokens').value, '1024');
+  assert.equal(state.settingsBootstrap.dirty.llm_max_tokens, 1024);
+  assert.equal(state.appConfig.llm_max_tokens, 512);
+  await saveConfigNow();
+  assert.deepEqual(posts, [{ llm_max_tokens: 512 }, { llm_max_tokens: 1024 }]);
+  assert.equal(state.appConfig.llm_max_tokens, 1024);
+});
+
+test('response-budget drafts preserve invalid numeric values for strict server validation', () => {
+  for (const value of [0, 1.5, 8193]) {
+    element('llmMaxTokens').value = String(value);
+    assert.equal(collectConfig().llm_max_tokens, value);
+    assert.equal(llmMaxTokens(), value);
+  }
+  element('llmMaxTokens').value = '';
+  assert.equal(llmMaxTokens(), 180);
 });
 
 test('a pre-load save posts only the edited value and retains other saved settings', async () => {

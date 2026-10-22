@@ -1,6 +1,6 @@
 # Korina Agent
 
-Korina is a local voice workspace: speak in the browser, transcribe with Whisper or an audio-capable model, get a response from an OpenAI-compatible endpoint, and hear it through Kokoro. A separate agent loop receives conversation context and returns reports, injections, or permission requests.
+Korina is a local voice workspace: speak in the browser, transcribe with Whisper or an audio-capable model, get a response from Meta Model API or another OpenAI-compatible endpoint, and hear it through Kokoro. A separate agent loop receives conversation context and returns reports, injections, or permission requests.
 
 **Hackathon work:** [`codex/hackathon-refactor`](https://github.com/rgoza1996/Korina-Agent/tree/codex/hackathon-refactor), based on `alpha`. Track verification in [#23](https://github.com/rgoza1996/Korina-Agent/issues/23). `master` remains the v0.0.1 release snapshot. See the [demo guide](docs/hackathon.md) and [current architecture](docs/wiki/Architecture.md).
 
@@ -18,7 +18,7 @@ python -m pip install -e '.[whisper]'
 python -m korina.app
 ```
 
-Open `http://localhost:8001`. The first launch creates `Korina/config.json` from the tracked example. In Settings, set the response provider URL and select a model exposed by that endpoint. The default URLs are `http://127.0.0.1:8080/v1` for the LLM and `http://127.0.0.1:8880` for TTS. Model weights and external LLM servers are installed separately; Korina does not download an LLM for you.
+Open `http://localhost:8001`. The first launch creates `Korina/config.json` from the tracked example. In Settings, choose the response provider and select a model exposed by its endpoint; generic provider URLs are editable, while named profiles supply their canonical base. The default URLs are `http://127.0.0.1:8080/v1` for the LLM and `http://127.0.0.1:8880` for TTS. Model weights and external LLM servers are installed separately; Korina does not download an LLM for you.
 
 For a CPU-only Linux demo, install CPU Torch explicitly before the Kokoro extra. Also install the system `espeak-ng` package for phonemizer fallback. In a second terminal with the same environment:
 
@@ -37,6 +37,16 @@ Browser microphone access needs localhost or a secure context. For a remote demo
 Browser speech uses the Kokoro service protocol: PCM SSE at `/stream/speech` and WAV at `/v1/audio/speech`, relative to the service root. Custom services must support those endpoints, browser CORS, and unauthenticated access. Authenticated cloud TTS is not implemented. Settings includes an optional health URL for compatible custom services.
 
 Compatible services must also obey the browser audio budgets: replies last at most ten minutes, buffered downloads are limited to 32 MiB, and acknowledgement downloads to 2 MiB each. Streaming PCM must use an integer sample rate between 3,000 and 384,000 Hz; the usual 8–48 kHz rates are supported. Oversized or overlong audio stops playback with an error instead of retaining more buffers.
+
+## Meta Model API rehearsal
+
+Select **Meta Model API** (`meta`) as the response provider. This named profile uses the fixed base `https://api.meta.ai/v1` and defaults to Bearer authentication from `MODEL_API_KEY` in the API process environment. A configured `llm_api_key_env` overrides that default. Keep the key private, using the service environment instructions below when applicable. A generic/custom provider does not gain Meta credentials merely by using the same hostname.
+
+Load models through authenticated discovery and choose an ID actually available to the team; Korina does not hardcode a Meta model selection. The Meta response path leaves reasoning to the model default and sends neither the local/generic `reasoning` field nor `reasoning_effort`. Keep Whisper for STT and Kokoro for TTS. The same named profile is available independently for built-in agent reports, with the existing credential scope; the agent remains optional for this demo.
+
+Set **Response token budget** in response settings for the selected model (1–8192, default 180). Meta reasoning can use that budget before a visible answer. Rehearse the limit deliberately; an empty answer caused by budget exhaustion is reported as an error. Agent reports retain their separate budget.
+
+The focused hackathon goal is one useful voice interaction using conversational context and a fact retained in the current session. The API receives the relevant context; this is not durable memory across restarts. The profile is pre-event preparation. At kickoff, record the actual starting SHA and track event additions in the [demo guide's ledger](docs/hackathon.md). Mocked integration checks establish no live authenticated Meta call, presentation quality, or prompt-cache hit; rehearse those separately.
 
 ## Install a built wheel
 
@@ -84,11 +94,12 @@ See [observed verification](docs/verification.md) and [testing](docs/testing.md)
 
 ## Configuration and portable paths
 
-`GET/POST /api/config` loads and saves settings. Provider activation is explicit through `/api/llm/provider/activate`; saving settings alone does not manage processes. Independent STT and agent endpoint choices are preserved. `Korina/config/config.example.json` is tracked; runtime `config.json`, generated WAVs, and model weights are ignored. API keys should come from environment variables named by `llm_api_key_env` and `stt_llm_api_key_env`. Blank STT or agent credentials inherit the response key only when their normalized API base URL matches the response endpoint. An independent endpoint needs its own explicit credentials. `agent_api_key` is a local development convenience stored in runtime config. Keep credentials out of commits.
+`GET/POST /api/config` loads and saves settings. Provider activation is explicit through `/api/llm/provider/activate`; saving settings alone does not manage processes. Independent STT and agent endpoint choices are preserved. `Korina/config/config.example.json` is tracked; runtime `config.json`, generated WAVs, and model weights are ignored. API keys should come from environment variables named by `llm_api_key_env` and `stt_llm_api_key_env`, or a named profile's scoped default. Blank STT or agent credentials inherit the response key only when their normalized API base URL matches the response endpoint. An independent Meta agent can use its canonical `MODEL_API_KEY` default; credentials for other independent endpoints must be configured explicitly when needed. `agent_api_key` overrides agent fallback and is a local development convenience stored in runtime config. Keep credentials out of commits.
 
 | Setting | Purpose |
 | --- | --- |
 | `KORINA_HOST`, `KORINA_PORT` | API bind address and port; defaults `127.0.0.1:8001` |
+| `MODEL_API_KEY` | Default Bearer key for the named Meta Model API profile at its canonical base |
 | `KORINA_APP_DIR` | Complete UI/runtime tree override |
 | `KORINA_LOCAL_MODEL_ROOTS` | Model search directories, separated by the OS path separator |
 | `KORINA_LMSTUDIO_HUB_ROOT` | LM Studio catalog directory |
@@ -118,7 +129,7 @@ From an activated environment in the source checkout:
 
 The installer records the checkout, runtime directory, and interpreter paths. Relative `KORINA_APP_DIR` values are anchored to the caller's directory before wrappers change directory or write units; `~` expands and symlink traversal is preserved. It uses the active environment, checkout `.venv`, or `python3`; set `KORINA_PYTHON` and optionally `KORINA_TTS_PYTHON` for separate interpreters. Invalid explicit overrides abort installation.
 
-Other shell exports are not copied into the installed units. API keys named by `llm_api_key_env` or `stt_llm_api_key_env`, Whisper/model-path overrides, and TTS/CORS settings must also exist in the relevant service environment. Create private files for those settings:
+Other shell exports are not copied into the installed units. API keys named by `llm_api_key_env` or `stt_llm_api_key_env`, the scoped Meta `MODEL_API_KEY` default, Whisper/model-path overrides, and TTS/CORS settings must also exist in the relevant service environment. Create private files for those settings:
 
 ```bash
 mkdir -p ~/.config/korina
@@ -130,7 +141,7 @@ Use `NAME=value` lines without `export`. For example:
 
 ```ini
 # ~/.config/korina/app.env
-OPENAI_API_KEY=replace-with-your-key
+MODEL_API_KEY=replace-with-your-meta-key
 WHISPER_CPU_THREADS=4
 ```
 
@@ -140,7 +151,7 @@ OMP_NUM_THREADS=4
 KORINA_TTS_ALLOWED_ORIGINS=http://127.0.0.1:8001,http://localhost:8001
 ```
 
-Set the key variable name in Settings to match the app file. Run `systemctl --user edit korina-voice-lab.service` and add:
+Meta uses `MODEL_API_KEY` by default; for another provider or an explicit override, set its key variable name in Settings to match the app file. Run `systemctl --user edit korina-voice-lab.service` and add:
 
 ```ini
 [Service]

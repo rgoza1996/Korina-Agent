@@ -6,6 +6,7 @@ from collections.abc import Callable
 from korina.config import (
     config_llm_chat_url,
     config_llm_api_env,
+    config_llm_max_tokens,
     config_llm_reasoning,
     load_config,
 )
@@ -59,7 +60,7 @@ def response_llm_chat(req: ChatRequest, *, is_current: Callable[[], bool] | None
         'model': (req.model or str(config.get('lm_model') or LMSTUDIO_MODEL)),
         'messages': messages,
         'temperature': req.temperature,
-        'max_tokens': req.max_tokens,
+        'max_tokens': req.max_tokens if 'max_tokens' in req.model_fields_set else config_llm_max_tokens(config),
         'stream': False,
     }
     # Meta's Chat Completions API reasons by default. Its documented control
@@ -76,6 +77,12 @@ def response_llm_chat(req: ChatRequest, *, is_current: Callable[[], bool] | None
     except Exception as e:
         raise RuntimeError(f'Response LLM request failed: {e}')
 
-    reply = openai_text_completion(body).text
+    completion = openai_text_completion(body)
+    if not completion.text and completion.finish_reason == 'length':
+        raise RuntimeError(
+            'Response model exhausted its output-token budget before answering. '
+            'Increase Response token budget in Settings or choose another response model.'
+        )
+    reply = completion.text
     # Sentence splitting can add newlines; validate the final history value.
     return completion_text(format_voice_reply(reply), label='Response LLM')

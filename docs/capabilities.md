@@ -4,7 +4,7 @@ The backend registry in `korina/util/presets.py` describes provider defaults, ed
 
 ## Provider registry
 
-The response `providers` map contains `llama.cpp`, `lmstudio`, `ollama`, and `openai-compatible`. The `agent_providers` map contains `openai-compatible` and `anthropic`. Each entry declares `label`, `default_base_url`, `editable_base_url`, `manageable`, `model_sources`, `is_local`, `agent_only`, and `response_llm_only`.
+The response `providers` map contains `llama.cpp`, `lmstudio`, `ollama`, `openai-compatible`, and `meta`. The `agent_providers` map contains `openai-compatible`, `meta`, and `anthropic`. Each entry declares `label`, `default_base_url`, `editable_base_url`, `manageable`, `model_sources`, `is_local`, `agent_only`, and `response_llm_only`. `default_api_key_env` supplies an optional registry-scoped credential default; an empty value supplies none.
 
 | Response provider | Default API base | Editable URL | Managed locally | Model sources |
 | --- | --- | --- | --- | --- |
@@ -12,8 +12,17 @@ The response `providers` map contains `llama.cpp`, `lmstudio`, `ollama`, and `op
 | `lmstudio` | `http://127.0.0.1:1234/v1` | No | Yes | Endpoint and catalog |
 | `ollama` | `http://127.0.0.1:11434/v1` | No | Yes | Endpoint |
 | `openai-compatible` | User supplied | Yes | No server started | Endpoint |
+| `meta` — Meta Model API | `https://api.meta.ai/v1` | No | No server started | Authenticated endpoint |
 
-Both agent endpoint types use editable URLs and externally supplied servers. Selecting an agent endpoint does not activate a local response-provider process.
+Generic OpenAI-compatible and Anthropic-compatible agent endpoints use editable URLs. The named Meta Model API agent profile uses the same fixed canonical base as the response profile. All three use externally supplied services; selecting an agent endpoint does not activate a local response-provider process.
+
+The Meta profile uses `/chat/completions` and authenticated `/models` discovery. Select an ID returned for the team's account; Korina does not hardcode a Meta model ID or establish account access from a documentation example. Response and built-in agent requests leave reasoning at the model default: the Meta response path omits the local/generic `reasoning` field, and neither path adds `reasoning_effort`. The focused rehearsal keeps local Whisper STT and Kokoro TTS; a Meta model listing does not prove audio capabilities.
+
+## Response token budget
+
+The **Response token budget** control persists `llm_max_tokens`, an integer from **1 to 8192**, default **180**. An explicitly supplied `ChatRequest.max_tokens` overrides the saved budget for that request; omitting it uses the saved setting. The browser sends its selected response budget explicitly. Agent reports retain their separate `agent_max_tokens` setting, default **512**; changing the response budget does not change the agent budget.
+
+Meta reasoning may consume this output budget before any visible answer, while the profile retains model-default reasoning. If a provider returns no visible text with `finish_reason: "length"`, `/api/chat` returns HTTP 500 with an actionable instruction to increase Response token budget in Settings or choose another response model. Korina does not silently increase the budget or retry. A nonempty truncated answer remains compatible with the existing response contract.
 
 ## Saving and activation
 
@@ -23,7 +32,7 @@ During provider activation or refresh, changed effective response/STT/agent sett
 
 `POST /api/llm/provider/activate` accepts `{provider, model}`. Unsupported response providers are rejected before saving. It saves the response selection before activation; failures explicitly report that the selection remains saved without automatic rollback. A conflict with another active role returns HTTP 409. Other startup failures return HTTP 500.
 
-Activation returns performed `started`/`stopped` actions, `retained` services with role/reason metadata, and any unconfirmed `stop_requested` actions or warnings. It preserves managed servers used by the selected generic response endpoint, active audio-model STT, or enabled agent. Retention follows actual loopback endpoints and listening process ownership, including generic provider labels. It does not start extra role models. Preflight validates models/executables before teardown and blocks protected single-model/port conflicts. Local process management remains Linux-specific. Generic activation starts no server; unused managed services may be stopped.
+Activation returns performed `started`/`stopped` actions, `retained` services with role/reason metadata, and any unconfirmed `stop_requested` actions or warnings. It preserves managed servers used by the selected generic response endpoint, active audio-model STT, or enabled agent. Retention follows actual loopback endpoints and listening process ownership, including generic provider labels. It does not start extra role models. Preflight validates models/executables before teardown and blocks protected single-model/port conflicts. Local process management remains Linux-specific. Generic and Meta activation start no server; unused managed services may be stopped.
 
 The browser initializes a form baseline before wiring edits, sends only observed field changes, and keeps pending edits plus successful-save revisions across a delayed initial settings read. Untouched HTML defaults are never posted as guessed saved settings. A failed initial read can retry from Settings; provider activation waits for a known loaded baseline. Partial configuration application preserves omitted reasoning/model fields and activation snapshot keys.
 
@@ -51,7 +60,9 @@ The browser accepts picker/cache writes only from the latest request for the cur
 
 ## Credentials and API paths
 
-Response credentials come from the environment variable named by `llm_api_key_env`. STT can name its own `stt_llm_api_key_env`. Blank STT or agent credentials inherit the response key only when the actual normalized API base matches. Independent endpoints need explicit role credentials; the local `agent_api_key` setting remains a development convenience stored in runtime configuration.
+Response credentials come from the environment variable named by `llm_api_key_env`. With that setting blank, the named Meta profile defaults to `MODEL_API_KEY` only for its canonical API base. A generic/custom profile does not gain that default merely by using a Meta hostname. Explicit configured environment-variable names take precedence.
+
+STT can name its own `stt_llm_api_key_env`; blank STT credentials inherit the response key only when the actual normalized API base matches. Agent credentials use an explicit `agent_api_key` first, then matching-response-base environment credentials or the selected named profile's own default. An independent Meta agent can therefore use its canonical `MODEL_API_KEY` default; credentials for other independent endpoints must be configured explicitly when needed. An unset default environment variable produces no Authorization header. The local `agent_api_key` setting remains a development convenience stored in runtime configuration.
 
 OpenAI-compatible chat uses `/chat/completions`; Anthropic-compatible agents use `/messages`. Agent chat, model discovery, health, and credential inheritance derive from one provider-aware API base. A full endpoint with the correct provider suffix is supported. A suffix belonging to another provider does not authorize borrowing response credentials or probing an unrelated base.
 
@@ -74,3 +85,5 @@ Probe batches share chat/STT request ownership. Disconnect or cancellation close
 `/api/health` reports server-resolved URLs and model load blocks. Matching actual models URL/model/credentials reuse one probe within a request, while each role retains its configured display URL. `/api/ready` combines frontend, audio limits, selected STT, response model, TTS, and enabled agent checks. A reachable lazy Kokoro service is available before warm-up; a custom service without a configured health contract remains unverified. TTS health must contain recognized readiness signals with real boolean flags and valid text fields. Malformed data degrades TTS readiness while Korina liveness stays HTTP 200. Loaded-model diagnostics use the same identifier/count/byte bounds as discovery and pin the matched selected model; `models_info` reports omitted/invalid IDs. Two explicit GGUF paths do not match merely because their basenames agree.
 
 Changes to the registry or provider behavior need API contract, URL/auth, discovery ownership, process ownership, and browser checks. Run the commands in [testing](testing.md), then rehearse actual services using the [hackathon guide](hackathon.md). [Observed verification](verification.md) distinguishes local software/model evidence from physical hardware and hosted CI.
+
+Meta profile checks use mocked provider responses. They do not establish an authenticated live Meta call, useful presentation output, or prompt-cache hits. The hackathon target remains one context-dependent voice interaction with a fact retained in the current session; record the actual kickoff SHA and later event additions in the [preparation ledger](hackathon.md). Current history/report state is not durable memory.

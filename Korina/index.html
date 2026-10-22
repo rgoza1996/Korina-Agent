@@ -62,6 +62,7 @@
             <div><label for="lmModel">Model</label><select id="lmModel"><option value="">Select a response model</option></select></div>
             <div><label for="llmBaseUrl">Base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:8080/v1"></div>
             <div><label for="llmApiKeyEnv">API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
+            <div><label for="llmMaxTokens">Response token budget</label><input id="llmMaxTokens" type="number" min="1" max="8192" step="1" value="180"><p class="fieldHint">Meta reasoning and the spoken answer share this budget. A larger budget may use more tokens.</p></div>
             <div class="secretNote"><label>Advanced</label><div class="toggleLine"><input id="llmReasoningEnabled" type="checkbox"><span>Allow response model reasoning / thinking</span></div></div>
           </div>
         </details>
