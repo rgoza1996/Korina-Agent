@@ -10,11 +10,6 @@ We monkeypatch the network probe so the test is hermetic.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
-
 def _install(monkeypatch, payload):
     """payload: dict returned for any base_url. The fake echoes the configured
     expected model back as the only loaded id so default tests show loaded=True.
@@ -22,7 +17,7 @@ def _install(monkeypatch, payload):
     """
     from korina.routes import health
 
-    def _fake(base_url, expected, timeout=1.5):
+    def _fake(base_url, expected, timeout=1.5, headers=None, models_url=None):
         block = {
             "provider": "",
             "base_url": base_url or "",

@@ -487,27 +487,27 @@ def agent_base_url(config: Optional[dict] = None) -> str:
     return str(config.get('agent_base_url') or config.get('llm_base_url') or 'http://127.0.0.1:8080/v1').strip().rstrip('/')
 
 
+def _agent_api_endpoint(config: Optional[dict] = None) -> tuple[str, str]:
+    """Resolve the API base using only the selected provider's chat suffix."""
+    config = config or load_config()
+    suffix = '/messages' if agent_provider(config) == 'anthropic' else '/chat/completions'
+    return agent_base_url(config).removesuffix(suffix), suffix
+
+
 def agent_models_url(config: Optional[dict] = None) -> str:
-    base = agent_base_url(config)
-    if base.endswith('/messages'):
-        base = base.rsplit('/messages', 1)[0]
-    if base.endswith('/chat/completions'):
-        base = base.rsplit('/chat/completions', 1)[0]
+    base, _ = _agent_api_endpoint(config)
     return f'{base}/models'
 
 
 def agent_chat_url(config: Optional[dict] = None) -> str:
-    base = agent_base_url(config)
-    provider = agent_provider(config)
-    if provider == 'anthropic':
-        return base if base.endswith('/messages') else f'{base}/messages'
-    return base if base.endswith('/chat/completions') else f'{base}/chat/completions'
+    base, suffix = _agent_api_endpoint(config)
+    return f'{base}{suffix}'
 
 
 def agent_auth_headers(config: dict) -> dict:
     # A blank role-specific key must not send the response provider's secret
     # to an independently configured endpoint.
-    agent_base = normalize_api_base_url(agent_base_url(config)).removesuffix('/messages')
+    agent_base, _ = _agent_api_endpoint(config)
     response_base = normalize_api_base_url(config_llm_base_url(config))
     inherited_env = (config.get('llm_api_key_env') or '') if agent_base == response_base else ''
     key = api_key_from_config(config, config.get('agent_api_key') or '', inherited_env)

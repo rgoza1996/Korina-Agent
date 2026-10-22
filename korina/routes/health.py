@@ -15,14 +15,17 @@ from fastapi.responses import JSONResponse
 from korina.config import (
     agent_base_url,
     agent_chat_url,
+    agent_models_url,
     agent_provider,
     agent_auth_headers,
     config_llm_base_url,
     config_llm_chat_url,
+    config_llm_models_url,
     config_min_speech_ms,
     config_partial_window_ms,
     config_stt_llm_base_url,
     config_stt_llm_chat_url,
+    config_stt_llm_models_url,
     config_stt_llm_model,
     config_stt_llm_provider,
     config_stt_llm_api_env,
@@ -81,7 +84,7 @@ def _probe_tts_backend(base_url, timeout=2.0, health_url=None):
         return (False, {}, f'OSError: {e}')
 
 
-def _probe_llm_models(base_url, expected, timeout=1.5, headers=None):
+def _probe_llm_models(base_url, expected, timeout=1.5, headers=None, *, models_url=None):
     """Probe a provider's /v1/models endpoint and check whether ``expected``
     appears in the response. Tolerant of:
 
@@ -101,10 +104,12 @@ def _probe_llm_models(base_url, expected, timeout=1.5, headers=None):
     import json as _json
     import socket
 
-    base_clean = (base_url or "").strip().rstrip("/")
-    for suffix in ('/chat/completions', '/messages'):
-        if base_clean.endswith(suffix):
-            base_clean = base_clean[:-len(suffix)].rstrip('/')
+    if models_url is None:
+        base_clean = (base_url or "").strip().rstrip("/")
+        for suffix in ('/chat/completions', '/messages'):
+            if base_clean.endswith(suffix):
+                base_clean = base_clean[:-len(suffix)].rstrip('/')
+        models_url = f'{base_clean}/models' if base_clean else ''
     expected_clean = (expected or "").strip()
     block = {
         "provider": "",
@@ -116,23 +121,23 @@ def _probe_llm_models(base_url, expected, timeout=1.5, headers=None):
         "loaded_models": [],
         "error": None,
     }
-    if not base_clean:
+    if not models_url:
         block["error"] = "no base_url configured"
         return block
     try:
         from urllib.parse import urlsplit
-        parsed = urlsplit(base_clean)
+        parsed = urlsplit(models_url)
         if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
             raise ValueError('expected an http(s) provider URL')
-        body = request_json(base_clean + '/models', headers=headers or {}, timeout=timeout)
+        body = request_json(models_url, headers=headers or {}, timeout=timeout)
     except _json.JSONDecodeError:
-        block["error"] = f"non-JSON response from {base_clean}/v1/models"
+        block["error"] = f"non-JSON response from {models_url}"
         return block
     except (socket.timeout, ConnectionRefusedError, ConnectionResetError) as e:
         block["error"] = f"{type(e).__name__}: {e}"
         return block
     except HTTPStatusError as e:
-        block["error"] = f"HTTP {e.status_code} from {base_clean}/v1/models"
+        block["error"] = f"HTTP {e.status_code} from {models_url}"
         return block
     except (OSError, ValueError) as e:
         block["error"] = f"OSError: {e}"
@@ -239,23 +244,39 @@ async def health(request: Request):
         audio_limits = None
         audio_limits_error = str(exc)
     roles = {
-        'response_llm_load': (str(config.get('llm_provider') or 'llama.cpp'), config_llm_base_url(config), str(config.get('lm_model') or LMSTUDIO_MODEL), auth_headers_from_env(str(config.get('llm_api_key_env') or ''))),
-        'multimodal_stt_load': (config_stt_llm_provider(config), config_stt_llm_base_url(config), config_stt_llm_model(config), auth_headers_from_env(config_stt_llm_api_env(config))),
-        'agent_load': (agent_provider(config), agent_base_url(config), str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL), agent_auth_headers(config)),
+        'response_llm_load': (
+            str(config.get('llm_provider') or 'llama.cpp'), config_llm_base_url(config),
+            config_llm_models_url(config), str(config.get('lm_model') or LMSTUDIO_MODEL),
+            auth_headers_from_env(str(config.get('llm_api_key_env') or '')),
+        ),
+        'multimodal_stt_load': (
+            config_stt_llm_provider(config), config_stt_llm_base_url(config),
+            config_stt_llm_models_url(config), config_stt_llm_model(config),
+            auth_headers_from_env(config_stt_llm_api_env(config)),
+        ),
+        'agent_load': (
+            agent_provider(config), agent_base_url(config), agent_models_url(config),
+            str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
+            agent_auth_headers(config),
+        ),
     }
     # Independent probes share a timeout window. Roles using the same model
     # and endpoint reuse the request instead of querying it three times.
     probes = {}
-    for _, base, model, headers in roles.values():
-        key = (base, model, tuple(sorted(headers.items())))
+    for _, base, models_url, model, headers in roles.values():
+        key = (models_url, model, tuple(sorted(headers.items())))
         if key not in probes:
-            kwargs = {'headers': headers} if headers else {}
-            probes[key] = asyncio.create_task(asyncio.to_thread(_probe_llm_models, base, model, **kwargs))
+            probes[key] = asyncio.create_task(asyncio.to_thread(
+                _probe_llm_models, base, model, headers=headers, models_url=models_url,
+            ))
     tts_task = asyncio.create_task(asyncio.to_thread(_aggregate_tts, config))
     has_cuda = await asyncio.to_thread(cuda_available)
     loads = {}
-    for name, (provider, base, model, headers) in roles.items():
-        loads[name] = {**await probes[(base, model, tuple(sorted(headers.items())))], 'provider': provider}
+    for name, (provider, base, models_url, model, headers) in roles.items():
+        loads[name] = {
+            **await probes[(models_url, model, tuple(sorted(headers.items())))],
+            'provider': provider, 'base_url': base,
+        }
     whisper_available = importlib.util.find_spec('faster_whisper') is not None
     result = {
         'ok': True,

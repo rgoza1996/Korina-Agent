@@ -10,7 +10,7 @@ def test_health_probes_shared_roles_once_and_parallel_with_tts(client, monkeypat
     calls = []
     monkeypatch.setattr(health, 'load_config', lambda: {'lm_model': 'demo', 'agent_enabled': 'off'})
 
-    def probe(base, expected, timeout=1.5):
+    def probe(base, expected, timeout=1.5, headers=None, models_url=None):
         calls.append(base)
         time.sleep(0.1)
         return {'ok': True, 'loaded': True, 'loaded_models': [expected], 'error': None}
@@ -72,7 +72,7 @@ def test_authenticated_roles_do_not_share_probes_with_different_credentials(clie
     })
     headers_seen = []
 
-    def probe(base, model, timeout=1.5, headers=None):
+    def probe(base, model, timeout=1.5, headers=None, models_url=None):
         headers_seen.append(headers)
         return {'ok': True, 'loaded': True}
 
