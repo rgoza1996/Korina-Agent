@@ -40,8 +40,9 @@ class AsrState:
 class AckState:
     """State for the ACK phrase generation queue."""
 
-    queue: list = field(default_factory=list)
-    in_progress: set = field(default_factory=set)
+    queue: list[tuple[str, str, str, bool]] = field(default_factory=list)
+    in_progress: dict[tuple[str, str], int] = field(default_factory=dict)
+    generation: int = 0
     queue_lock: "threading.RLock" = field(default_factory=threading.RLock)
     worker_running: bool = False
     last_error: Optional[str] = None

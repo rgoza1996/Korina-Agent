@@ -122,9 +122,11 @@ def test_api_llm_llama_refresh_persists_resolved_model(isolated_korina_app_dir, 
     save_config(cfg)
 
     from fastapi.testclient import TestClient
+    from korina import app_factory
     from korina.app_factory import create_app
     from korina.services import ack_service
-    ack_service.enqueue_missing_acks = lambda *a, **k: 0
+    monkeypatch.setattr(ack_service, "enqueue_missing_acks", lambda *a, **k: 0)
+    monkeypatch.setattr(app_factory, "enqueue_missing_acks", lambda *a, **k: 0)
 
     with TestClient(create_app()) as c:
         r = c.post('/api/llm/llama/refresh')

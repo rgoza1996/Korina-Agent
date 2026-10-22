@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import tempfile
 import threading
-import time
-import urllib.error
 import urllib.request
 
-from korina.config import config_tts_base_url
+from korina.config import config_tts_base_url, load_config
 
 from korina.runtime import state
 
@@ -22,6 +22,22 @@ from korina.util.paths import (
 from pathlib import Path
 
 from typing import Optional
+
+logger = logging.getLogger(__name__)
+MAX_ACK_QUEUE = 128
+MAX_ACK_WAV_BYTES = 2 * 1024 * 1024
+ACK_HTTP_TIMEOUT = 30
+
+
+def acks_enabled() -> bool:
+    return str(load_config().get('ack_enabled') or 'on') == 'on'
+
+
+def _wav_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except FileNotFoundError:
+        return 0
 
 
 def load_ack_manifest() -> list[dict]:
@@ -75,7 +91,8 @@ def ack_files_for(voice: str, tag: Optional[str] = None) -> list[dict]:
     files = []
     for phrase in matching:
         path = ack_path(voice, phrase)
-        if path.exists() and path.stat().st_size > 44:
+        size = _wav_size(path)
+        if size > 44:
             files.append({
                 'id': phrase['id'],
                 'text': phrase['text'],
@@ -83,7 +100,7 @@ def ack_files_for(voice: str, tag: Optional[str] = None) -> list[dict]:
                 'voice': voice,
                 'name': path.name,
                 'url': f'/Ack/{path.name}',
-                'bytes': path.stat().st_size,
+                'bytes': size,
             })
     return files
 
@@ -95,95 +112,155 @@ def missing_ack_phrases(voice: str, tag: Optional[str] = None) -> list[dict]:
     missing = []
     for phrase in manifest:
         path = ack_path(voice, phrase)
-        if not path.exists() or path.stat().st_size <= 44:
+        if _wav_size(path) <= 44:
             missing.append(phrase)
     return missing
 
-def enqueue_missing_acks(voice: str, tag: Optional[str] = None) -> int:
+def enqueue_missing_acks(voice: str, tag: Optional[str] = None, *, force: bool = False) -> int:
+    """Queue at most MAX_ACK_QUEUE missing phrases; return the missing count.
+
+    Normal background work respects the enabled setting. An explicit rebuild
+    can force generation even while playback is disabled.
+    """
     voice = (voice or ACK_DEFAULT_VOICE).strip() or ACK_DEFAULT_VOICE
     missing = missing_ack_phrases(voice, tag)
+    if not force and not acks_enabled():
+        return len(missing)
     with state.ack.queue_lock:
-        existing = {(v, pid) for v, pid, _ in state.ack.queue} | set(state.ack.in_progress)
-        added = 0
+        generation = state.ack.generation
+        existing = {(v, pid) for v, pid, _, _ in state.ack.queue}
+        existing.update(key for key, epoch in state.ack.in_progress.items() if epoch == generation)
         for phrase in missing:
+            if len(state.ack.queue) >= MAX_ACK_QUEUE:
+                break
             key = (voice, phrase['id'])
             if key not in existing:
-                state.ack.queue.append((voice, phrase['id'], phrase['text']))
+                state.ack.queue.append((voice, phrase['id'], phrase['text'], force))
                 existing.add(key)
-                added += 1
-        if added and not state.ack.worker_running:
+        if state.ack.queue and not state.ack.worker_running:
             state.ack.worker_running = True
-            threading.Thread(target=ack_generation_worker, daemon=True).start()
+            try:
+                threading.Thread(target=ack_generation_worker, daemon=True).start()
+            except Exception:
+                state.ack.worker_running = False
+                raise
     return len(missing)
 
-def synthesize_ack_wav(voice: str, phrase_id: str, text: str) -> None:
+
+def _generation_allowed(generation: int, force: bool) -> bool:
+    # Caller holds queue_lock, including the final atomic-publication check.
+    return generation == state.ack.generation and (force or acks_enabled())
+
+
+def synthesize_ack_wav(
+    voice: str, phrase_id: str, text: str, *, generation: int | None = None, force: bool = False,
+) -> bool:
+    """Stream bounded audio to a temp file and publish only current work."""
+    with state.ack.queue_lock:
+        if generation is None:
+            generation = state.ack.generation
+        if not _generation_allowed(generation, force):
+            return False
     phrase = next((p for p in load_ack_manifest() if p['id'] == phrase_id), {'id': phrase_id, 'text': text, 'tags': ['global']})
     out = ack_path(voice, phrase)
     payload = json.dumps({'input': text, 'voice': voice, 'speed': 1.0, 'device': 'cpu'}).encode('utf-8')
-    req = urllib.request.Request(
-        f'{config_tts_base_url()}/v1/audio/speech',
-        data=payload,
-        headers={'Content-Type': 'application/json'},
-        method='POST',
+    request = urllib.request.Request(
+        f'{config_tts_base_url()}/v1/audio/speech', data=payload,
+        headers={'Content-Type': 'application/json'}, method='POST',
     )
-    tmp = out.with_suffix('.tmp.wav')
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        data = resp.read()
-    if len(data) <= 44:
-        raise RuntimeError(f'generated ack for {phrase_id} was empty')
-    tmp.write_bytes(data)
-    tmp.replace(out)
+    ACK_DIR.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=ACK_DIR, prefix='ack-', suffix='.tmp', delete=False) as output:
+            temporary = Path(output.name)
+            size = 0
+            with urllib.request.urlopen(request, timeout=ACK_HTTP_TIMEOUT) as response:
+                while True:
+                    with state.ack.queue_lock:
+                        if not _generation_allowed(generation, force):
+                            return False
+                    chunk = response.read(min(65536, MAX_ACK_WAV_BYTES - size + 1))
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > MAX_ACK_WAV_BYTES:
+                        raise RuntimeError(f'generated ack exceeds {MAX_ACK_WAV_BYTES} bytes')
+                    output.write(chunk)
+            if size <= 44:
+                raise RuntimeError(f'generated ack for {phrase_id} was empty')
+        with temporary.open('rb') as audio:
+            header = audio.read(12)
+        if header[:4] != b'RIFF' or header[8:12] != b'WAVE':
+            raise RuntimeError(f'generated ack for {phrase_id} was not a WAV file')
+        with state.ack.queue_lock:
+            if not _generation_allowed(generation, force):
+                return False
+            temporary.replace(out)
+        return True
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
 
 def ack_generation_worker() -> None:
-    try:
-        while True:
-            with state.ack.queue_lock:
-                if not state.ack.queue:
-                    state.ack.worker_running = False
-                    return
-                voice, phrase_id, text = state.ack.queue.pop(0)
-                state.ack.in_progress.add((voice, phrase_id))
-            try:
-                synthesize_ack_wav(voice, phrase_id, text)
-                state.ack.last_generated = f'{voice}:{phrase_id}'
-                state.ack.last_error = None
-                print(f'[acks] generated {state.ack.last_generated}', flush=True)
-            except Exception as e:
-                state.ack.last_error = f'{voice}:{phrase_id}: {e}'
-                print(f'[acks] generation failed: {state.ack.last_error}', flush=True)
-                time.sleep(2)
-            finally:
-                with state.ack.queue_lock:
-                    state.ack.in_progress.discard((voice, phrase_id))
-    finally:
+    """One worker drains a bounded queue; cache clears invalidate old jobs."""
+    while True:
         with state.ack.queue_lock:
             if not state.ack.queue:
                 state.ack.worker_running = False
+                return
+            voice, phrase_id, text, force = state.ack.queue.pop(0)
+            generation = state.ack.generation
+            key = (voice, phrase_id)
+            state.ack.in_progress[key] = generation
+        try:
+            generated = synthesize_ack_wav(voice, phrase_id, text, generation=generation, force=force)
+            with state.ack.queue_lock:
+                if generated and generation == state.ack.generation:
+                    state.ack.last_generated = f'{voice}:{phrase_id}'
+                    state.ack.last_error = None
+        except Exception as exc:
+            with state.ack.queue_lock:
+                if generation == state.ack.generation:
+                    state.ack.last_error = f'{voice}:{phrase_id}: {exc}'
+                    logger.warning('ACK generation failed: %s', state.ack.last_error)
+        finally:
+            with state.ack.queue_lock:
+                if state.ack.in_progress.get(key) == generation:
+                    state.ack.in_progress.pop(key, None)
+
 
 def clear_ack_wavs() -> int:
-    count = 0
-    for f in ACK_DIR.glob('*.wav'):
-        try:
-            f.unlink()
-            count += 1
-        except FileNotFoundError:
-            pass
-    return count
+    """Invalidate queued/in-flight work before clearing published audio."""
+    with state.ack.queue_lock:
+        state.ack.generation += 1
+        state.ack.queue.clear()
+        state.ack.last_generated = None
+        state.ack.last_error = None
+        count = 0
+        for path in ACK_DIR.glob('*.wav'):
+            try:
+                path.unlink()
+                count += 1
+            except FileNotFoundError:
+                pass
+        return count
+
 
 def ack_status(voice: str) -> dict:
     manifest = load_ack_manifest()
-    generated = [p for p in manifest if ack_path(voice, p).exists() and ack_path(voice, p).stat().st_size > 44]
+    generated_count = sum(_wav_size(ack_path(voice, phrase)) > 44 for phrase in manifest)
     with state.ack.queue_lock:
-        queued = len(state.ack.queue)
-        worker_running = state.ack.worker_running
+        snapshot = {
+            'queue_depth': len(state.ack.queue),
+            'queue_limit': MAX_ACK_QUEUE,
+            'in_progress': [f'{v}:{pid}' for v, pid in sorted(state.ack.in_progress)],
+            'generating': state.ack.worker_running,
+            'last_generated': state.ack.last_generated,
+            'last_error': state.ack.last_error,
+        }
     return {
-        'voice': voice,
-        'manifest_count': len(manifest),
-        'generated_count': len(generated),
-        'missing_count': len(missing_ack_phrases(voice)),
-        'queue_depth': queued,
-        'in_progress': [f'{v}:{pid}' for v, pid in sorted(state.ack.in_progress)],
-        'generating': worker_running,
-        'last_generated': state.ack.last_generated,
-        'last_error': state.ack.last_error,
+        'voice': voice, 'manifest_count': len(manifest),
+        'generated_count': generated_count, 'missing_count': len(manifest) - generated_count,
+        'enabled': acks_enabled(), **snapshot,
     }

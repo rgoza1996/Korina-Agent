@@ -48,20 +48,12 @@ def fake_lms(tmp_path, monkeypatch):
     )
     fake.chmod(0o755)
 
-    # Point korina at the fake lms. Re-import paths so LMS_CLI_BIN picks up the
-    # new env var.
+    # Patch the explicit provider seam. Reloading path-sensitive modules here
+    # leaves fake CLI paths bound in unrelated modules after fixture teardown.
     monkeypatch.setenv('KORINA_LMS_CLI_BIN', str(fake))
-    import importlib
     import korina.util.paths as paths_mod
-    importlib.reload(paths_mod)
     import korina.services.provider_manager as pm_mod
-    importlib.reload(pm_mod)
-    # Patch the module-level references too so the helpers we reloaded see the
-    # new LMS_CLI_BIN.
-    monkeypatch.setattr(pm_mod, 'LMS_CLI_BIN', paths_mod.LMS_CLI_BIN)
-    monkeypatch.setattr(pm_mod, 'LMSTUDIO_BIN', paths_mod.LMSTUDIO_BIN)
-    monkeypatch.setattr(pm_mod, 'LLAMA_SERVER_BIN', paths_mod.LLAMA_SERVER_BIN)
-    monkeypatch.setattr(pm_mod, 'LLAMA_SERVER_USER_UNIT', paths_mod.LLAMA_SERVER_USER_UNIT)
+    monkeypatch.setattr(pm_mod, 'LMS_CLI_BIN', fake)
 
     # Also patch the symbols that the test client uses (imports made at module
     # load time of routes, etc.).
