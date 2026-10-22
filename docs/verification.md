@@ -22,6 +22,12 @@ Deterministic and socket cases cover ASGI 2.0/2.4, stalled headers/bodies, outer
 
 A separate offline repeat used the archived `5d0c7a4` source and the actual cached Whisper weights described below. Buffered, partial, and SSE requests all returned HTTP 200 with nonempty transcripts in 4.134, 2.565, and 2.145 seconds respectively; SSE ended with `done` and no error. All three retained the known opening-word recognition error. One `tiny.en:cpu:int8` model remained cached and its active lease count was zero after the requests. This checks native inference compatibility after the ownership change; it is not a physical-microphone or controlled latency test.
 
+## Native interruption and rendering
+
+At `340dd8b`, Chromium completed a normal live turn, stopped native playback when interruption was detected, recorded and natively decoded the complete interruption WebM, supplied its text and approximate interruption context once to the next chat request, played the revised reply, and resumed capture. A second case stopped Live while that interruption's chat was held: its fetch aborted, capture was released, and the late reply produced no history entry or speech. These cases use a fake microphone and controlled meter/STT/model/TTS responses; MediaRecorder, Opus/WebM encoding and decoding, and buffered audio playback are native. They do not establish human interruption timing or actual-model quality.
+
+At `6df3960`, the waveform renderer retained its bars between frames and adjusted their count on resize. A local 300-draw fixture created 136 divs instead of 40,800, with identical 136 bar heights and geometry. Native identity/resize checks and existing capture/interruption tests passed. Its observed draw time changed from 188 to 47 ms in that fixture; this is not a general rendering or voice-latency benchmark.
+
 ## Actual Whisper inference
 
 Environment: Linux aarch64, CPython 3.12.3, four CPU threads, `tiny.en`, int8, faster-whisper 1.2.1, CTranslate2 4.8.3, PyAV 18.1.0, ONNX Runtime 1.31.0, FFmpeg 6.1.1. Public model: `Systran/faster-whisper-tiny.en`, revision `0d3d19a32d3338f10357c0889762bd8d64bbdeba`.
