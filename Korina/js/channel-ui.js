@@ -69,7 +69,7 @@ export async function saveChannelSelection() {
     if (result?.ok !== true || result.channel !== selected) throw new Error('Channel selection was not confirmed');
     saved = true;
   } catch (error) {
-    if (hint) hint.textContent = `Switch failed: ${error.message}`;
+    if (hint) hint.textContent = `Switch failed: ${error.message}. Click the Channel tab to reload and retry.`;
   } finally {
     switching = false;
     select.disabled = false;

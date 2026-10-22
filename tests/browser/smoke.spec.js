@@ -11,7 +11,7 @@ async function mockProviders(page, request) {
     agent_provider: 'openai-compatible', agent_base_url: 'http://agent.example/v1',
   };
   const capabilities = await (await request.get('/api/capabilities')).json();
-  const scenario = { config, configReads: 0, configFailures: 0, configBarrier: null, healthCalls: 0, agentModelCalls: 0, agentModelCompletions: 0, agentModelBarrier: null, ackBarrier: null, failRebuild: false, rebuildVoices: [], rebuildBarrier: null, capabilities, capabilityFailures: 0, capabilityCalls: 0, capabilityBarrier: null, saves: [], activations: [], activeChannel: 'korina', failSave: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0, resets: 0, polls: 0, deliveries: 0, failReset: false, resetBarrier: null, agentEvents: [] };
+  const scenario = { config, configReads: 0, configFailures: 0, configBarrier: null, healthCalls: 0, agentModelCalls: 0, agentModelCompletions: 0, agentModelBarrier: null, ackBarrier: null, failRebuild: false, rebuildVoices: [], rebuildBarrier: null, capabilities, capabilityFailures: 0, capabilityCalls: 0, capabilityBarrier: null, saves: [], activations: [], activeChannel: 'korina', failSave: false, failActivation: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0, resets: 0, polls: 0, deliveries: 0, failReset: false, resetBarrier: null, agentEvents: [] };
   await page.route('**/api/**', async route => {
     const request = route.request();
     const url = new URL(request.url());
@@ -86,7 +86,8 @@ async function mockProviders(page, request) {
       config.llm_provider = payload.provider; config.lm_model = payload.model;
       const saved = { ...config };
       if (scenario.delayActivation) await new Promise(resolve => setTimeout(resolve, scenario.delayActivation));
-      body = { ok: true, saved, activation: { ...payload, started: [], stopped: [] } };
+      if (scenario.failActivation) { status = 503; body = { detail: 'Response provider startup failed' }; }
+      else body = { ok: true, saved, activation: { ...payload, started: [], stopped: [] } };
     } else if (endpoint === '/api/health') {
       scenario.healthCalls++;
       body = {
@@ -342,6 +343,39 @@ test('response model edits activate once on close and remain stable on a second 
   await page.locator('#closeSettingsBtn').click();
   await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
   expect(scenario.activations).toHaveLength(1);
+});
+
+test('Done saves and activates a changed response model through the same close flow', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click(); await loadResponseModels(page);
+  await page.locator('#lmModel').selectOption('next-response');
+  await page.locator('#saveSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  await expect.poll(() => scenario.activations.length).toBe(1);
+  expect(scenario.activations[0]).toEqual({ provider: 'openai-compatible', model: 'next-response' });
+  expect(scenario.config.lm_model).toBe('next-response');
+});
+
+test('provider activation failure remains visible after Settings closes and a later close retries', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click(); await loadResponseModels(page);
+  scenario.failActivation = true;
+  await page.locator('#lmModel').selectOption('next-response');
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  await expect(page.locator('#settingsActionStatus')).toContainText('Provider activation failed:');
+  await expect(page.locator('#settingsActionStatus')).toContainText('Response provider startup failed');
+  expect(scenario.config.lm_model).toBe('next-response');
+  scenario.failActivation = false;
+  await page.locator('#settingsBtn').click();
+  await page.locator('#closeSettingsBtn').click();
+  await expect.poll(() => scenario.activations.length).toBe(2);
+  await expect(page.locator('#settingsActionStatus')).toContainText('Activated openai-compatible');
+  expect(errors).toEqual([]);
 });
 
 test('STT-only settings never activate or change the response provider', async ({ page, request }) => {

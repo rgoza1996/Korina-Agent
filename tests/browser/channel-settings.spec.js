@@ -56,6 +56,8 @@ test('a native channel switch stays disabled until confirmed and shows a failed 
     await expect(page.locator('#channelSelectHint')).toContainText('Selection disk unavailable');
     await expect(page.locator('#channelSelect')).toBeEnabled();
     expect(posts).toBe(1);
+    await page.locator('[data-settings-tab="channel"]').click();
+    await expect(page.locator('#channelSelect')).toHaveValue('korina');
     fail = false;
     await page.route('**/api/converse/channel', route => route.fulfill({ json: { channel: 'testing' } }));
     await page.locator('#channelSelect').selectOption('testing');
