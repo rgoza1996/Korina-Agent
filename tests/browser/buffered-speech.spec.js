@@ -90,6 +90,46 @@ test('Stop settles a buffered native fetch before response headers arrive', asyn
   } finally { release(); }
 });
 
+test('buffered interruption context waits for synthesis and follows the paused native media clock', async ({ page }) => {
+  await loadBufferedPage(page, wavTone(4));
+  let release, requested = false;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route('http://speech.fixture/v1/audio/speech', async route => {
+    requested = true;
+    await held;
+    await route.fulfill({ contentType: 'audio/wav', body: wavTone(4) }).catch(() => {});
+  });
+  const text = 'The entire buffered reply is still unspoken.';
+  try {
+    await page.locator('#text').fill(text);
+    await page.locator('#playBtn').click();
+    await expect.poll(() => requested).toBe(true);
+    const pendingClock = await page.evaluate(() => window.state.audioCtx.currentTime);
+    await expect.poll(() => page.evaluate(start => window.state.audioCtx.currentTime - start > .3, pendingClock)).toBe(true);
+    const pending = await page.evaluate(async () => ({ startedAt: window.state.currentTtsStartedAt,
+      paused: document.getElementById('audio').paused,
+      context: (await import('/js/speech.js')).interruptedSpeechContext() }));
+    expect(pending.startedAt).toBeNull();
+    expect(pending.paused).toBe(true);
+    expect(pending.context).toContain('about 0%');
+    expect(pending.context).toContain(`Already spoken approximately: "". Not yet spoken approximately: "${text}"`);
+    release();
+    await expect.poll(() => page.evaluate(() => !document.getElementById('audio').paused)).toBe(true);
+    const paused = await page.evaluate(async () => {
+      const audio = document.getElementById('audio');
+      audio.pause();
+      audio.currentTime = 1;
+      await window.state.audioCtx.suspend();
+      return { duration: audio.duration, context: (await import('/js/speech.js')).interruptedSpeechContext() };
+    });
+    expect(paused.duration).toBe(4);
+    expect(paused.context).toContain('about 25%');
+    await page.locator('#stopBtn').click();
+    await expect(page.locator('#stopBtn')).toBeDisabled();
+    expect(await page.locator('#audio').getAttribute('src')).toBeNull();
+  } finally { release(); }
+});
+
 test('an empty SSE success response is reported as missing speech', async ({ page }) => {
   await loadBufferedPage(page, wavTone(1), 'sse');
   await page.route('http://speech.fixture/stream/speech', route => route.fulfill({ status: 200, contentType: 'text/event-stream', body: '' }));

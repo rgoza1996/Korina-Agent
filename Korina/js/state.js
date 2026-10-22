@@ -12,7 +12,7 @@ export const state = {
   activeSources: [],
   ttsSpeaking: false,
   currentKorinaText: '',
-  currentTtsStartedAt: 0,
+  currentTtsStartedAt: null,
   currentTtsEstimatedEnd: 0,
   interruptContext: '',
 

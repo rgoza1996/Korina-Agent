@@ -1,13 +1,14 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
-import { schedulePcm, speakBuffered, speakText, stopTtsNow, waitForScheduledAudio } from '../../Korina/js/speech.js';
+import { interruptedSpeechContext, schedulePcm, speakBuffered, speakText, stopTtsNow, waitForScheduledAudio } from '../../Korina/js/speech.js';
 import { MAX_BUFFERED_AUDIO_BYTES } from '../../Korina/js/response-body.js';
 
 class AudioElement extends EventTarget {
   src = '';
   paused = true;
   duration = 2;
+  currentTime = 0;
   pauseCalls = 0;
   loadCalls = 0;
   playCalls = 0;
@@ -54,6 +55,103 @@ afterEach(() => {
   stopTtsNow();
   URL.createObjectURL = createObjectURL;
   URL.revokeObjectURL = revokeObjectURL;
+});
+
+for (const mode of ['buf', 'sse']) {
+  test(`${mode} synthesis still downloading reports all text unspoken and Stop retires its clock`, async () => {
+    state.mode = mode;
+    globalThis.fetch = async (url, { signal }) => new Response(new ReadableStream({
+      start(controller) {
+        signal.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
+      },
+    }));
+    const pending = speakText('The entire reply is still unspoken.');
+    await tick();
+    state.audioCtx.currentTime = 15;
+    assert.equal(state.currentTtsStartedAt, null);
+    assert.match(interruptedSpeechContext(), /about 0%.*Already spoken approximately: ""\. Not yet spoken approximately: "The entire reply is still unspoken\."/);
+    assert.equal(state.activeSources.length, 0);
+    assert.equal(created.length, 0);
+    stopTtsNow();
+    await pending;
+    assert.equal(state.controller, null);
+  });
+}
+
+for (const ackUntil of [0, 20]) {
+  test(`first PCM uses its scheduled playback clock and later chunks retain it with ACK end ${ackUntil}`, async () => {
+    state.mode = 'sse';
+    state.ackPlayingUntil = ackUntil;
+    const starts = [];
+    state.gain = {};
+    Object.assign(state.audioCtx, {
+      createBuffer: () => ({ copyToChannel() {} }),
+      createBufferSource: () => ({ connect() {}, start: when => starts.push(when), stop() {} }),
+    });
+    let body;
+    globalThis.fetch = async (url, { signal }) => new Response(new ReadableStream({ start(controller) {
+      body = controller;
+      signal.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
+    } }));
+    const pending = speakText('This reply is being streamed in two chunks.');
+    await tick();
+    state.audioCtx.currentTime = 15;
+    const chunk = new TextEncoder().encode(`data: ${JSON.stringify({ audio: Buffer.alloc(2 * 3000 * 2).toString('base64'), sample_rate: 3000 })}\n\n`);
+    body.enqueue(chunk);
+    await tick();
+    const firstStart = Math.max(15, ackUntil);
+    assert.deepEqual(starts, [firstStart]);
+    assert.equal(state.currentTtsStartedAt, firstStart);
+    assert.equal(state.currentTtsEstimatedEnd, firstStart + 2);
+    assert.match(interruptedSpeechContext(), /about 0%/);
+    if (ackUntil) {
+      state.audioCtx.currentTime = firstStart - .5;
+      assert.match(interruptedSpeechContext(), /about 0%/);
+    }
+    state.audioCtx.currentTime = firstStart + 1;
+    assert.match(interruptedSpeechContext(), /about 50%/);
+    body.enqueue(chunk);
+    await tick();
+    assert.deepEqual(starts, [firstStart, firstStart + 2]);
+    assert.equal(state.currentTtsStartedAt, firstStart);
+    assert.equal(state.currentTtsEstimatedEnd, firstStart + 4);
+    assert.match(interruptedSpeechContext(), /about 25%/);
+    state.audioCtx.state = 'suspended';
+    const suspended = interruptedSpeechContext();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(interruptedSpeechContext(), suspended);
+    state.audioCtx.state = 'running';
+    state.audioCtx.currentTime = firstStart + 2;
+    assert.match(interruptedSpeechContext(), /about 50%/);
+    stopTtsNow();
+    await pending;
+  });
+}
+
+test('buffered interruption context follows native playback time through pause and replacement', async () => {
+  const old = speakText('The old buffered reply.');
+  await tick();
+  element('audio').currentTime = 1;
+  assert.match(interruptedSpeechContext(), /about 50%/);
+  element('audio').pause();
+  state.audioCtx.currentTime = 30;
+  assert.match(interruptedSpeechContext(), /about 50%/);
+  stopTtsNow();
+  await old;
+
+  let release;
+  globalThis.fetch = () => new Promise(resolve => { release = resolve; });
+  const current = speakText('The new reply is still unspoken.');
+  state.audioCtx.currentTime = 40;
+  assert.equal(state.currentTtsStartedAt, null);
+  assert.match(interruptedSpeechContext(), /about 0%.*Not yet spoken approximately: "The new reply is still unspoken\."/);
+  element('audio').currentTime = 0;
+  release(response());
+  await tick();
+  element('audio').currentTime = .5;
+  assert.match(interruptedSpeechContext(), /about 25%/);
+  element('audio').finish();
+  await current;
 });
 
 test('buffered speech keeps its lifecycle active until native playback ends and releases its URL', async () => {
@@ -276,10 +374,13 @@ for (const completion of ['error', 'late PCM']) {
     const current = speakText('The current buffered reply.', true);
     await tick();
     const controller = state.controller;
+    const currentStartedAt = state.currentTtsStartedAt;
     finishOldRead();
     await oldResult;
     assert.equal(sources.length, 1, 'a late old chunk cannot schedule another source');
     assert.equal(state.controller, controller);
+    assert.equal(state.currentTtsStartedAt, currentStartedAt);
+    assert.match(interruptedSpeechContext(), /about 0%.*Not yet spoken approximately: "The current buffered reply\."/);
     assert.equal(controller.signal.aborted, false);
     assert.equal(state.ttsSpeaking, true);
     assert.equal(element('audio').paused, false);

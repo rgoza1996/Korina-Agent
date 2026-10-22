@@ -38,6 +38,8 @@ function beginPlayback() {
   state.ackPlayingUntil = ackUntil;
   const playback = { version, controller: new AbortController(), sources: new Set(), audioSeconds: 0 };
   state.controller = playback.controller;
+  state.currentTtsStartedAt = null;
+  state.currentTtsEstimatedEnd = 0;
   return playback;
 }
 
@@ -66,9 +68,17 @@ export function stopTtsNow() {
 // Interrupt context
 export function interruptedSpeechContext() {
   if (!state.audioCtx || !state.currentKorinaText) return '';
-  const elapsed = Math.max(0, state.audioCtx.currentTime - state.currentTtsStartedAt);
-  const total = Math.max(0.1, state.currentTtsEstimatedEnd - state.currentTtsStartedAt);
-  const ratio = Math.max(0, Math.min(1, elapsed / total));
+  let ratio = 0;
+  if (bufferedPlayback && bufferedPlayback.signal === state.controller?.signal) {
+    const audio = $('audio');
+    if (Number.isFinite(audio.duration) && audio.duration > 0 && Number.isFinite(audio.currentTime)) {
+      ratio = audio.currentTime / audio.duration;
+    }
+  } else if (Number.isFinite(state.currentTtsStartedAt) && state.currentTtsEstimatedEnd > state.currentTtsStartedAt) {
+    const elapsed = Math.max(0, state.audioCtx.currentTime - state.currentTtsStartedAt);
+    ratio = elapsed / (state.currentTtsEstimatedEnd - state.currentTtsStartedAt);
+  }
+  ratio = Math.max(0, Math.min(1, ratio));
   const idx = Math.max(0, Math.min(state.currentKorinaText.length, Math.round(state.currentKorinaText.length * ratio)));
   const before = state.currentKorinaText.slice(0, idx).trim();
   const after = state.currentKorinaText.slice(idx).trim();
@@ -100,6 +110,7 @@ export async function schedulePcm(b64, sr = 24000, playback = null) {
   src.connect(state.gain);
   const when = Math.max(state.audioCtx.currentTime, state.nextPlayTime, state.ackPlayingUntil);
   src.start(when);
+  if (playback && playback.audioSeconds === 0) state.currentTtsStartedAt = when;
   if (playback) playback.audioSeconds = totalSeconds;
   else standaloneAudioSeconds = totalSeconds;
   state.activeSources.push(src);
@@ -263,8 +274,6 @@ export async function speakText(text, _wait = false) {
     $('chunkInfo').textContent = '';
     ensureAudio();
     state.currentKorinaText = text;
-    state.currentTtsStartedAt = state.audioCtx.currentTime;
-    state.currentTtsEstimatedEnd = state.currentTtsStartedAt;
     state.activeSources = [];
     state.ttsSpeaking = true;
     if (state.live) startBargeInCapture();

@@ -13,6 +13,7 @@ async function loadStreamingPage(page, body) {
   page.on('pageerror', error => errors.push(error.message));
   await page.addInitScript(() => {
     window.__speechSources = [];
+    window.__speechScheduleTimes = [];
     window.__speechEof = false;
     const Context = window.AudioContext || window.webkitAudioContext;
     const createSource = Context.prototype.createBufferSource;
@@ -21,7 +22,7 @@ async function loadStreamingPage(page, body) {
       const record = { started: 0, stopped: 0, ended: false };
       window.__speechSources.push(record);
       const start = source.start.bind(source), stop = source.stop.bind(source);
-      source.start = (...parameters) => { record.started++; return start(...parameters); };
+      source.start = (...parameters) => { record.started++; window.__speechScheduleTimes.push(parameters[0]); return start(...parameters); };
       source.stop = (...parameters) => { record.stopped++; return stop(...parameters); };
       source.addEventListener('ended', () => { record.ended = true; });
       return source;
@@ -60,6 +61,42 @@ async function loadStreamingPage(page, body) {
   await expect(page.locator('#ttsBaseUrl')).toHaveValue('http://speech.fixture');
   return errors;
 }
+
+test('streamed interruption context starts at the first native PCM schedule after delayed synthesis', async ({ page }) => {
+  const errors = await loadStreamingPage(page, pcmEvent(4));
+  let release, requested = false;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route('http://speech.fixture/stream/speech', async route => {
+    requested = true;
+    await held;
+    await route.fulfill({ contentType: 'text/event-stream', body: pcmEvent(4) }).catch(() => {});
+  });
+  const text = 'The entire streamed reply is still unspoken.';
+  try {
+    await page.locator('#text').fill(text);
+    await page.locator('#playBtn').click();
+    await expect.poll(() => requested).toBe(true);
+    const pendingClock = await page.evaluate(() => window.state.audioCtx.currentTime);
+    await expect.poll(() => page.evaluate(start => window.state.audioCtx.currentTime - start > .3, pendingClock)).toBe(true);
+    const pending = await page.evaluate(async () => ({ startedAt: window.state.currentTtsStartedAt,
+      sources: window.state.activeSources.length,
+      context: (await import('/js/speech.js')).interruptedSpeechContext() }));
+    expect(pending.startedAt).toBeNull();
+    expect(pending.sources).toBe(0);
+    expect(pending.context).toContain('about 0%');
+    expect(pending.context).toContain(`Already spoken approximately: "". Not yet spoken approximately: "${text}"`);
+    release();
+    await expect.poll(() => page.evaluate(() => window.state.activeSources.length)).toBe(1);
+    const scheduled = await page.evaluate(() => ({ startedAt: window.state.currentTtsStartedAt,
+      when: window.__speechScheduleTimes[0], estimatedEnd: window.state.currentTtsEstimatedEnd }));
+    expect(scheduled.startedAt).toBe(scheduled.when);
+    expect(scheduled.startedAt).toBeGreaterThan(pendingClock + .3);
+    expect(scheduled.estimatedEnd - scheduled.startedAt).toBeCloseTo(4);
+    await page.locator('#stopBtn').click();
+    await expect(page.locator('#stopBtn')).toBeDisabled();
+    expect(errors).toEqual([]);
+  } finally { release(); }
+});
 
 test('finite SSE keeps native PCM playback active after EOF and Stop cancels it promptly', async ({ page }) => {
   const errors = await loadStreamingPage(page, pcmEvent());
