@@ -156,6 +156,12 @@ Local activation and refresh account for response, multimodal STT, and enabled a
 
 Model-folder append/delete merges atomically with the latest settings. Removing the last folder preserves an explicit empty selection rather than silently restoring environment defaults.
 
+Catalogs normalize valid UTF-8 IDs up to 512 Unicode characters. Each role/source returns at most 512 IDs / 256 KiB of JSON-escaped identifier bytes, with shared metadata capped at 1024 IDs / 512 KiB. Selected IDs found in a source survive truncation. Missing saved choices remain annotated in the UI with known incompatibility warnings.
+
+Local discovery visits at most 10,000 entries per source; manifest and LM Studio CLI data are capped at 2 MiB, with a 30-second CLI deadline. Sidecar estimates use a request-scoped parent cache and a separate 10,000-entry budget. Incomplete estimates and errors are visible. Explicit activation admission is independent of display traversal limits.
+
+Browser model discovery caps declared and streamed bodies at 8 MiB before parsing and preserves prior options/cache on malformed or oversized responses. Health loaded-model lists are bounded too; malformed TTS health degrades readiness while Korina liveness stays available.
+
 Candidate agent discovery accepts an explicit bounded POST body without saving settings or activating a provider. Credentials inherit only for the matching actual API base.
 
 See the full architecture report for the capability schema.</p></div></body></html>
