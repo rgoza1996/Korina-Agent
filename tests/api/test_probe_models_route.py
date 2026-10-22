@@ -12,7 +12,7 @@ def test_probe_models_route_returns_results_and_updates_cache(monkeypatch, clien
 
     captured = {}
 
-    def fake_probe(provider, base_url, model, *, timeout=15.0, transcribe_fn=None):
+    def fake_probe(provider, base_url, model, *, timeout=15.0, transcribe_fn=None, is_current=None):
         captured.setdefault('calls', []).append((provider, base_url, model))
         if 'good' in model:
             return ProbeResult(model=model, supported=True, reason='', latency_ms=42,
@@ -75,7 +75,7 @@ def test_probe_models_route_marks_transient_as_uncached(monkeypatch, client, iso
     from korina.services.active_probe import ProbeResult
     from korina.config import audio_unsupported_key, load_config
 
-    def fake_probe(provider, base_url, model, *, timeout=15.0, transcribe_fn=None):
+    def fake_probe(provider, base_url, model, *, timeout=15.0, transcribe_fn=None, is_current=None):
         return ProbeResult(model=model, supported=False, reason='transient_runtime_error',
                            latency_ms=50, status=0, body_excerpt='connection reset',
                            error='connection reset by peer')
@@ -101,7 +101,7 @@ def test_probe_models_passes_explicit_auth_env(monkeypatch, client):
 
     calls = []
 
-    def probe(provider, base_url, model, *, api_env, timeout):
+    def probe(provider, base_url, model, *, api_env, timeout, is_current=None):
         calls.append(api_env)
         return ProbeResult(model, True, '', 1, 200, '', '')
 
@@ -130,9 +130,9 @@ def test_probe_batch_deadline_returns_completed_results_and_skips_remaining_with
     from korina.config import config_audio_unsupported
     now = [100.0]
     calls = []
-    monkeypatch.setattr(providers.time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(providers, 'monotonic', lambda: now[0])
 
-    def probe(provider, base, model, *, timeout):
+    def probe(provider, base, model, *, timeout, is_current=None):
         calls.append((model, timeout))
         now[0] += timeout
         return ProbeResult(model, False, 'transient_runtime_error', int(timeout * 1000), 0, '', 'timeout')
@@ -157,9 +157,9 @@ def test_final_probe_uses_only_remaining_time_and_deduplicates_ids(monkeypatch, 
     from korina.services.active_probe import ProbeResult
     now = [0.0]
     calls = []
-    monkeypatch.setattr(providers.time, 'monotonic', lambda: now[0])
+    monkeypatch.setattr(providers, 'monotonic', lambda: now[0])
 
-    def probe(provider, base, model, *, timeout):
+    def probe(provider, base, model, *, timeout, is_current=None):
         calls.append((model, timeout))
         now[0] += 23  # Include work outside the HTTP request as well.
         return ProbeResult(model, True, '', 1, 200, '', '')

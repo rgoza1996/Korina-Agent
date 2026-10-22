@@ -29,7 +29,11 @@ import wave
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
+from collections.abc import Callable
 from typing import Optional
+
+from korina.runtime.json_http import RequestCancelledError
+from korina.runtime.request_owner import check_current
 
 
 @dataclass
@@ -86,6 +90,7 @@ def probe_audio_support(
     timeout: float = 15.0,
     api_env: str | None = None,
     transcribe_fn=None,
+    is_current: Callable[[], bool] | None = None,
 ) -> ProbeResult:
     """Probe a single (provider, base_url, model) triple.
 
@@ -95,6 +100,7 @@ def probe_audio_support(
     forwarded to the production HTTP request; legacy injected callbacks retain
     their four-argument calling convention. api_env=None inherits auth only for
     the configured STT endpoint; an empty string explicitly disables auth.
+    Retired owners cancel connected HTTP work and skip cache publication.
 
     Side effects:
       - On supported=True, the persistent audio_unsupported cache entry for
@@ -111,9 +117,10 @@ def probe_audio_support(
     from korina.config import load_config, normalize_api_base_url, set_audio_unsupported, clear_audio_unsupported
     from korina.services.multimodal_stt import resolve_stt_api_env
 
+    check_current(is_current)
     if transcribe_fn is None:
         from korina.services.multimodal_stt import lmstudio_transcribe_wav
-        transcribe_fn = partial(lmstudio_transcribe_wav, timeout=timeout)
+        transcribe_fn = partial(lmstudio_transcribe_wav, timeout=timeout, is_current=is_current)
 
     provider_id = str(provider or "").strip().lower()
     base_url_clean = normalize_api_base_url(str(base_url or "").strip())
@@ -130,14 +137,18 @@ def probe_audio_support(
     started = time.time()
     try:
         import tempfile
+        check_current(is_current)
         with tempfile.NamedTemporaryFile(prefix="korina-probe-", suffix=".wav", delete=False) as f:
             f.write(_build_synthetic_wav())
             tmp_path = Path(f.name)
+        check_current(is_current)
         result = transcribe_fn(tmp_path, model=model_id, base_url=base_url_clean, api_env=resolved_api_env)
+        check_current(is_current)
         text = str((result or {}).get("text") or "").strip()
         latency_ms = int((time.time() - started) * 1000)
         if text:
-            clear_audio_unsupported(provider_id, base_url_clean, model_id)
+            check_current(is_current)
+            clear_audio_unsupported(provider_id, base_url_clean, model_id, is_current=is_current)
             return ProbeResult(
                 model=model_id,
                 supported=True,
@@ -154,7 +165,8 @@ def probe_audio_support(
         body = json.dumps({'choices': [{'message': {'content': text}, 'finish_reason': finish_reason}]})
         unsupported, reason = classify_failure(200, body, finish_reason=finish_reason)
         if unsupported:
-            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, body)
+            check_current(is_current)
+            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, body, is_current=is_current)
         return ProbeResult(
             model=model_id,
             supported=False,  # empty 200 is a UI-visible red mark either way
@@ -164,14 +176,18 @@ def probe_audio_support(
             body_excerpt=reason_excerpt[:200],
             error=reason_excerpt if not unsupported else "",
         )
+    except RequestCancelledError:
+        raise
     except Exception as e:
+        check_current(is_current)
         latency_ms = int((time.time() - started) * 1000)
         status, body = _classify_runtime_error(e)
         unsupported, reason = classify_failure(status, body)
         body_excerpt = body[:200]
         error = str(e)[:200]
         if unsupported:
-            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, body)
+            check_current(is_current)
+            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, body, is_current=is_current)
         return ProbeResult(
             model=model_id,
             supported=False,

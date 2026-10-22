@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-import time
+from collections.abc import Callable
+from time import monotonic
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from korina.config import load_config, select_response_provider
 from korina.schemas import ProviderActivateRequest
+from korina.runtime.json_http import RequestCancelledError
+from korina.runtime.request_owner import RequestOwner, check_current
 from korina.services.provider_manager import (
     ProviderRoleConflict,
     activate_llm_provider,
@@ -97,7 +101,18 @@ class ProbeModelsRequest(BaseModel):
 
 
 @router.post('/api/llm/probe-models')
-def probe_models(req: ProbeModelsRequest):
+async def probe_models(req: ProbeModelsRequest, request: Request):
+    owner = RequestOwner()
+    try:
+        async with owner.watch(request):
+            result = await run_in_threadpool(_probe_models, req, is_current=owner.is_current)
+            check_current(owner.is_current)
+            return result
+    except RequestCancelledError as exc:
+        raise HTTPException(status_code=499, detail='Audio probe request was cancelled') from exc
+
+
+def _probe_models(req: ProbeModelsRequest, *, is_current: Callable[[], bool] | None = None):
     """Phase 5.0: actively probe audio-capability of a list of models.
 
     Drives the existing ``active_probe.probe_audio_support`` for each model,
@@ -122,22 +137,26 @@ def probe_models(req: ProbeModelsRequest):
     if not models:
         raise HTTPException(status_code=400, detail='models list is empty')
 
+    check_current(is_current)
     cache_before = config_audio_unsupported()
     triple_prefix = f"{provider_id}::"
 
     results: dict[str, dict] = {}
-    deadline = time.monotonic() + MAX_PROBE_BATCH_SECONDS
+    deadline = monotonic() + MAX_PROBE_BATCH_SECONDS
     skipped: list[str] = []
     for index, mid in enumerate(models):
-        remaining = deadline - time.monotonic()
+        check_current(is_current)
+        remaining = deadline - monotonic()
         if remaining <= 0:
             skipped = models[index:]
             break
         timeout = min(15.0, remaining)
         if req.api_key_env is None:
-            probe = probe_audio_support(provider_id, base_url_clean, mid, timeout=timeout)
+            probe = probe_audio_support(provider_id, base_url_clean, mid, timeout=timeout, is_current=is_current)
         else:
-            probe = probe_audio_support(provider_id, base_url_clean, mid, api_env=req.api_key_env, timeout=timeout)
+            probe = probe_audio_support(provider_id, base_url_clean, mid, api_env=req.api_key_env, timeout=timeout,
+                                        is_current=is_current)
+        check_current(is_current)
         triple = triple_key(provider_id, base_url_clean, mid)
         results[mid] = {
             'supported': probe.supported,
@@ -149,6 +168,7 @@ def probe_models(req: ProbeModelsRequest):
 
     # Snapshot the cache AFTER the probes so the UI can tell which
     # models are currently in the persistent audio_unsupported set.
+    check_current(is_current)
     cache_after = config_audio_unsupported()
     for mid in results:
         triple = triple_key(provider_id, base_url_clean, mid)

@@ -642,33 +642,45 @@ def config_audio_unsupported(c: dict | None = None) -> dict[str, dict]:
 
 @_config_transaction
 def set_audio_unsupported(provider: str, base_url: str, model: str,
-                          reason: str, last_error: str) -> None:
-    """Persist a probe failure. Atomic write via save_config()."""
+                          reason: str, last_error: str, *,
+                          is_current: Callable[[], bool] | None = None) -> None:
+    """Persist a probe failure unless its owner retired while awaiting config."""
+    from korina.runtime.request_owner import check_current
+
     triple = audio_unsupported_key(provider, base_url, model)
     cfg = load_config()
+    check_current(is_current)
     cache = cfg.get("audio_unsupported") or {}
     if not isinstance(cache, dict):
         cache = {}
     from datetime import datetime, timezone
+    check_current(is_current)
     cache[triple] = {
         "reason": reason,
         "since": datetime.now(timezone.utc).isoformat(),
         "last_error": last_error[:500],  # truncate to keep config.json small
     }
     cfg["audio_unsupported"] = dict(list(cache.items())[-512:])
+    check_current(is_current)
     save_config(cfg)
 
 
 @_config_transaction
-def clear_audio_unsupported(provider: str, base_url: str, model: str) -> bool:
-    """Remove one entry. Returns True if removed."""
+def clear_audio_unsupported(provider: str, base_url: str, model: str, *,
+                            is_current: Callable[[], bool] | None = None) -> bool:
+    """Remove one entry if still owned. Returns True if removed."""
+    from korina.runtime.request_owner import check_current
+
     triple = audio_unsupported_key(provider, base_url, model)
     cfg = load_config()
+    check_current(is_current)
     cache = cfg.get("audio_unsupported") or {}
     if not isinstance(cache, dict) or triple not in cache:
         return False
+    check_current(is_current)
     del cache[triple]
     cfg["audio_unsupported"] = cache
+    check_current(is_current)
     save_config(cfg)
     return True
 

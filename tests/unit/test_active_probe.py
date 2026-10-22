@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import threading
 import wave
 
 import pytest
@@ -219,3 +220,133 @@ def test_probe_empty_completion_matches_live_finish_reason_classification(config
         assert result.reason == 'silent_200_empty_content'
     else:
         assert result.reason == 'transient_empty_text'
+
+
+def test_retired_probe_does_not_create_audio_or_invoke_legacy_callback(monkeypatch, config_module):
+    from korina.runtime.json_http import RequestCancelledError
+    from korina.services import active_probe
+
+    def unexpected(*args, **kwargs):
+        pytest.fail('retired probe must not create audio or call the provider')
+
+    monkeypatch.setattr(active_probe, '_build_synthetic_wav', unexpected)
+    with pytest.raises(RequestCancelledError):
+        active_probe.probe_audio_support('llama.cpp', 'http://fixture.test/v1', 'model',
+                                         transcribe_fn=unexpected, is_current=lambda: False)
+    assert config_module.config_audio_unsupported() == {}
+
+
+@pytest.mark.parametrize('outcome', ['success', 'empty', 'error', 'cancelled'])
+def test_probe_retirement_skips_cache_publication_and_cleans_audio(config_module, outcome):
+    from korina.runtime.json_http import RequestCancelledError
+    from korina.services import active_probe
+
+    provider, base, model = 'llama.cpp', 'http://fixture.test/v1', 'model'
+    config_module.set_audio_unsupported(provider, base, model, 'original', 'keep this entry')
+    cache_before = config_module.config_audio_unsupported()
+    current = [True]
+    paths = []
+    cancelled = RequestCancelledError('cancelled fixture')
+
+    # The injected callback deliberately keeps its original four-argument API.
+    def legacy_callback(wav, *, model, base_url, api_env):
+        paths.append(wav)
+        assert wav.is_file()
+        current[0] = False
+        if outcome == 'cancelled':
+            raise cancelled
+        if outcome == 'error':
+            raise RuntimeError('HTTP 415: audio input is not supported')
+        return {'text': 'hello' if outcome == 'success' else '', 'finish_reason': 'length'}
+
+    with pytest.raises(RequestCancelledError) as caught:
+        active_probe.probe_audio_support(provider, base, model, transcribe_fn=legacy_callback,
+                                         is_current=lambda: current[0])
+    if outcome == 'cancelled':
+        assert caught.value is cancelled
+    assert config_module.config_audio_unsupported() == cache_before
+    assert len(paths) == 1 and not paths[0].exists()
+
+
+def test_default_probe_forwards_owner_but_preserves_unowned_calls(monkeypatch, config_module):
+    from korina.services import active_probe, multimodal_stt
+
+    calls = []
+
+    def transcribe(wav, *, model, base_url, api_env, timeout, is_current):
+        calls.append((timeout, is_current))
+        return {'text': 'hello'}
+
+    monkeypatch.setattr(multimodal_stt, 'lmstudio_transcribe_wav', transcribe)
+    current = lambda: True
+    for predicate in (None, current):
+        result = active_probe.probe_audio_support('llama.cpp', 'http://fixture.test/v1', 'model',
+                                                  timeout=.25, is_current=predicate)
+        assert result.supported is True
+    assert calls == [(.25, None), (.25, current)]
+
+
+@pytest.mark.parametrize('outcome', ['success', 'empty', 'error'])
+def test_probe_waiting_for_config_lock_does_not_publish_after_retirement(monkeypatch, config_module, outcome):
+    from korina.runtime.json_http import RequestCancelledError
+    from korina.services import active_probe
+
+    provider, base, model = 'llama.cpp', 'http://fixture.test/v1', 'model'
+    config_module.update_config_values({'audio_unsupported': {}})
+    if outcome == 'success':
+        config_module.set_audio_unsupported(provider, base, model, 'original', 'keep this entry')
+    saved_before = config_module.CONFIG_PATH.read_bytes()
+    cache_before = config_module.config_audio_unsupported()
+    callback_entered, return_provider, waiting_for_config = (threading.Event() for _ in range(3))
+    current = threading.Event()
+    current.set()
+    owner_thread = threading.get_ident()
+    original_lock = config_module._CONFIG_LOCK
+
+    class ObservedLock:
+        def __enter__(self):
+            if threading.get_ident() != owner_thread and return_provider.is_set():
+                waiting_for_config.set()
+            original_lock.acquire()
+            return self
+
+        def __exit__(self, *args):
+            original_lock.release()
+
+    monkeypatch.setattr(config_module, '_CONFIG_LOCK', ObservedLock())
+    paths, failures, results = [], [], []
+
+    def legacy_callback(wav, *, model, base_url, api_env):
+        paths.append(wav)
+        callback_entered.set()
+        assert return_provider.wait(3)
+        if outcome == 'error':
+            raise RuntimeError('HTTP 415: audio input is not supported')
+        return {'text': 'hello' if outcome == 'success' else '', 'finish_reason': 'length'}
+
+    def run_probe():
+        try:
+            results.append(active_probe.probe_audio_support(provider, base, model,
+                                                            transcribe_fn=legacy_callback, is_current=current.is_set))
+        except Exception as exc:
+            failures.append(exc)
+
+    worker = threading.Thread(target=run_probe, daemon=True)
+    worker.start()
+    try:
+        assert callback_entered.wait(3)
+        with config_module._CONFIG_LOCK:
+            return_provider.set()
+            assert waiting_for_config.wait(3), 'cache mutation must be waiting on the held config lock'
+            current.clear()
+        worker.join(3)
+        assert not worker.is_alive()
+        assert not results
+        assert len(failures) == 1 and isinstance(failures[0], RequestCancelledError)
+        assert config_module.CONFIG_PATH.read_bytes() == saved_before
+        assert config_module.config_audio_unsupported() == cache_before
+        assert len(paths) == 1 and not paths[0].exists()
+    finally:
+        return_provider.set()
+        current.clear()
+        worker.join(3)
