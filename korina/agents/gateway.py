@@ -78,18 +78,26 @@ class AgentHttpBridge:
         return next((turn['content'].strip() for turn in reversed(transcript)
                      if turn.get('role') == 'user' and turn.get('content', '').strip()), '')
 
-    def submit_transcript(self, req: AgentTranscriptRequest) -> dict:
+    def _preflight_admission(self) -> tuple[int, dict | None]:
         from korina.config import load_config
-        from korina.agents.state import agent_state, bind_builtin_admission
+        from korina.agents.state import agent_state
 
         with agent_state.lock:
             admission_generation = agent_state.generation
         if str(load_config().get('agent_enabled') or 'on') == 'off':
-            return {'ok': True, 'accepted': False, 'disabled': True, 'status': self.snapshot()}
+            return admission_generation, {'ok': True, 'accepted': False, 'disabled': True, 'status': self.snapshot()}
         with agent_state.lock:
             stale = admission_generation != agent_state.generation
         if stale:
-            return {'ok': True, 'accepted': False, 'stale': True, 'status': self.snapshot()}
+            return admission_generation, {'ok': True, 'accepted': False, 'stale': True, 'status': self.snapshot()}
+        return admission_generation, None
+
+    def submit_transcript(self, req: AgentTranscriptRequest) -> dict:
+        from korina.agents.state import bind_builtin_admission
+
+        admission_generation, rejection = self._preflight_admission()
+        if rejection is not None:
+            return rejection
         with bind_builtin_admission(admission_generation):
             if isinstance(self.adapter, LegacyAgentHttpAdapter):
                 return self.adapter.submit_transcript_legacy(req)
@@ -104,17 +112,11 @@ class AgentHttpBridge:
             return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': self.snapshot()}
 
     def answer_permission(self, req: AgentPermissionAnswer) -> dict:
-        from korina.config import load_config
-        from korina.agents.state import agent_state, bind_builtin_admission
+        from korina.agents.state import bind_builtin_admission
 
-        with agent_state.lock:
-            admission_generation = agent_state.generation
-        if str(load_config().get('agent_enabled') or 'on') == 'off':
-            return {'ok': True, 'accepted': False, 'disabled': True, 'status': self.snapshot()}
-        with agent_state.lock:
-            stale = admission_generation != agent_state.generation
-        if stale:
-            return {'ok': True, 'accepted': False, 'stale': True, 'status': self.snapshot()}
+        admission_generation, rejection = self._preflight_admission()
+        if rejection is not None:
+            return rejection
         with bind_builtin_admission(admission_generation):
             if isinstance(self.adapter, LegacyAgentHttpAdapter):
                 return self.adapter.answer_permission_legacy(req)
