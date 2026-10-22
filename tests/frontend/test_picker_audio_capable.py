@@ -118,44 +118,9 @@ def test_stt_capability_override_default_is_unchecked():
     )
 
 
-# ---------- providers-ui.js: apply filter to dropdown ----------
+# Executable picker filtering is covered in tests/js/test_picker_actions.mjs.
 
 
-def test_loadModelOptions_filters_sttLlmModel_by_capability():
-    """loadModelOptions must call filterModelsByCapability with
-    sttLlmModelRequirement before populating #sttLlmModel."""
-    src = (JS_DIR / 'providers-ui.js').read_text()
-    # Find the function body
-    m = re.search(
-        r"export\s+async\s+function\s+loadModelOptions\([^)]*\)\s*\{",
-        src,
-    )
-    assert m, 'loadModelOptions not found'
-    body_start = m.end()
-    # Find the matching closing brace by scanning
-    depth = 1
-    i = body_start
-    while i < len(src) and depth > 0:
-        if src[i] == '{':
-            depth += 1
-        elif src[i] == '}':
-            depth -= 1
-        i += 1
-    body = src[body_start:i]
-    # The filter must be applied to the stt_llm_models list
-    assert 'filterModelsByCapability' in body, (
-        'loadModelOptions does not call filterModelsByCapability — the '
-        'multimodal STT dropdown will render every model regardless of '
-        'audio capability.'
-    )
-    assert 'stt_llm_models_capabilities' in body, (
-        'loadModelOptions does not read stt_llm_models_capabilities from '
-        '/api/models — the filter would have no input to work with.'
-    )
-    assert 'sttLlmModelRequirement' in body, (
-        'loadModelOptions does not call sttLlmModelRequirement — the '
-        'filter would have no requirement spec to honor the override.'
-    )
 
 
 def test_applyModelOptionStatus_appends_no_audio_suffix():

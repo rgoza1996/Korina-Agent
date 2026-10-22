@@ -24,6 +24,7 @@ import {
   loadCapabilities, getResponseLlmProviderCaps, getAgentProviderCaps,
   maybeApplyProviderPreset,
   loadModelOptions, loadAgentModelOptions,
+  resetSelectedAudioProbe, syncAudioProbeButton,
 } from "./providers-ui.js";
 import { setCapabilityFilterOverride } from "./capability-filter.js";
 import { loadAcks, preloadAckBuffers, playRandomAck, cancelAckPlayback, changeAckVoice } from "./acks.js";
@@ -49,7 +50,7 @@ import { wireLocalModelsUi, loadLocalModelRoots } from "./local-models.js";
 import {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
   interruptConverse, askAndSpeak, askLM, agentDebug, cancelChatRequests,
-  setAgentEnabledFromUi,
+  setAgentEnabledFromUi, isPermissionAnswerPending,
 } from "./agent-ui.js";
 import { openEndpoints, closeEndpoints, populateEndpoints } from "./endpoints.js";
 
@@ -158,7 +159,7 @@ async function openSettings() {
   syncConverseSettingsUI();
   if (!initializeSettingsForm().loaded) void loadConfig();
   if (!await refreshProviderCapabilities()) return;
-  loadAgentModelOptions();
+  loadAgentModelOptions(false);
 }
 
 function saveSettings() {
@@ -372,6 +373,7 @@ function wireSettingsInputs() {
   };
   const llmProviderEl = $('llmProvider');
   if (llmProviderEl) llmProviderEl.onchange = async () => {
+    syncAudioProbeButton();
     if (!await refreshProviderCapabilities()) return;
     maybeApplyProviderPreset('llmProvider', 'llmBaseUrl');
     syncConverseSettingsUI();
@@ -382,6 +384,7 @@ function wireSettingsInputs() {
   const lmModelEl = $('lmModel');
   if (lmModelEl) lmModelEl.onchange = () => {
     syncConverseSettingsUI();
+    syncAudioProbeButton();
     status($('sttStatus'), `Response model set to ${prettyModelLabel(lmModel())}; apply by closing settings.`, 'warn');
     saveConfigSoon();
   };
@@ -390,13 +393,13 @@ function wireSettingsInputs() {
     if (control) control.onchange = () => { syncConverseSettingsUI(); saveConfigSoon(); };
   }
   const sttLlmModelEl = $('sttLlmModel');
-  if (sttLlmModelEl) sttLlmModelEl.onchange = () => { status($('sttStatus'), `Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
+  if (sttLlmModelEl) sttLlmModelEl.onchange = () => { syncAudioProbeButton(); status($('sttStatus'), `Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
   const sttLlmProviderEl = $('sttLlmProvider');
-  if (sttLlmProviderEl) sttLlmProviderEl.onchange = async () => { if (!await refreshProviderCapabilities()) return; maybeApplyProviderPreset('sttLlmProvider', 'sttLlmBaseUrl', { clearWhenBlank: true }); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
+  if (sttLlmProviderEl) sttLlmProviderEl.onchange = async () => { syncAudioProbeButton(); if (!await refreshProviderCapabilities()) return; maybeApplyProviderPreset('sttLlmProvider', 'sttLlmBaseUrl', { clearWhenBlank: true }); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
   const sttLlmBaseUrlEl = $('sttLlmBaseUrl');
-  if (sttLlmBaseUrlEl) sttLlmBaseUrlEl.onchange = async () => { if (!await refreshProviderCapabilities()) return; syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
+  if (sttLlmBaseUrlEl) sttLlmBaseUrlEl.onchange = async () => { syncAudioProbeButton(); if (!await refreshProviderCapabilities()) return; syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
   const sttLlmApiKeyEnvEl = $('sttLlmApiKeyEnv');
-  if (sttLlmApiKeyEnvEl) sttLlmApiKeyEnvEl.onchange = () => { syncConverseSettingsUI(); loadModelOptions(); saveConfigSoon(); };
+  if (sttLlmApiKeyEnvEl) sttLlmApiKeyEnvEl.onchange = () => { syncAudioProbeButton(); syncConverseSettingsUI(); loadModelOptions(); saveConfigSoon(); };
   const ttsDeviceEl = $('ttsDevice');
   if (ttsDeviceEl) ttsDeviceEl.onchange = () => { status($('ttsStatus'), `TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
   [
@@ -414,6 +417,7 @@ function wireSettingsInputs() {
       // hostInfo is now owned by api.js:health() and updated every 5s
       // from server-resolved URLs (Bug C / #19).
       syncConverseSettingsUI();
+      syncAudioProbeButton();
       health();
       saveConfigSoon();
     };
@@ -432,6 +436,25 @@ function wireSettingsInputs() {
   if (partialWindowMsEl) partialWindowMsEl.oninput = () => { state.partialWindowMs = partialWindowMsSetting(); $('partialWindowMsDisplay').textContent = (state.partialWindowMs / 1000).toFixed(1) + 's'; saveConfigSoon(); };
 }
 
+let typedAskOwner = null;
+
+function askTyped() {
+  // A submitted permission answer owns its confirmation. Repeated clicks must
+  // not retire that owner before it records the server's acceptance.
+  if (isPermissionAnswerPending()) return typedAskOwner?.task;
+  typedAskOwner?.controller.abort();
+  const owner = { controller: new AbortController(), session: state.agentSession };
+  typedAskOwner = owner;
+  owner.task = askAndSpeak($('text').value.trim(), '', { signal: owner.controller.signal })
+    .catch(error => {
+      if (typedAskOwner === owner && owner.session === state.agentSession && !owner.controller.signal.aborted) {
+        status($('sttStatus'), 'LM/TTS error: ' + error.message, 'bad');
+      }
+    })
+    .finally(() => { if (typedAskOwner === owner) typedAskOwner = null; });
+  return owner.task;
+}
+
 function wireUiHandlers() {
   if (window.__korinaUiHandlersWired) return;
   window.__korinaUiHandlersWired = true;
@@ -443,12 +466,13 @@ function wireUiHandlers() {
   bindClick('closeEndpointsBtn', closeEndpoints);
   bindClick('refreshEndpointsBtn', () => populateEndpoints().catch(e => console.warn('populateEndpoints failed:', e)));
   bindClick('refreshAgentModelsBtn', async () => { if (await refreshProviderCapabilities()) await loadAgentModelOptions(); });
+  bindClick('clearProbeBtn', resetSelectedAudioProbe);
   bindClick('clearSessionBtn', () => clearSession());
   bindClick('recBtn', () => startRecording());
   bindClick('stopRecBtn', stopRecording);
   bindClick('liveBtn', toggleLive);
   bindClick('playBtn', () => speakText($('text').value, false).catch(() => {}));
-  bindClick('askBtn', () => askAndSpeak($('text').value.trim()).catch(e => status($('sttStatus'), 'LM/TTS error: ' + e.message, 'bad')));
+  bindClick('askBtn', askTyped);
   bindClick('stopBtn', stopPlayback);
 
   const modal = $('settingsModal');
@@ -486,6 +510,16 @@ function wireUiHandlers() {
     document.querySelectorAll('.tab[data-mode]').forEach(x => x.classList.toggle('active', x === tab));
     saveConfigSoon();
   }));
+  for (const [id, load] of [['lmModel', loadModelOptions], ['sttLlmModel', loadModelOptions],
+    ['agentModel', () => loadAgentModelOptions(false)]]) {
+    const picker = $(id);
+    if (!picker) continue;
+    picker.addEventListener('focus', () => { void load(); });
+    picker.addEventListener('pointerdown', () => { void load(); });
+    picker.addEventListener('keydown', event => {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) void load();
+    });
+  }
   wireSettingsInputs();
 }
 
@@ -498,17 +532,6 @@ if (_sttOverride) {
     (async () => {
       try { await loadModelOptions(true); } catch { /* best effort */ }
     })();
-  });
-}
-
-// Wire clearProbeBtn (Phase 4.5.6 — clear audio probe cache and retry).
-const clearBtn = $('clearProbeBtn');
-if (clearBtn) {
-  clearBtn.addEventListener('click', async () => {
-    const { provider, baseUrl, model } = clearBtn.dataset;
-    await clearAudioProbe(provider, baseUrl, model);
-    clearBtn.style.display = 'none';
-    try { await loadModelOptions(true); } catch (_) {}
   });
 }
 

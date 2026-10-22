@@ -2,6 +2,7 @@
 
 import { state } from './state.js';
 import { apiErrorMessage } from './api-errors.js';
+import { readResponseBlob, responseError } from './response-body.js';
 import { ttsProviderLabel, llmProviderLabel } from './labels.js';
 import { $, setDot, status } from './dom.js';
 import {
@@ -460,7 +461,7 @@ export async function listAudioProbes() {
   return r.json();
 }
 
-export async function clearAudioProbe(provider, baseUrl, model) {
+export async function clearAudioProbe(provider, baseUrl, model, options = {}) {
   // Query params: see `routes/providers.py` Task 4.5.5 — path-param form
   // with two `:path` converters routes incorrectly for HF-style model ids.
   const qs = new URLSearchParams({
@@ -468,8 +469,21 @@ export async function clearAudioProbe(provider, baseUrl, model) {
     base_url: String(baseUrl || ''),
     model: String(model || ''),
   });
-  const r = await fetch(`/api/audio-probe?${qs.toString()}`, { method: 'DELETE' });
-  return r.json();
+  const r = await fetch(`/api/audio-probe?${qs.toString()}`, { method: 'DELETE', signal: options.signal });
+  if (!r.ok) throw await responseError(r, options);
+  const blob = await readResponseBlob(r, { ...options, maxBytes: 64 * 1024 });
+  const bytes = await blob.arrayBuffer();
+  if (options.signal?.aborted || options.isCurrent && !options.isCurrent()) {
+    throw new DOMException('Probe reset superseded', 'AbortError');
+  }
+  let result;
+  try { result = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+  catch { throw new Error('The server returned an invalid audio probe reset response.'); }
+  const triple = `${String(provider || '').trim()}::${normalizeTripleBaseUrl(baseUrl)}::${String(model || '').trim()}`;
+  if (!result || result.triple !== triple || typeof result.removed !== 'boolean') {
+    throw new Error('The server did not confirm the audio probe reset.');
+  }
+  return result;
 }
 
 // Cache key normalizer. MUST match the backend's `triple_key` in

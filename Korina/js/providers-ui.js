@@ -10,6 +10,7 @@ import {
   effectiveSttLlmProvider,
   effectiveSttLlmBaseUrl,
   effectiveSttLlmApiKeyEnv,
+  effectiveSttLlmModel,
   sttModel,
   lmModel,
   sttLlmModel,
@@ -17,6 +18,7 @@ import {
 } from "./settings-ui.js";
 import {
   listAudioProbes,
+  clearAudioProbe,
   normalizeTripleBaseUrl,
 } from "./api.js";
 import {
@@ -111,6 +113,10 @@ let agentModelsRequest = 0;
 let modelStatusRequest = 0;
 let modelsController = null;
 let agentModelsController = null;
+let modelsInFlight = null;
+let agentModelsInFlight = null;
+let agentModelsLoaded = null;
+let probeReset = null;
 
 async function discoveryJson(response, signal, isCurrent) {
   if (!response.ok) throw await responseError(response, { signal, isCurrent });
@@ -168,7 +174,18 @@ function agentDiscoverySettings(){
   };
 }
 
-export async function loadModelOptions(force=false){
+export function loadModelOptions(force=false){
+  const query = modelDiscoveryQuery();
+  if (!force && modelsInFlight?.query === query) return modelsInFlight.promise;
+  const flight = { query, promise: null };
+  flight.promise = discoverModelOptions(force).finally(() => {
+    if (modelsInFlight === flight) modelsInFlight = null;
+  });
+  modelsInFlight = flight;
+  return flight.promise;
+}
+
+async function discoverModelOptions(force){
   modelsController?.abort();
   const controller = new AbortController();
   modelsController = controller;
@@ -299,27 +316,7 @@ export async function loadModelOptions(force=false){
       const sttRed = renderedSttIds.filter(id => modelStatus(sttStatuses, id)?.usable === false).length;
       sttFilterInfo = sttRed > 0 ? ` · ${sttRed} shown in red as likely unusable` : "";
 
-      const clearBtn = $("clearProbeBtn");
-      if (clearBtn) {
-        const selected = $("sttLlmModel").value || $("lmModel")?.value || "";
-        const provider = effectiveSttLlmProvider();
-        const baseUrl = normalizeTripleBaseUrl(effectiveSttLlmBaseUrl());
-        const triple = `${provider}::${baseUrl}::${selected}`;
-        const probe = state.audioUnsupported?.[triple];
-        if (selected && probe) {
-          clearBtn.style.display = '';
-          clearBtn.dataset.provider = provider;
-          clearBtn.dataset.baseUrl = baseUrl;
-          clearBtn.dataset.model = selected;
-          clearBtn.title = String(probe.reason || '');
-        } else {
-          clearBtn.style.display = 'none';
-          clearBtn.dataset.provider = '';
-          clearBtn.dataset.baseUrl = '';
-          clearBtn.dataset.model = '';
-          clearBtn.title = '';
-        }
-      }
+      syncAudioProbeButton();
     }
     const previousStatus = $("modelOptionsStatus").textContent;
     syncConverseSettingsUI();
@@ -336,7 +333,19 @@ export async function loadModelOptions(force=false){
   }
 }
 
-export async function loadAgentModelOptions(){
+export function loadAgentModelOptions(force=true){
+  const query = JSON.stringify(agentDiscoverySettings());
+  if (!force && agentModelsInFlight?.query === query) return agentModelsInFlight.promise;
+  if (!force && agentModelsLoaded?.select === $("agentModel") && agentModelsLoaded.query === query) return Promise.resolve();
+  const flight = { query, promise: null };
+  flight.promise = discoverAgentModelOptions().finally(() => {
+    if (agentModelsInFlight === flight) agentModelsInFlight = null;
+  });
+  agentModelsInFlight = flight;
+  return flight.promise;
+}
+
+async function discoverAgentModelOptions(){
   agentModelsController?.abort();
   const controller = new AbortController();
   agentModelsController = controller;
@@ -359,10 +368,73 @@ export async function loadAgentModelOptions(){
       for(const m of bounded.ids){ const o=document.createElement("option"); o.value=m; o.textContent=prettyModelLabel(m); $("agentModel").appendChild(o); }
       keepModelSelection($("agentModel"), current);
     }
+    agentModelsLoaded = { select: $("agentModel"), query };
     if(statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent=`Loaded ${bounded.ids.length} Korina Agent models from ${String(j.provider || '').slice(0,64)}. ${catalogNotice({ server: j.catalog_info, browser: bounded.info })}`.trim();
   }catch(e){
+    if(isCurrent()) agentModelsLoaded = null;
     if(isCurrent() && statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent="Agent model list load failed: "+e.message;
   } finally {
     if (agentModelsController === controller) agentModelsController = null;
+  }
+}
+
+function selectedAudioProbe() {
+  const provider = effectiveSttLlmProvider();
+  const baseUrl = normalizeTripleBaseUrl(effectiveSttLlmBaseUrl());
+  const model = effectiveSttLlmModel();
+  return { provider, baseUrl, model, triple: `${provider}::${baseUrl}::${model}` };
+}
+
+export function syncAudioProbeButton() {
+  const button = $("clearProbeBtn");
+  if (!button) return;
+  if (probeReset && !probeReset.isCurrent()) retireProbeReset(probeReset);
+  const selected = selectedAudioProbe();
+  const probe = selected.model && state.audioUnsupported?.[selected.triple];
+  button.style.display = probe ? '' : 'none';
+  button.dataset.provider = probe ? selected.provider : '';
+  button.dataset.baseUrl = probe ? selected.baseUrl : '';
+  button.dataset.model = probe ? selected.model : '';
+  button.title = probe ? String(probe.reason || '') : '';
+}
+
+function retireProbeReset(operation) {
+  if (probeReset !== operation) return;
+  probeReset = null;
+  operation.controller.abort();
+  $("clearProbeBtn").disabled = false;
+  if (operation.action.textContent === operation.pending) operation.action.textContent = '';
+}
+
+export async function resetSelectedAudioProbe() {
+  const button = $("clearProbeBtn"), action = $("settingsActionStatus");
+  const selected = selectedAudioProbe();
+  if (!button || !selected.model) return;
+  if (probeReset) retireProbeReset(probeReset);
+  const query = modelDiscoveryQuery();
+  const operation = { controller: new AbortController(), action, pending: 'Resetting audio capability probe…' };
+  const isCurrent = () => probeReset === operation && query === modelDiscoveryQuery()
+    && selected.triple === selectedAudioProbe().triple;
+  operation.isCurrent = isCurrent;
+  probeReset = operation;
+  const { controller, pending } = operation;
+  action.textContent = pending;
+  button.disabled = true;
+  try {
+    await clearAudioProbe(selected.provider, selected.baseUrl, selected.model, { signal: controller.signal, isCurrent });
+    if (!isCurrent()) return;
+    const probes = { ...state.audioUnsupported };
+    delete probes[selected.triple];
+    state.audioUnsupported = probes;
+    syncAudioProbeButton();
+    await loadModelOptions(true);
+    if (isCurrent() && action.textContent === pending) action.textContent = 'Audio capability probe reset. Try transcription again.';
+  } catch (error) {
+    if (isCurrent() && action.textContent === pending) action.textContent = `Audio probe reset failed: ${error.message}. Retry Reset audio probe.`;
+  } finally {
+    if (probeReset === operation) {
+      button.disabled = false;
+      probeReset = null;
+    }
   }
 }

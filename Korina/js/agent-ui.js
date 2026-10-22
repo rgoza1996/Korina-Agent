@@ -325,6 +325,11 @@ export function interruptConverse(text, hard = false) {
 }
 
 // Permission answer detection
+export function isPermissionAnswerPending() {
+  return Boolean(agentActive() && permissionAnswerInFlight?.session === state.agentSession
+    && !permissionAnswerInFlight.controller.signal.aborted);
+}
+
 export async function handlePermissionAnswerIfAny(message, { isCurrent = () => true } = {}) {
   const session = state.agentSession;
   const current = agentOwnership(isCurrent);

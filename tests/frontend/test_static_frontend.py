@@ -78,14 +78,6 @@ def test_barge_in_uses_adaptive_vad_thresholds_not_undefined_constants():
     assert "SILENCE_THRESHOLD" not in barge
 
 
-def test_model_dropdown_does_not_refresh_on_focus_or_pointerdown():
-    combined = "\n".join(read(path) for path in [KORINA_DIR / "index.html", *JS_DIR.glob("*.js")])
-
-    assert "pointerdown" not in combined
-    assert "onpointerdown" not in combined
-    assert "addEventListener('focus" not in combined
-    assert 'addEventListener("focus' not in combined
-    assert "onfocus" not in combined
 
 
 

@@ -1,6 +1,6 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { askLM, askAndSpeak, cancelChatRequests } from '../../Korina/js/agent-ui.js';
+import { askLM, askAndSpeak, cancelChatRequests, handlePermissionAnswerIfAny, isPermissionAnswerPending } from '../../Korina/js/agent-ui.js';
 import { state } from '../../Korina/js/state.js';
 import { handleLiveTurn, stopLive } from '../../Korina/js/live.js';
 
@@ -115,5 +115,42 @@ test('an already retired caller creates no request or visible user turn', async 
   controller.abort();
   globalThis.fetch = async () => { throw new Error('Retired caller must not fetch'); };
   assert.equal(await askAndSpeak('Do not send.', '', { signal: controller.signal }), null);
+  assert.deepEqual(state.history, []);
+});
+
+test('permission confirmation remains pending through its JSON body and releases after failure for retry', async () => {
+  el('agentEnabled').checked = true;
+  state.agentActivityBlocked = state.agentResetBlocked = false;
+  state.awaitingAgentPermission = { id: 71 };
+  let confirm, calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return { ok: false, json: () => new Promise(resolve => { confirm = resolve; }) };
+  };
+  const first = handlePermissionAnswerIfAny('yes');
+  await tick();
+  assert.equal(isPermissionAnswerPending(), true);
+  assert.equal(await handlePermissionAnswerIfAny('yes'), true);
+  assert.equal(calls, 1);
+  confirm({ detail: 'Service unavailable' });
+  await assert.rejects(first, /Service unavailable/);
+  assert.equal(isPermissionAnswerPending(), false);
+  assert.deepEqual(state.awaitingAgentPermission, { id: 71 });
+});
+
+test('a retired session permission request does not block a new typed turn', async () => {
+  el('agentEnabled').checked = true;
+  state.agentActivityBlocked = state.agentResetBlocked = false;
+  state.awaitingAgentPermission = { id: 71 };
+  let confirm;
+  globalThis.fetch = async () => new Promise(resolve => { confirm = resolve; });
+  const old = handlePermissionAnswerIfAny('yes');
+  await tick();
+  assert.equal(isPermissionAnswerPending(), true);
+  state.agentSession++;
+  assert.equal(isPermissionAnswerPending(), false);
+  confirm({ ok: true, json: async () => ({ accepted: true }) });
+  assert.equal(await old, true);
+  assert.equal(isPermissionAnswerPending(), false);
   assert.deepEqual(state.history, []);
 });
