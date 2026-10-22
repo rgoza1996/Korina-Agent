@@ -33,13 +33,23 @@ def normalize_device(requested: str | None = None) -> str:
     return 'cuda' if cuda_available() else 'cpu'
 
 
-def to_int16(audio) -> np.ndarray:
+def _check_audio_shape(shape, max_samples: int | None) -> None:
+    if len(shape) != 1:
+        raise ValueError('Kokoro must return mono audio')
+    if max_samples is not None and shape[0] > max_samples:
+        raise RuntimeError('Generated speech exceeds the ten minute audio limit')
+
+
+def to_int16(audio, *, max_samples: int | None = None) -> np.ndarray:
     """Produce mono little-endian PCM without importing torch eagerly."""
+    shape = getattr(audio, 'shape', None)
+    if shape is not None:
+        # Tensor metadata is available before an expensive GPU-to-CPU copy.
+        _check_audio_shape(shape, max_samples)
     if hasattr(audio, 'detach'):
         audio = audio.detach().cpu().numpy()
     audio = np.asarray(audio)
-    if audio.ndim != 1:
-        raise ValueError('Kokoro must return mono audio')
+    _check_audio_shape(audio.shape, max_samples)
     if audio.dtype == np.int16:
         return audio.astype('<i2', copy=False)
     audio = np.nan_to_num(audio, nan=0.0, posinf=1.0, neginf=-1.0)
@@ -73,58 +83,82 @@ class AudioChunk:
 
 
 class SynthesisSession:
-    """One inference slot, released on completion, error, or client disconnect."""
+    """Own inference until advancement and cleanup finish, including disconnects."""
 
     def __init__(self, generator, device: str, release: Callable[[], None]):
         self.device = device
         self._generator = iter(generator)
         self._release = release
+        self._operation_lock = threading.Lock()
+        self._close_requested = threading.Event()
         self._closed = False
+        self._primed = False
         self._total_samples = 0
         self._first: AudioChunk | None = None
 
-    def _next_chunk(self) -> AudioChunk:
-        for gs, ps, audio in self._generator:
-            pcm = to_int16(audio)
+    def _next_chunk_locked(self) -> AudioChunk:
+        while not self._close_requested.is_set():
+            gs, ps, audio = next(self._generator)
+            if self._close_requested.is_set():
+                break
+            pcm = to_int16(audio, max_samples=MAX_AUDIO_SAMPLES - self._total_samples)
             samples = len(pcm)
             if not samples:
                 continue
+            if self._close_requested.is_set():
+                break
             self._total_samples += samples
-            if self._total_samples > MAX_AUDIO_SAMPLES:
-                raise RuntimeError('Generated speech exceeds the ten minute audio limit')
             return AudioChunk(str(gs), str(ps), pcm.tobytes(), samples)
         raise StopIteration
 
     def prime(self) -> None:
         """Fail before sending HTTP headers if loading or first inference fails."""
-        try:
-            self._first = self._next_chunk()
-        except StopIteration as exc:
-            raise RuntimeError('No audio generated') from exc
+        with self._operation_lock:
+            if self._close_requested.is_set():
+                raise RuntimeError('Synthesis session is closed')
+            if self._primed:
+                return
+            try:
+                self._first = self._next_chunk_locked()
+                self._primed = True
+            except StopIteration as exc:
+                if self._close_requested.is_set():
+                    raise RuntimeError('Synthesis session is closed') from exc
+                raise RuntimeError('No audio generated') from exc
 
     def chunks(self) -> Iterator[AudioChunk]:
         try:
-            if self._first is not None:
-                yield self._first
-                self._first = None
-            while not self._closed:
-                try:
-                    yield self._next_chunk()
-                except StopIteration:
-                    return
+            while True:
+                with self._operation_lock:
+                    if self._close_requested.is_set():
+                        return
+                    if self._first is not None:
+                        chunk, self._first = self._first, None
+                    else:
+                        try:
+                            chunk = self._next_chunk_locked()
+                        except StopIteration:
+                            return
+                # Never hold the operation lock while the HTTP consumer sends.
+                yield chunk
         finally:
             self.close()
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        try:
-            close = getattr(self._generator, 'close', None)
-            if close is not None:
-                close()
-        finally:
-            self._release()
+        self._close_requested.set()
+        # Native inference cannot be force-cancelled. Keep the runtime slot
+        # until any active next()/conversion and generator cleanup complete.
+        with self._operation_lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._first = None
+            try:
+                close = getattr(self._generator, 'close', None)
+                if close is not None:
+                    close()
+            finally:
+                self._release()
 
 
 class SynthesisRuntime:

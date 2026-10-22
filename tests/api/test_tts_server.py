@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import io
+import threading
 import wave
 
+import httpx
 import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
-from korina.tts.runtime import SynthesisRuntime
+from korina.tts import runtime as runtime_module
+from korina.tts.runtime import SynthesisBusy, SynthesisRuntime
 from korina.tts.server import SpeechStreamResponse, create_app, sse_chunks
 
 
@@ -101,4 +104,117 @@ def test_send_error_releases_inference_slot():
 
     with pytest.raises(Exception):
         asyncio.run(response({'type': 'http', 'asgi': {'spec_version': '2.4'}}, receive, broken_send))
+    engine.open_session('again', 'af_heart', 1, 'cpu').close()
+
+
+@pytest.mark.parametrize('termination', ['disconnect', 'task_cancel'])
+def test_stream_termination_retains_slot_until_active_native_inference_finishes(monkeypatch, termination):
+    monkeypatch.setattr(runtime_module, 'cuda_available', lambda: False)
+    entered, release, finalized = threading.Event(), threading.Event(), threading.Event()
+
+    def pipeline(text, voice, speed):
+        try:
+            yield 'first', voice, np.zeros(1)
+            entered.set()
+            assert release.wait(3)
+            yield 'late', voice, np.zeros(1)
+        finally:
+            finalized.set()
+
+    engine = SynthesisRuntime(lambda device: pipeline)
+    session = engine.open_session('hello', 'af_heart', 1, 'cpu')
+    response = SpeechStreamResponse(sse_chunks(session), session, media_type='text/event-stream')
+    closing_started, closing_finished = threading.Event(), threading.Event()
+    close = session.close
+
+    def observed_close():
+        closing_started.set()
+        try:
+            close()
+        finally:
+            closing_finished.set()
+
+    session.close = observed_close
+
+    async def exercise():
+        disconnect_sent = asyncio.Event()
+
+        async def receive():
+            assert await asyncio.to_thread(entered.wait, 1)
+            disconnect_sent.set()
+            return {'type': 'http.disconnect'}
+
+        async def send(message):
+            pass
+
+        spec = '2.0' if termination == 'disconnect' else '2.4'
+        stream = asyncio.create_task(response({'type': 'http', 'asgi': {'spec_version': spec}}, receive, send))
+        try:
+            assert await asyncio.to_thread(entered.wait, 1)
+            if termination == 'task_cancel':
+                stream.cancel()
+                assert await asyncio.to_thread(closing_started.wait, 1)
+                assert not await asyncio.to_thread(closing_finished.wait, 0.02)
+            else:
+                await asyncio.wait_for(disconnect_sent.wait(), 1)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(engine)), base_url='http://tts.test') as client:
+                assert (await client.get('/health')).json()['loaded'] is True
+                with pytest.raises(SynthesisBusy):
+                    engine.open_session('blocked', 'af_heart', 1, 'cpu')
+                busy = await client.post('/stream/speech', json={'input': 'blocked', 'device': 'cpu'})
+                assert busy.status_code == 503
+                assert busy.headers['retry-after'] == '1'
+            assert not finalized.is_set()
+        finally:
+            release.set()
+            if termination == 'task_cancel':
+                with pytest.raises(asyncio.CancelledError):
+                    await asyncio.wait_for(stream, 2)
+            else:
+                await asyncio.wait_for(stream, 2)
+    asyncio.run(exercise())
+    assert finalized.is_set()
+    engine.open_session('again', 'af_heart', 1, 'cpu').close()
+
+
+def test_body_send_failure_keeps_slot_until_generator_cleanup_finishes(monkeypatch):
+    monkeypatch.setattr(runtime_module, 'cuda_available', lambda: False)
+    cleaning, release = threading.Event(), threading.Event()
+
+    def pipeline(text, voice, speed):
+        try:
+            yield text, voice, np.zeros(1)
+        finally:
+            cleaning.set()
+            assert release.wait(3)
+
+    engine = SynthesisRuntime(lambda device: pipeline)
+    session = engine.open_session('hello', 'af_heart', 1, 'cpu')
+    response = SpeechStreamResponse(sse_chunks(session), session, media_type='text/event-stream')
+
+    async def exercise():
+        body_attempted = False
+
+        async def receive():
+            return {'type': 'http.request', 'body': b'', 'more_body': False}
+
+        async def broken_send(message):
+            nonlocal body_attempted
+            if message['type'] == 'http.response.body':
+                body_attempted = True
+                raise OSError('connection closed while sending audio')
+
+        stream = asyncio.create_task(response({'type': 'http', 'asgi': {'spec_version': '2.4'}}, receive, broken_send))
+        try:
+            assert await asyncio.to_thread(cleaning.wait, 1)
+            assert body_attempted
+            with pytest.raises(SynthesisBusy):
+                engine.open_session('blocked', 'af_heart', 1, 'cpu')
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=create_app(engine)), base_url='http://tts.test') as client:
+                assert (await client.get('/health')).json()['status'] == 'ok'
+        finally:
+            release.set()
+            with pytest.raises(Exception):
+                await asyncio.wait_for(stream, 2)
+    asyncio.run(exercise())
     engine.open_session('again', 'af_heart', 1, 'cpu').close()

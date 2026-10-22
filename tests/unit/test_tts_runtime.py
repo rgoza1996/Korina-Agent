@@ -6,13 +6,13 @@ import json
 import struct
 import threading
 import wave
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 import numpy as np
 import pytest
 
 from korina.tts import runtime as module
-from korina.tts.runtime import SAMPLE_RATE, SynthesisBusy, SynthesisRuntime, to_int16
+from korina.tts.runtime import SAMPLE_RATE, SynthesisBusy, SynthesisRuntime, SynthesisSession, to_int16
 from korina.tts.server import sse_chunks, wav_chunks
 
 
@@ -119,6 +119,88 @@ def test_midstream_error_releases_slot():
         list(open_session(engine).chunks())
 
 
+def test_concurrent_close_waits_for_active_inference_and_releases_slot_once(monkeypatch):
+    monkeypatch.setattr(module, 'cuda_available', lambda: False)
+    entered, release, finalized = threading.Event(), threading.Event(), threading.Event()
+
+    def blocked(text, voice, speed):
+        try:
+            yield 'first', '', np.zeros(1)
+            entered.set()
+            assert release.wait(3)
+            yield 'late', '', np.zeros(1)
+        finally:
+            finalized.set()
+
+    engine = runtime(lambda device: blocked)
+    session = open_session(engine)
+    chunks = session.chunks()
+    assert next(chunks).gs == 'first'
+    closing_started = threading.Event()
+
+    def close():
+        closing_started.set()
+        session.close()
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        advancing = pool.submit(next, chunks)
+        assert entered.wait(1)
+        closers = [pool.submit(close) for _ in range(3)]
+        try:
+            assert closing_started.wait(1)
+            for closing in closers:
+                with pytest.raises(TimeoutError):
+                    closing.result(0.02)
+            with pytest.raises(SynthesisBusy):
+                open_session(engine)
+            assert engine.health()['loaded'] is True
+            assert not finalized.is_set()
+        finally:
+            release.set()
+        with pytest.raises(StopIteration):
+            advancing.result(1)  # The disconnected client never receives the late chunk.
+        for closing in closers:
+            closing.result(1)
+    assert finalized.is_set()
+    session.close()
+    open_session(engine).close()
+
+
+def test_close_serializes_with_prime_and_stops_before_delivering_its_audio():
+    entered, release = threading.Event(), threading.Event()
+    releases = []
+
+    def blocked():
+        entered.set()
+        assert release.wait(3)
+        yield '', '', np.zeros(1)
+
+    session = SynthesisSession(blocked(), 'cpu', lambda: releases.append('released'))
+    closing_started = threading.Event()
+
+    def close():
+        closing_started.set()
+        session.close()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        priming = pool.submit(session.prime)
+        assert entered.wait(1)
+        closing = pool.submit(close)
+        try:
+            assert closing_started.wait(1)
+            with pytest.raises(TimeoutError):
+                closing.result(0.02)
+            assert releases == []
+        finally:
+            release.set()
+        with pytest.raises(RuntimeError, match='closed'):
+            priming.result(1)
+        closing.result(1)
+    assert list(session.chunks()) == []
+    session.close()
+    assert releases == ['released']
+
+
 def test_lazy_pipeline_load_is_synchronized_and_health_remains_responsive(monkeypatch):
     monkeypatch.setattr(module, 'cuda_available', lambda: False)
     entered = threading.Event()
@@ -153,6 +235,53 @@ def test_generated_audio_limit_stops_runaway_pipeline(monkeypatch):
     with pytest.raises(RuntimeError, match='audio limit'):
         list(open_session(engine).chunks())
     open_session(engine).close()
+
+
+def test_oversized_generated_chunk_is_rejected_before_pcm_copies(monkeypatch):
+    monkeypatch.setattr(module, 'MAX_AUDIO_SAMPLES', 3)
+
+    def too_large(text, voice, speed):
+        yield '', '', np.zeros(4, dtype=np.float32)
+
+    def unexpected_copy(*args, **kwargs):
+        raise AssertionError('Oversized audio must be rejected before NumPy PCM copies')
+
+    monkeypatch.setattr(module.np, 'nan_to_num', unexpected_copy)
+    engine = runtime(lambda device: too_large)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match='audio limit'):
+            open_session(engine)
+
+
+def test_generated_sample_budget_counts_prior_chunks_before_converting_next(monkeypatch):
+    monkeypatch.setattr(module, 'MAX_AUDIO_SAMPLES', 3)
+    converted = []
+    convert = module.to_int16
+
+    def track(audio, **kwargs):
+        result = convert(audio, **kwargs)
+        converted.append(len(result))
+        return result
+
+    def too_long(text, voice, speed):
+        yield '', '', np.zeros(2)
+        yield '', '', np.zeros(2)
+
+    monkeypatch.setattr(module, 'to_int16', track)
+    with pytest.raises(RuntimeError, match='audio limit'):
+        list(open_session(runtime(lambda device: too_long)).chunks())
+    assert converted == [2]
+
+
+def test_oversized_tensor_is_rejected_before_cpu_transfer():
+    class Tensor:
+        shape = (4,)
+
+        def detach(self):
+            raise AssertionError('Tensor size must be checked before detach/CPU transfer')
+
+    with pytest.raises(RuntimeError, match='audio limit'):
+        to_int16(Tensor(), max_samples=3)
 
 
 def test_pcm_handles_tensor_without_torch_import_and_nonfinite_values():
