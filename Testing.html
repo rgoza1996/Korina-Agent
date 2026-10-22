@@ -31,8 +31,11 @@ mypy --ignore-missing-imports korina
 npm ci --ignore-scripts
 npm run lint
 npm test
-python -m build</code></pre>
+python -m build
+npx playwright install chromium
+npm run test:browser</code></pre>
 <p>The Python suite covers units, API behavior, static frontend contracts, Converse adapters, input limits, background concurrency, and STT fallbacks. Executable Node tests cover browser-independent frontend behavior. ESLint checks native ES modules for undefined imports and variables.</p>
+<p>Keep the Python environment active for Chromium tests. The managed browser server copies only frontend assets and example data into a disposable runtime, with blank credentials, empty model catalogs, offline model caches, and no access to host provider commands or process discovery. It refuses to reuse an occupied port 8765 and removes its temporary state on exit. Tests write settings and reset sessions: an explicit <code>KORINA_TEST_BASE_URL</code> must point to a disposable test target. Use the read-only smoke command below for a running demo.</p>
 <h2>CI contract in the preview</h2>
 <ul><li>Python tests and coverage artifacts across Python 3.10, 3.11, 3.12, and 3.13 on Ubuntu 24.04.</li><li>Python correctness lint, a baseline mypy check, and source/wheel builds, including an installed-asset check.</li><li>Node 22 frontend lint and executable JavaScript tests.</li></ul>
 <p>The configured matrix describes the workflow; successful remote runs must be confirmed in <a href="https://github.com/rgoza1996/Korina-Agent/actions">GitHub Actions</a>. Final counts and exact verification commits are tracked in <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a>.</p>
