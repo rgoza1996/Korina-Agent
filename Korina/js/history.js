@@ -36,8 +36,3 @@ export function addTranscriptEntry(role,text,{includeInHistory=false}={}){
   log(role,text);
 }
 
-// Transcript fingerprint for agent dedup
-
-export function transcriptHash(turns){
-  return JSON.stringify(turns.map(m=>[m.role,m.content])).slice(-4000);
-}
