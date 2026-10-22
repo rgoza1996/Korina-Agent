@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import pytest
 
 from korina.config import (
     _normalize_local_model_roots,
@@ -166,3 +166,49 @@ def test_api_llm_llama_refresh_clears_llama_audio_probe_cache(isolated_korina_ap
     cache = load_config()['audio_unsupported']
     assert 'llama.cpp::http://127.0.0.1:8080/v1::bad-model.gguf' not in cache
     assert 'lmstudio::http://127.0.0.1:1234/v1::keep-me' in cache
+
+
+def test_refresh_resolution_preserves_concurrent_settings_and_clears_current_cache(monkeypatch, client):
+    from korina import config
+    from korina.routes import model_roots
+
+    config.update_config_values({'llm_provider': 'llama.cpp', 'lm_model': 'bare-demo'})
+    config.set_audio_unsupported('llama.cpp', 'http://127.0.0.1:8080/v1', 'bad', 'unsupported', '')
+    monkeypatch.setattr(model_roots, '_resolve_llama_cpp_model_id', lambda model: '/models/demo.gguf')
+
+    def discover():
+        # Discovery may take a long time; ordinary saves/probes may finish meanwhile.
+        config.update_config_values({'voice': 'af_bella'})
+        config.set_audio_unsupported('other', 'https://other.test/v1', 'keep', 'unsupported', '')
+        return ['/models/demo.gguf']
+
+    monkeypatch.setattr(model_roots, 'discover_local_gguf_models', discover)
+    snapshots = []
+    monkeypatch.setattr(model_roots, 'write_llama_server_unit', lambda model, config: snapshots.append(config))
+    monkeypatch.setattr(model_roots, 'start_llama_server', lambda model, config: None)
+    response = client.post('/api/llm/llama/refresh')
+    assert response.status_code == 200
+    assert response.json()['cleared_audio_probes'] == 1
+    saved = config.load_config()
+    assert saved['voice'] == 'af_bella'
+    assert saved['lm_model'] == '/models/demo.gguf'
+    assert list(saved['audio_unsupported']) == ['other::https://other.test/v1::keep']
+    assert snapshots[0]['voice'] == 'af_bella'
+
+
+@pytest.mark.parametrize('changed', [{'llm_provider': 'openai-compatible'}, {'lm_model': 'newer-choice'}])
+def test_refresh_rejects_a_changed_selection_before_restart(monkeypatch, client, changed):
+    from korina import config
+    from korina.routes import model_roots
+
+    config.update_config_values({'llm_provider': 'llama.cpp', 'lm_model': 'bare-demo'})
+    monkeypatch.setattr(model_roots, '_resolve_llama_cpp_model_id', lambda model: '/models/demo.gguf')
+    monkeypatch.setattr(model_roots, 'discover_local_gguf_models', lambda: config.update_config_values(changed) and [])
+    calls = []
+    monkeypatch.setattr(model_roots, 'write_llama_server_unit', lambda *args, **kwargs: calls.append('write'))
+    monkeypatch.setattr(model_roots, 'start_llama_server', lambda *args, **kwargs: calls.append('start'))
+    response = client.post('/api/llm/llama/refresh')
+    assert response.status_code == 409
+    assert 'settings changed' in response.json()['detail']
+    assert not calls
+    assert all(config.load_config()[key] == value for key, value in changed.items())

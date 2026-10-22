@@ -6,6 +6,7 @@ import re
 import os
 import shutil
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -37,6 +38,8 @@ from typing import Optional
 
 
 logger = logging.getLogger(__name__)
+# Activation and refresh both supervise the same optional local processes.
+provider_activation_lock = threading.Lock()
 
 
 def _systemctl(*args: str, required: bool = False) -> subprocess.CompletedProcess:

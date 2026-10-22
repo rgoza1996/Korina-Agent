@@ -17,6 +17,7 @@ from korina.config import (
     config_stt_llm_base_url,
     config_stt_llm_model,
     load_config,
+    normalize_api_base_url,
 )
 from korina.services.audio_probe import triple_key
 from korina.services.model_catalog import (
@@ -29,6 +30,13 @@ from korina.util.labels import display_model_label
 from korina.util.paths import LMSTUDIO_MODEL, WHISPER_MODEL_CHOICES
 
 router = APIRouter()
+
+
+def _discovery_auth(base_url: str, configured_base: str, configured_env: str, override: str | None) -> str:
+    """Explicit empty auth disables it; omission inherits only for the saved URL."""
+    if override is not None:
+        return override.strip()
+    return configured_env.strip() if normalize_api_base_url(base_url) == normalize_api_base_url(configured_base) else ''
 
 
 def _dedupe(items: list[str]) -> list[str]:
@@ -114,10 +122,12 @@ def models(
     stt_llm_provider: Optional[str] = Query(None),
 ):
     config = load_config()
-    llm_base = str(llm_base_url or config_llm_base_url(config)).strip().rstrip('/')
-    llm_api_env_name = str(llm_api_key_env or config.get('llm_api_key_env') or '').strip()
-    stt_base = str(stt_llm_base_url or config_stt_llm_base_url(config)).strip().rstrip('/')
-    stt_api_env_name = str(stt_llm_api_key_env or config_stt_llm_api_env(config) or '').strip()
+    saved_llm_base = config_llm_base_url(config)
+    saved_stt_base = config_stt_llm_base_url(config)
+    llm_base = str(llm_base_url or saved_llm_base).strip().rstrip('/')
+    llm_api_env_name = _discovery_auth(llm_base, saved_llm_base, str(config.get('llm_api_key_env') or ''), llm_api_key_env)
+    stt_base = str(stt_llm_base_url or saved_stt_base).strip().rstrip('/')
+    stt_api_env_name = _discovery_auth(stt_base, saved_stt_base, config_stt_llm_api_env(config), stt_llm_api_key_env)
     llm_provider_id = str(llm_provider or config.get('llm_provider') or 'llama.cpp').strip()
     stt_provider_id = str(
         stt_llm_provider or config.get('stt_llm_provider') or config.get('llm_provider') or 'llama.cpp'

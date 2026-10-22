@@ -5,7 +5,6 @@ Phase 1.9: inlined from the monolith's _route_activate_provider helper.
 
 from __future__ import annotations
 
-import threading
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
@@ -13,11 +12,11 @@ from pydantic import BaseModel, Field
 
 from korina.config import load_config, select_response_provider
 from korina.schemas import ProviderActivateRequest
-from korina.services.provider_manager import activate_llm_provider
+from korina.services.provider_manager import activate_llm_provider, provider_activation_lock
 from korina.services.active_probe import probe_audio_support
 
 router = APIRouter()
-_activation_lock = threading.Lock()
+_activation_lock = provider_activation_lock
 
 
 @router.post('/api/llm/provider/activate')

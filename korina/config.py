@@ -211,6 +211,27 @@ def select_response_provider(provider: str, model: str | None = None) -> dict:
     return save_config(current)
 
 
+class ConfigConflictError(RuntimeError):
+    """A provider operation's configuration changed while it was preparing."""
+
+
+@_config_transaction
+def prepare_llama_refresh(expected_provider: str, expected_model: str, model: str | None = None) -> tuple[dict, int]:
+    """Merge a resolved model/cache clear into current settings before restart."""
+    previous = load_config()
+    provider = str(previous.get('llm_provider') or '').strip().lower()
+    if provider != expected_provider or str(previous.get('lm_model') or '').strip() != expected_model:
+        raise ConfigConflictError('LLM settings changed during model discovery; retry refresh')
+    current = dict(previous)
+    if provider == 'llama.cpp' and model:
+        current['lm_model'] = model
+        current = synchronize_llm_dependents(current, previous)
+    cache = config_audio_unsupported(previous)
+    current['audio_unsupported'] = {key: value for key, value in cache.items() if not key.startswith('llama.cpp::')}
+    cleared = len(cache) - len(current['audio_unsupported'])
+    return save_config(current), cleared
+
+
 @_config_transaction
 def save_converse_channel(name: str) -> dict:
     """Persist a channel without overwriting simultaneous settings/probe writes."""

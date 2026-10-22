@@ -17,18 +17,19 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from korina import config as config_store
 from korina.config import (
     config_local_model_roots,
     load_config,
     save_config,
     set_local_model_roots,
-    clear_audio_unsupported_for_provider,
 )
 from korina.services.model_catalog import discover_local_gguf_models
 from korina.services.provider_manager import (
     _resolve_llama_cpp_model_id,
     start_llama_server,
     write_llama_server_unit,
+    provider_activation_lock,
 )
 
 router = APIRouter()
@@ -116,13 +117,24 @@ def refresh_llama(req: LlamaRefreshRequest = LlamaRefreshRequest()):
     then rewrites the systemd unit and restarts. Non-fatal failures (e.g. llama.cpp
     is not active) return 200 with `restarted: false` and the discovered list.
     """
+    if not provider_activation_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail='Another provider activation is in progress')
+    try:
+        return _refresh_llama(req)
+    finally:
+        provider_activation_lock.release()
+
+
+def _refresh_llama(req: LlamaRefreshRequest):
     cfg = load_config()
     provider = str(cfg.get('llm_provider') or '').strip().lower()
     selected = (req.model or cfg.get('lm_model') or '').strip()
     resolved = _resolve_llama_cpp_model_id(selected) if selected else ''
-    cleared_audio_probes = clear_audio_unsupported_for_provider('llama.cpp')
-
     found = discover_local_gguf_models()
+    try:
+        cfg, cleared_audio_probes = config_store.prepare_llama_refresh(provider, str(cfg.get('lm_model') or '').strip(), resolved)
+    except config_store.ConfigConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     payload = {
         'cleared_audio_probes': cleared_audio_probes,
         'ok': True,
@@ -139,9 +151,6 @@ def refresh_llama(req: LlamaRefreshRequest = LlamaRefreshRequest()):
         payload['note'] = 'no model selected; choose a model in Settings before refreshing llama.cpp.'
         return payload
     try:
-        if resolved and resolved != cfg.get('lm_model'):
-            cfg['lm_model'] = resolved
-            save_config(cfg)
         write_llama_server_unit(resolved, config=cfg)
         start_llama_server(resolved, config=cfg)
         payload['restarted'] = True
