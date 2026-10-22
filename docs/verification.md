@@ -4,13 +4,15 @@ Work is tracked in [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24) a
 
 ## Deterministic and browser checks
 
-Immutable checkpoint `fb996a1` passed **779 Python tests with 91% coverage on Python 3.12.3**, **230 executable Node tests**, and **38 real Chromium tests**. Clean Python 3.10.20, 3.11.15, and 3.13.14 environments each passed 778 tests with one intentional skip: the optional actual Whisper decoder is installed and exercised in 3.12. Real FFmpeg compressed-audio limits ran in every environment.
+Immutable checkpoint `d14a371` passed **932 Python tests with 93% coverage on Python 3.12.3**, **313 executable Node tests**, and **57 real Chromium tests**. Clean Python 3.10.20, 3.11.15, and 3.13.14 environments each passed 931 tests with one intentional skip: the optional actual Whisper decoder is installed and exercised in 3.12. Real FFmpeg compressed-audio limits ran in every environment. Every matrix run has a separate JUnit report and isolated runtime state.
 
-Ruff's complete Pyflakes correctness rules, projectwide mypy over 58 modules, ESLint, and source/wheel builds passed. A fresh isolated wheel verified all **26 bundled assets**, byte-identical to the committed snapshot, every served JavaScript module, protocol discovery, rejected-settings disk preservation, and writable state outside the package.
+Ruff correctness checks across production code, tests, scripts, and package entrypoints; projectwide mypy over 65 modules; ESLint; and isolated source/wheel builds passed. A separate installed-wheel environment verified all **29 bundled assets**, byte-identical to the committed snapshot, every served JavaScript module, protocol discovery, rejected-settings disk preservation, and writable state outside the package.
 
-Chromium covers app boot/settings/channel rendering, delayed provider/save/reset fixtures, current-turn history, permission failure/retry, native buffered WAV and streaming PCM playback, microphone cancellation, complete decodable auto-stop capture, silent-idle rotation, current-query discovery, and unsaved candidate discovery against an actual isolated backend. Native checkbox cases cover rapid agent off/on, failed-disable retry ordering, and preserving ordinary pending chat. The suite used a freshly started backend, isolated configuration, and immutable assets.
+Chromium used immutable assets and a freshly started isolated backend. Coverage includes native MediaRecorder/VAD capture, full decodable auto-stop and silent-idle rotation, buffered WAV/PCM SSE playback, suspended AudioContext resume and Stop, settings bootstrap/draft/save ownership, Done/Escape/backdrop close, activation failure/retry, model discovery/candidate credentials, channel discovery/save ownership, permissions, and agent off/on cancellation. Replaced source-text assertions now execute those behaviors; lower Python counts from deleting duplicate harnesses do not remove their runtime coverage.
 
-The Python suite also covers active-role provider retention, protected refresh/role-setting conflicts, atomic model-folder append/delete, strict validation responses, resident Whisper leases, and connected agent/ACK/TTS cleanup. GitHub Actions jobs did not start because the account payment/spending limit blocked them. These local results do not claim a passing hosted run.
+Backend tests include role-aware provider retention, protected refresh/config conflicts, atomic model-folder edits, bounded catalogs/metadata/completions/events, shared STT capability/fallback policy, resident Whisper leases, malformed ACK recovery, generation-safe permission admission, executor-start retry, explicit channel recovery, connected agent/ACK/TTS cleanup, and real chat socket disconnect/cancellation with the same pool worker recovering. ACK rebuild transactions survive client timeouts; waiting on their health snapshot does not freeze unrelated HTTP requests.
+
+GitHub Actions jobs did not start because the account payment/spending limit blocked them. These local results do not claim a passing hosted run. The earlier fully passing `fb996a1` checkpoint and actual model observations below remain historical evidence for their stated snapshots.
 
 ## Actual Whisper inference
 
@@ -96,6 +98,14 @@ Environment: Python 3.12.3, Torch 2.14.1+cpu, Transformers 5.20.2, float32, four
 The final transcript was “The World. This is a local speech test. The Blue Bicycle is beside the garden.” The intended opening was “Hello world.” The agent echoed its JSON input rather than producing a useful state report, and the follow-up mostly repeated the earlier answer. This small model establishes real inference and injection transport, **not presentation-quality conversation or agent reasoning**. Select and rehearse suitable event models separately. The timing is one observation and is not comparable as a performance benchmark with earlier fixture-response runs.
 
 An earlier attempt completed real response speech in 39.268 seconds, but its harness stopped immediately after accepting agent work. That attempt did not establish agent completion. The successful repeat explicitly polled busy/idle status until a nonempty report and recorded the actual model calls.
+
+### Repeat at `d14a371`
+
+The immutable current checkpoint completed the same actual CPU model pipeline in **27.537 seconds**, with separate output files preserving the earlier observations. It used the same pinned weights, fake-microphone input, model prompts, CPU thread settings, and inference boundaries above. This is another single observation, not a controlled speed comparison.
+
+Final Whisper handled 8.82 seconds / 141,120 samples in 4.669 seconds and returned the same transcript and known opening-word error. Actual response inference took 5.491 seconds (217 prompt / 9 generated tokens). Kokoro produced 61,200 samples at 24 kHz; the 2.55-second native buffer had nonzero RMS and reached `ended`. Actual agent inference took 20.278 seconds (465 / 64 tokens), and its report appeared exactly once in the next actual response (328 / 10 tokens, 7.079 seconds inference). All six read-only smoke requests passed, including enabled-agent readiness. Stop released capture, no page/console errors occurred, and disposable services shut down.
+
+The response and agent still mostly echoed input. This repeat verifies the refactored transport, state, and playback together; it does not establish useful presentation-model quality or physical microphone/speaker performance.
 
 ## Agent and permission integration
 

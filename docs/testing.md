@@ -24,7 +24,7 @@ To repeat the installed-wheel check, install the built wheel in a separate envir
 
 ## Current verification checkpoint
 
-On 2026-10-22, immutable checkpoint `fb996a1` passed 779 Python tests with 91% coverage on Python 3.12.3, 230 executable Node tests, 38 real Chromium tests, Ruff/ESLint, mypy over 58 modules, source/wheel builds, and an isolated wheel check of all 26 assets. Clean Python 3.10.20, 3.11.15, and 3.13.14 each passed 778 tests with only the optional Whisper decoder skipped; Python 3.12 exercised it. GitHub Actions jobs did not start because of the account payment/spending-limit problem. See [observed verification](verification.md) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) for exact boundaries and later checkpoints.
+On 2026-10-22, immutable checkpoint `d14a371` passed 932 Python tests with 93% coverage on Python 3.12.3, 313 executable Node tests, 57 real Chromium tests, expanded Ruff/ESLint, mypy over 65 modules, isolated source/wheel builds, and an installed-wheel check of all 29 matching assets. Clean Python 3.10.20, 3.11.15, and 3.13.14 each passed 931 tests with only the optional Whisper decoder skipped; Python 3.12 exercised it. GitHub Actions jobs did not start because of the account payment/spending-limit problem. See [observed verification](verification.md) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) for exact boundaries and later work.
 
 ## HTTP smoke without changing state
 
