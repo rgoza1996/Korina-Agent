@@ -5,6 +5,7 @@ import pytest
 
 from korina.agents.state import agent_state
 from korina.services import agent_service
+from korina.schemas import AgentTranscriptRequest
 
 
 def test_disable_resets_builtin_context_only_after_persistence(config_module, monkeypatch):
@@ -40,8 +41,8 @@ def test_disable_clears_builtin_pending_generation_and_context(config_module):
     with agent_state.lock:
         generation = agent_state.generation
         agent_state.last_report = 'Retired report'
-        agent_state.pending_injections.append({'transcript': []})
-        agent_state.events.append({'id': 5, 'type': 'state_report'})
+        agent_service._queue_injection(AgentTranscriptRequest(transcript=[]))
+        agent_service.push_agent_event({'type': 'state_report'})
     config_module.update_config_values({'agent_enabled': 'off'})
     with agent_state.lock:
         assert agent_state.generation == generation + 1

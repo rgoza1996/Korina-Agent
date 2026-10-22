@@ -1,4 +1,4 @@
-"""GET/POST /api/converse/* -- adapter selection routes (Phase 5 Commit 4).
+"""GET/POST /api/converse/* -- channel selection routes.
 
 These routes expose the consumer-facing surface for swapping which
 ConverseChannel implementation serves traffic. They do NOT touch the

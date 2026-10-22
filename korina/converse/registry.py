@@ -1,9 +1,9 @@
 """Adapter registry for ConverseChannel implementations.
 
 The registry is the consumer-facing surface for swapping channel
-implementations. The default channel (korina_channel.KorinaConverseChannel)
-is registered at import time; adapters replace it by calling
-register_converse_channel() with a new instance.
+implementations. Startup registers the default KorinaConverseChannel;
+applications register alternatives or replacements with
+register_converse_channel().
 
 HTTP selection supplies a persistence callback so saving and switching are
 serialized with other registry changes. Python callers may select in memory.

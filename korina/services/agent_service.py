@@ -14,10 +14,14 @@ from korina.config import (
     load_config,
 )
 
-from korina.agents.state import agent_state
+from korina.agents.state import agent_state, expected_builtin_generation
 from korina.runtime.json_http import HTTPStatusError, RequestCancelledError, request_json
 from korina.runtime.completion import anthropic_text_completion, openai_text_completion
 from korina.services.agent_priority import PERMISSION_REQUEST, classify_agent_priority
+from korina.services.agent_context import (
+    AgentContext, build_agent_context, prepare_queued_injection, previous_with_injections,
+)
+from korina.services.agent_events import MAX_AGENT_EVENT_BYTES, MAX_AGENT_EVENTS, agent_json_size
 
 from korina.schemas import (
     AgentStateRequest,
@@ -29,15 +33,11 @@ from korina.util.paths import LMSTUDIO_MODEL
 
 def generate_agent_state_report(
     req: AgentStateRequest, *, is_current: Callable[[], bool] | None = None,
+    config: dict | None = None, context: AgentContext | None = None,
 ) -> str:
-    config = load_config()
+    config = config if config is not None else load_config()
     selected_model = (req.model or str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL)).strip()
-    turns = []
-    for m in req.transcript[-int(config.get('agent_max_turns') or 16):]:
-        role = m.get('role')
-        content = m.get('content')
-        if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
-            turns.append({'role': role, 'content': content.strip()[:2000]})
+    user_payload = context if context is not None else build_agent_context(req, config)
     autonomy_note = (
         f"Pi-style settings: yolo_mode={config.get('agent_yolo_mode')}, project_trust={config.get('agent_project_trust')}, "
         f"injection_mode={config.get('agent_injection_mode')}, follow_up_mode={config.get('agent_follow_up_mode')}, "
@@ -56,10 +56,6 @@ def generate_agent_state_report(
         f'{autonomy_note}\n'
         'Use compact plain text with short headings.'
     )
-    user_payload = {
-        'previous_report': req.previous_report[-4000:],
-        'recent_transcript': turns,
-    }
     provider = agent_provider(config)
     headers = {'Content-Type': 'application/json'} | agent_auth_headers(config)
     if provider == 'anthropic':
@@ -105,15 +101,21 @@ def sanitize_agent_report(report: str) -> str:
     return text.strip()
 
 def push_agent_event(event: dict, *, generation: int | None = None) -> dict:
+    """Publish owned JSON data; nested values must stay immutable afterward."""
     with agent_state.lock:
         if generation is not None and generation != agent_state.generation:
             return {}
-        agent_state.event_seq += 1
         event = dict(event)
-        event['id'] = agent_state.event_seq
+        event['id'] = agent_state.event_seq + 1
         event['created_at'] = time.time()
+        size = agent_json_size(event)
+        agent_state.event_seq += 1
         agent_state.events.append(event)
-        del agent_state.events[:-100]
+        agent_state.event_sizes.append(size)
+        agent_state.event_bytes += size
+        while len(agent_state.events) > MAX_AGENT_EVENTS or agent_state.event_bytes > MAX_AGENT_EVENT_BYTES:
+            agent_state.events.pop(0)
+            agent_state.event_bytes -= agent_state.event_sizes.pop(0)
         return event
 
 def agent_snapshot() -> dict:
@@ -138,51 +140,43 @@ _queued_prompt: tuple[AgentTranscriptRequest, int] | None = None
 
 def _queue_injection(req: AgentTranscriptRequest) -> None:
     """Caller holds agent_state.lock; keep only recent bounded snapshots."""
-    agent_state.pending_injections.append({
-        'transcript': req.transcript,
-        'reason': req.reason,
-        'turn_count': req.turn_count,
-        'created_at': time.time(),
-    })
+    agent_state.pending_injections.append(prepare_queued_injection(req, time.time()))
     del agent_state.pending_injections[:-_MAX_PENDING_INJECTIONS]
 
 
 def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
-    if str(load_config().get('agent_enabled') or 'on') == 'off':
+    config = load_config()
+    if str(config.get('agent_enabled') or 'on') == 'off':
         return
     with agent_state.lock:
         if generation != agent_state.generation:
             return
         agent_state.status = 'working'
-        previous = agent_state.last_report
-        if agent_state.pending_injections:
-            injection_text = '\n\nQueued injection while busy:\n' + json.dumps(agent_state.pending_injections, ensure_ascii=False)
-            agent_state.pending_injections.clear()
-        else:
-            injection_text = ''
+        previous = previous_with_injections(agent_state.last_report, agent_state.pending_injections)
+        agent_state.pending_injections.clear()
     push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'}, generation=generation)
     try:
-        config = load_config()
         state_req = AgentStateRequest(
             transcript=req.transcript,
-            previous_report=(previous + injection_text)[-6000:],
+            previous_report=previous,
             model=str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
             max_tokens=int(config.get('agent_max_tokens') or 512),
         )
+        context = build_agent_context(state_req, config)
         agent_input = {
             'delivery_mode': req.delivery_mode,
             'reason': req.reason,
             'turn_count': req.turn_count,
-            'previous_report': state_req.previous_report,
-            'transcript': state_req.transcript,
-            'model': state_req.model,
+            'previous_report': context['previous_report'],
+            'transcript': context['recent_transcript'],
+            'model': (state_req.model or '').strip(),
         }
         def is_current() -> bool:
             enabled = str(load_config().get('agent_enabled') or 'on') != 'off'
             with agent_state.lock:
                 return enabled and generation == agent_state.generation
 
-        report = sanitize_agent_report(generate_agent_state_report(state_req, is_current=is_current))
+        report = sanitize_agent_report(generate_agent_state_report(state_req, is_current=is_current, config=config, context=context))
         if not report:
             push_agent_event({'type': 'agent_status', 'status': 'empty_report_suppressed', 'priority': 'low', 'message': 'Empty/internal Korina Agent report suppressed.', 'agent_input': agent_input}, generation=generation)
             return
@@ -226,6 +220,9 @@ def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
 def _drain_transcript_jobs(req: AgentTranscriptRequest, generation: int, epoch: int) -> None:
     global _worker_running, _queued_prompt
     while True:
+        with agent_state.lock:
+            if epoch != _worker_epoch:
+                return
         _process_transcript(req, generation)
         with agent_state.lock:
             if epoch != _worker_epoch:
@@ -246,6 +243,8 @@ def reset_agent_state() -> None:
         agent_state.generation += 1
         _queued_prompt = None
         agent_state.events.clear()
+        agent_state.event_sizes.clear()
+        agent_state.event_bytes = 0
         # Event ids are monotonic within a session; reset restarts the cursor.
         agent_state.event_seq = 0
         agent_state.pending_injections.clear()
@@ -274,18 +273,32 @@ def shutdown_agent_worker() -> None:
 
 
 def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
-    global _executor, _worker_running, _queued_prompt
-    with agent_state.lock:
-        admission_generation = agent_state.generation
+    return _admit_agent_request(req)
+
+
+def submit_agent_permission(req: AgentTranscriptRequest, event: dict) -> dict:
+    """Admit the answer event and its follow-up transcript as one operation."""
+    return _admit_agent_request(req, permission_event=event)
+
+
+def _admit_agent_request(req: AgentTranscriptRequest, *, permission_event: dict | None = None) -> dict:
+    global _executor, _worker_running, _worker_epoch, _queued_prompt
+    admission_generation = expected_builtin_generation()
+    if admission_generation is None:
+        with agent_state.lock:
+            admission_generation = agent_state.generation
+    # Never acquire the config transaction lock while holding agent_state.lock:
+    # a successful disable persists under that lock before resetting the agent.
     config = load_config()
     if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
     with agent_state.lock:
         if admission_generation != agent_state.generation:
             return {'ok': True, 'accepted': False, 'stale': True, 'status': agent_snapshot()}
+        notification = None
         if req.delivery_mode == 'injection':
             _queue_injection(req)
-            push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
+            notification = {'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'}
             queued_as = 'injection'
         elif _worker_running:
             # Full transcript snapshots supersede earlier queued prompts.
@@ -294,16 +307,36 @@ def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
                 _queue_injection(_queued_prompt[0])
             _queued_prompt = (req, agent_state.generation)
             agent_state.busy = True
-            push_agent_event({'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; latest transcript queued.'})
+            notification = {'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; latest transcript queued.'}
             queued_as = 'injection'
         else:
             if _executor is None:
                 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='korina-agent')
+            previous_busy, previous_status = agent_state.busy, agent_state.status
             _worker_running = True
             agent_state.busy = True
             agent_state.status = 'working'
-            _executor.submit(_drain_transcript_jobs, req, agent_state.generation, _worker_epoch)
+            try:
+                _executor.submit(_drain_transcript_jobs, req, agent_state.generation, _worker_epoch)
+            except BaseException:
+                # ThreadPoolExecutor can queue a WorkItem before starting its
+                # thread fails. Retire it and invalidate that job before the
+                # agent lock is released; a retry must use a fresh executor.
+                failed, _executor = _executor, None
+                _worker_epoch += 1
+                _worker_running = False
+                agent_state.busy, agent_state.status = previous_busy, previous_status
+                try:
+                    failed.shutdown(wait=False, cancel_futures=True)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception('Failed to retire agent executor after submission failure')
+                raise
             queued_as = 'prompt'
+        if permission_event is not None:
+            push_agent_event(permission_event, generation=admission_generation)
+        if notification is not None:
+            push_agent_event(notification, generation=admission_generation)
     return {'ok': True, 'accepted': True, 'queued_as': queued_as, 'status': agent_snapshot()}
 
 

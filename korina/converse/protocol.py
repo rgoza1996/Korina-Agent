@@ -6,10 +6,9 @@ channel that ships with Korina Voice Lab) and any agent implementation
 boundary with an explicit async interface so adapters can be swapped
 without touching Converse code.
 
-This module has zero coupling to korina.services.agent_service — the
-default KorinaConverseChannel (in korina/converse/korina_channel.py)
-is the only place that knows about agent_service. New adapters register
-themselves via korina.converse.registry.
+This protocol is independent of the built-in report service. The default
+channel resolves the agent gateway; other implementations register through
+korina.converse.registry.
 """
 from __future__ import annotations
 
@@ -55,9 +54,8 @@ class ConverseResponse:
 class ConverseChannel(ABC):
     """Channel abstraction between Korina Converse and any agent adapter.
 
-    Implementations MUST be thread-safe: Converse routes call into the
-    channel from FastAPI's async task pool and from the STT worker thread
-    concurrently.
+    Callers may share a channel across concurrent event loops or worker
+    threads. Implementations must coordinate access to shared mutable state.
     """
 
     name: str = "abstract"

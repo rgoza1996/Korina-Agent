@@ -5,8 +5,8 @@ instance. Routes call :func:`agent_gateway` to reach whichever adapter is
 currently registered; the gateway lazily constructs the default
 ``KorinaAgentAdapter`` on first call.
 
-Phase 3: route handlers migrate from direct ``state.agent`` access to
-``agent_gateway()``. Phase 4: ``AgentState`` moves into the adapter itself.
+The built-in service keeps its process-wide runtime state in agents.state;
+custom adapters own their state and may expose the optional legacy extension.
 """
 
 from __future__ import annotations
@@ -80,7 +80,7 @@ class AgentHttpBridge:
 
     def submit_transcript(self, req: AgentTranscriptRequest) -> dict:
         from korina.config import load_config
-        from korina.agents.state import agent_state
+        from korina.agents.state import agent_state, bind_builtin_admission
 
         with agent_state.lock:
             admission_generation = agent_state.generation
@@ -90,21 +90,22 @@ class AgentHttpBridge:
             stale = admission_generation != agent_state.generation
         if stale:
             return {'ok': True, 'accepted': False, 'stale': True, 'status': self.snapshot()}
-        if isinstance(self.adapter, LegacyAgentHttpAdapter):
-            return self.adapter.submit_transcript_legacy(req)
-        if req.delivery_mode != 'prompt':
-            raise UnsupportedAgentOperation(
-                f'Adapter {self.adapter.id!r} does not support legacy transcript injections'
-            )
-        text = self._latest_user_text(req.transcript)
-        if not text:
-            return {'ok': True, 'accepted': False, 'status': self.snapshot()}
-        self.adapter.submit_turn(UserTurn(text=text, session_id='legacy-http', turn_count=req.turn_count))
-        return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': self.snapshot()}
+        with bind_builtin_admission(admission_generation):
+            if isinstance(self.adapter, LegacyAgentHttpAdapter):
+                return self.adapter.submit_transcript_legacy(req)
+            if req.delivery_mode != 'prompt':
+                raise UnsupportedAgentOperation(
+                    f'Adapter {self.adapter.id!r} does not support legacy transcript injections'
+                )
+            text = self._latest_user_text(req.transcript)
+            if not text:
+                return {'ok': True, 'accepted': False, 'status': self.snapshot()}
+            self.adapter.submit_turn(UserTurn(text=text, session_id='legacy-http', turn_count=req.turn_count))
+            return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': self.snapshot()}
 
     def answer_permission(self, req: AgentPermissionAnswer) -> dict:
         from korina.config import load_config
-        from korina.agents.state import agent_state
+        from korina.agents.state import agent_state, bind_builtin_admission
 
         with agent_state.lock:
             admission_generation = agent_state.generation
@@ -114,12 +115,13 @@ class AgentHttpBridge:
             stale = admission_generation != agent_state.generation
         if stale:
             return {'ok': True, 'accepted': False, 'stale': True, 'status': self.snapshot()}
-        if isinstance(self.adapter, LegacyAgentHttpAdapter):
-            return self.adapter.answer_permission_legacy(req)
-        if not self.adapter.capabilities.supports_permission_flow:
-            raise UnsupportedAgentOperation(f'Adapter {self.adapter.id!r} does not support permissions')
-        self.adapter.answer_permission(PermissionAnswerEvent(
-            request_id=req.request_id, answer=req.answer or 'no',
-            transcript=self._latest_user_text(req.transcript),
-        ))
-        return {'ok': True, 'accepted': True, 'queued_as': 'permission_answer', 'status': self.snapshot()}
+        with bind_builtin_admission(admission_generation):
+            if isinstance(self.adapter, LegacyAgentHttpAdapter):
+                return self.adapter.answer_permission_legacy(req)
+            if not self.adapter.capabilities.supports_permission_flow:
+                raise UnsupportedAgentOperation(f'Adapter {self.adapter.id!r} does not support permissions')
+            self.adapter.answer_permission(PermissionAnswerEvent(
+                request_id=req.request_id, answer=req.answer or 'no',
+                transcript=self._latest_user_text(req.transcript),
+            ))
+            return {'ok': True, 'accepted': True, 'queued_as': 'permission_answer', 'status': self.snapshot()}

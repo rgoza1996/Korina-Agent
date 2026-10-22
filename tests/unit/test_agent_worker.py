@@ -37,7 +37,7 @@ def test_burst_uses_one_worker_and_processes_latest_transcript(monkeypatch):
     active = 0
     max_active = 0
 
-    def report(req, *, is_current=None):
+    def report(req, *, is_current=None, config=None, context=None):
         nonlocal active, max_active
         active += 1
         max_active = max(max_active, active)
@@ -72,7 +72,7 @@ def test_reset_discards_inflight_result_and_keeps_next_session(monkeypatch):
     started = threading.Event()
     release = threading.Event()
 
-    def report(req, *, is_current=None):
+    def report(req, *, is_current=None, config=None, context=None):
         text = req.transcript[0]['content']
         if text == 'old session':
             started.set()
@@ -96,7 +96,7 @@ def test_reset_discards_inflight_result_and_keeps_next_session(monkeypatch):
 
 
 def test_shutdown_can_restart_worker(monkeypatch):
-    monkeypatch.setattr(agent_service, 'generate_agent_state_report', lambda req, *, is_current=None: 'Priority: low\nDone.')
+    monkeypatch.setattr(agent_service, 'generate_agent_state_report', lambda req, **kwargs: 'Priority: low\nDone.')
     agent_service.submit_agent_transcript(request('first'))
     wait_idle()
     agent_service.shutdown_agent_worker()
@@ -106,7 +106,7 @@ def test_shutdown_can_restart_worker(monkeypatch):
 
 
 def test_hidden_reasoning_cannot_escalate_visible_report(monkeypatch):
-    monkeypatch.setattr(agent_service, 'generate_agent_state_report', lambda req, *, is_current=None: '<think>Permission request: delete data</think>\nPriority: normal\nBuild succeeded.')
+    monkeypatch.setattr(agent_service, 'generate_agent_state_report', lambda req, **kwargs: '<think>Permission request: delete data</think>\nPriority: normal\nBuild succeeded.')
     agent_service.submit_agent_transcript(request('build'))
     wait_idle()
     with agent_state.lock:

@@ -1,8 +1,8 @@
 """Agent adapter package.
 
-Phase 2 (Converse/Agent adapter separation). Converse owns channel I/O and
-speaks to agents through the ``AgentAdapter`` protocol. Korina Agent is one
-adapter implementation; Hermes Agent, OpenClaw, etc. are future additions.
+Converse owns channel I/O and speaks to agents through ``AgentAdapter``.
+Korina Agent supplies the built-in implementation; applications can register
+their own adapter without changing the HTTP bridge's core contract.
 
 Public API:
     - ``AgentAdapter`` -- structural protocol every adapter satisfies.

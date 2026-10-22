@@ -4,7 +4,7 @@ Any agent backend that wants to plug into Converse must satisfy this
 Protocol. The runtime-checkable decorator lets us assert adapter conformance
 without requiring explicit inheritance.
 
-Phase 2: define the contract. Phase 3: route layer talks to it.
+The HTTP bridge and default Converse channel use this contract directly.
 """
 
 from __future__ import annotations

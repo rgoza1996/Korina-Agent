@@ -34,6 +34,10 @@ _MAX_POLL_SECONDS = 30.0
 _POLL_INTERVAL = 0.1  # 100ms; caps at ~300 polls/send for 30s ceiling
 
 
+class _RecoveryRequired(RuntimeError):
+    pass
+
+
 class KorinaConverseChannel(ConverseChannel):
     """Bridge between the ``ConverseChannel`` protocol and ``agent_gateway()``.
 
@@ -49,7 +53,7 @@ class KorinaConverseChannel(ConverseChannel):
     def __init__(self) -> None:
         # Lazy import: gateway instantiates KorinaAgentAdapter on first call,
         # which pulls in agent_service. Keep the import out of this module's
-        # import-time path to avoid cyclic imports during Phase 3+ wiring.
+        # import-time path to keep the dependency acyclic.
         from korina.agents.gateway import agent_gateway
         self._agent_gateway = agent_gateway
         self._send_lock = threading.Lock()
@@ -58,6 +62,9 @@ class KorinaConverseChannel(ConverseChannel):
         self._generation = 0
         self._active_adapter: AgentAdapter | None = None
         self._pending_resets = 0
+        self._recovery_adapter: AgentAdapter | None = None
+        self._recovery_generation = 0
+        self._recovery_reason = ''
 
     # ---- helpers (testable; exposed at module level too) ------------
 
@@ -99,7 +106,7 @@ class KorinaConverseChannel(ConverseChannel):
 
     async def _poll_until_report(
         self, adapter: AgentAdapter, started_at: float, cursor: int, generation: int
-    ) -> tuple[str, str, int, int, str | None]:
+    ) -> tuple[str, str, int, int, str | None, bool]:
         """Wait for a new report event instead of replaying last_report.
 
         The cursor is captured before submission. Old reports remain useful
@@ -108,34 +115,34 @@ class KorinaConverseChannel(ConverseChannel):
         scanned = 0
         while time.monotonic() - started_at < _MAX_POLL_SECONDS:
             if self._cancelled(generation):
-                return '', 'idle', scanned, cursor, 'cancelled'
+                return '', 'idle', scanned, cursor, 'cancelled', False
             try:
                 cursor, events = await asyncio.to_thread(adapter.poll_events, cursor)
                 if self._cancelled(generation):
-                    return '', 'idle', scanned, cursor, 'cancelled'
+                    return '', 'idle', scanned, cursor, 'cancelled', False
                 scanned += len(events)
                 for event in events:
                     kind = event.get('type')
                     if kind in {'state_report', 'permission_request'}:
                         text = str(event.get('report') or event.get('message') or '')
                         if text:
-                            return text, 'idle', scanned, cursor, None
+                            return text, 'idle', scanned, cursor, None, False
                     if kind in {'agent_error', 'error'}:
                         error = str(event.get('message') or event.get('error') or 'agent error')
-                        return '', 'idle', scanned, cursor, error
+                        return '', 'idle', scanned, cursor, error, False
                     if event.get('status') == 'duplicate_report_suppressed':
                         snapshot = await asyncio.to_thread(AgentHttpBridge(adapter).snapshot)
                         if self._cancelled(generation):
-                            return '', 'idle', scanned, cursor, 'cancelled'
-                        return str(snapshot.get('last_report') or ''), 'idle', scanned, cursor, None
+                            return '', 'idle', scanned, cursor, 'cancelled', False
+                        return str(snapshot.get('last_report') or ''), 'idle', scanned, cursor, None, False
                     if event.get('status') == 'empty_report_suppressed':
-                        return '', 'idle', scanned, cursor, None
+                        return '', 'idle', scanned, cursor, None, False
             except Exception as exc:
                 if self._cancelled(generation):
-                    return '', 'idle', scanned, cursor, 'cancelled'
-                return '', 'idle', scanned, cursor, f'poll_events failed: {exc}'
+                    return '', 'idle', scanned, cursor, 'cancelled', False
+                return '', 'idle', scanned, cursor, f'poll_events failed: {exc}', True
             await asyncio.sleep(_POLL_INTERVAL)
-        return '', 'idle', scanned, cursor, 'timeout'
+        return '', 'idle', scanned, cursor, 'timeout', True
 
     # ---- ConverseChannel surface ------------------------------------
 
@@ -145,6 +152,15 @@ class KorinaConverseChannel(ConverseChannel):
     def _cancelled(self, generation: int) -> bool:
         with self._lifecycle_lock:
             return generation != self._generation
+
+    def _require_recovery(self, adapter: AgentAdapter, generation: int, reason: str) -> None:
+        with self._lifecycle_lock:
+            if generation != self._generation:
+                return  # an explicit reset already owns recovery
+            self._generation += 1
+            self._recovery_adapter = adapter
+            self._recovery_generation = self._generation
+            self._recovery_reason = reason
 
     def _submit_if_current(self, adapter: AgentAdapter, turn: UserTurn, generation: int) -> bool:
         # Reset must follow an already-started synchronous submission. If its
@@ -167,6 +183,11 @@ class KorinaConverseChannel(ConverseChannel):
             while True:
                 with self._lifecycle_lock:
                     if not self._pending_resets:
+                        if self._recovery_adapter is not None:
+                            raise _RecoveryRequired(
+                                f'Channel recovery required after {self._recovery_reason}; '
+                                'call cancel() successfully before sending another turn'
+                            )
                         adapter = self._adapter()
                         generation = self._generation
                         self._active_adapter = adapter
@@ -183,28 +204,46 @@ class KorinaConverseChannel(ConverseChannel):
     async def send(self, req: ConverseRequest) -> ConverseResponse:
         # The adapter is a single conversational worker. Serialize awaited
         # channel sends so each caller receives its own completion event.
-        async with self._serialize_sends() as (adapter, generation):
+        try:
+            async with self._serialize_sends() as (adapter, generation):
+                return await self._send_on_adapter(req, adapter, generation)
+        except _RecoveryRequired as exc:
+            return ConverseResponse(error=str(exc))
+
+    async def _send_on_adapter(self, req: ConverseRequest, adapter: AgentAdapter, generation: int) -> ConverseResponse:
+        admission_started = False
+        try:
             try:
                 turn = self.turn_from_request(req)
                 cursor, _ = await asyncio.to_thread(adapter.poll_events, 0)
                 if self._cancelled(generation):
                     return ConverseResponse(error='cancelled')
+                admission_started = True
                 submitted = await asyncio.to_thread(self._submit_if_current, adapter, turn, generation)
                 if not submitted or self._cancelled(generation):
                     return ConverseResponse(error='cancelled')
             except Exception as exc:
                 if self._cancelled(generation):
                     return ConverseResponse(error='cancelled')
+                if admission_started:
+                    self._require_recovery(adapter, generation, 'an uncertain submission failure')
                 return ConverseResponse(text='', finished=True, error=f'submit failed: {exc}')
-            text, status, scanned, cursor, error = await self._poll_until_report(
+            text, status, scanned, cursor, error, uncertain = await self._poll_until_report(
                 adapter, time.monotonic(), cursor, generation
             )
             if self._cancelled(generation):
                 text, error = '', 'cancelled'
+            elif uncertain:
+                self._require_recovery(adapter, generation, error or 'an uncertain completion')
             return ConverseResponse(
                 text=text, finished=True, error=error,
                 metadata={'status': status, 'events_scanned': scanned, 'next_cursor': cursor},
             )
+        except asyncio.CancelledError:
+            # Mark uncertainty before releasing the cross-event-loop send lock.
+            if admission_started:
+                self._require_recovery(adapter, generation, 'caller cancellation of an admitted turn')
+            raise
 
     async def stream(
         self, req: ConverseRequest
@@ -228,13 +267,33 @@ class KorinaConverseChannel(ConverseChannel):
         """Invalidate this channel wait and discard queued agent work."""
         with self._lifecycle_lock:
             self._generation += 1
-            adapter = self._active_adapter if self._active_adapter is not None else self._adapter()
+            generation = self._generation
+            if self._active_adapter is not None:
+                adapter = self._active_adapter
+            elif self._recovery_adapter is not None:
+                adapter = self._recovery_adapter
+            else:
+                adapter = self._adapter()
+            self._recovery_adapter = adapter
+            self._recovery_generation = generation
+            self._recovery_reason = 'an incomplete reset'
             self._pending_resets += 1
 
         def reset_adapter():
             try:
                 with self._submit_reset_lock:
                     adapter.reset()
+            except BaseException:
+                with self._lifecycle_lock:
+                    self._recovery_adapter = adapter
+                    self._recovery_generation = max(self._recovery_generation, generation)
+                    self._recovery_reason = 'a failed reset'
+                raise
+            else:
+                with self._lifecycle_lock:
+                    if self._recovery_adapter is adapter and self._recovery_generation <= generation:
+                        self._recovery_adapter = None
+                        self._recovery_reason = ''
             finally:
                 with self._lifecycle_lock:
                     self._pending_resets -= 1
@@ -267,10 +326,9 @@ def reset_default_registered() -> None:
 
 
 def ensure_default_registered() -> None:
-    """Register the default ``KorinaConverseChannel`` if nothing is active yet.
+    """Register the built-in channel once, preserving an existing selection.
 
-    Idempotent. Phase 5 startup code should call this exactly once at app
-    boot, before the first HTTP request lands.
+    Startup calls this before restoring the saved active channel.
     """
     global _DEFAULT_REGISTERED
     if _DEFAULT_REGISTERED:

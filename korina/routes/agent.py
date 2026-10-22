@@ -33,6 +33,7 @@ from korina.services.agent_service import (
 from korina.util.paths import LMSTUDIO_MODEL
 from korina.runtime.json_http import HTTPStatusError
 from korina.model_ids import limit_model_ids, model_list_info
+from korina.services.agent_events import AgentEventLimitError, bounded_events_response
 
 router = APIRouter()
 
@@ -74,12 +75,10 @@ def agent_events(after: int = Query(0, ge=0)):
     """Compat alias: raw dicts pass through unchanged (frontend contract)."""
     gateway = agent_gateway()
     cursor, events = gateway.poll_events(after)
-    return {
-        'ok': True,
-        'events': events,  # already raw dicts from poll_events
-        **AgentHttpBridge(gateway).snapshot(),
-        'last_event_id': cursor,
-    }
+    try:
+        return bounded_events_response(cursor, events, AgentHttpBridge(gateway).snapshot())
+    except AgentEventLimitError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post('/api/agent/transcript')
