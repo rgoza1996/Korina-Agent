@@ -158,7 +158,7 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
 <h2>What the preview improves</h2>
 <div class="card-grid">
 <div class="card"><h3>Portable startup</h3><p>A checkout serves its own browser assets. Provider binaries resolve through configuration and PATH. Installed wheels include the UI and keep generated state in the user’s data directory.</p></div>
-<div class="card"><h3>Shared transcription flow</h3><p>Buffered, partial, and streaming transcription share result and fallback logic. Conversion and inference run away from the async request loop; fallback remains visible in API responses.</p></div>
+<div class="card"><h3>Shared transcription flow</h3><p>Buffered, partial, and streaming transcription share capability-cache, no-speech, and fallback resolution. Conversion and inference run away from the async request loop; quiet or clipped Whisper fallback keeps VAD off.</p></div>
 <div class="card"><h3>Bounded background work</h3><p>Agent deliveries have a concurrency limit, validated transcript sizes, and reset protection for stale results. Priority classification has its own testable rules.</p></div>
 <div class="card"><h3>Clear diagnostics</h3><p>Health comes from server-resolved providers and endpoints. Transient polling failures, lazy model loading, and unavailable services have distinct states.</p></div>
 </div>
@@ -202,6 +202,14 @@ korina</code></pre>
 python scripts/check_stack.py --base http://127.0.0.1:8001 --allow-degraded</code></pre>
 <p>The smoke command reads UI/assets, capabilities, health, and readiness. <code>--allow-degraded</code> accepts unavailable model services while checking the HTTP/assets layer; it does not establish a working voice demo.</p>
 <div class="req-note"><strong>Legacy regression changes runtime state.</strong> <code>tests/regression_smoke.py</code> resets sessions, rebuilds ACK audio, activates providers, and temporarily writes configuration, even with <code>--no-chat --no-transcribe</code>. Run it only against a disposable or deliberately selected local stack. Use <code>scripts/check_stack.py</code> for the routine read-only gate.</div>
+<h2>Recovery to rehearse</h2>
+<ul>
+<li><strong>Optional ACKs:</strong> Leave acknowledgement playback off unless needed. When enabled, confirm the selected voice has cached clips; a queued rebuild does not mean speech is ready. Voice settings are saved before rebuilding. Save/catalog/rebuild failures appear beside the ACK selector, separately from transcription status.</li>
+<li><strong>Malformed ACK catalog:</strong> Repair <code>Ack/ack_phrases.json</code> when the diagnostic requests it. Startup and required voice readiness stay available, health exposes unknown ACK counts, and ACK endpoints recover on the next request after repair. Invalid rebuilds preserve existing audio and queued work. See <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/docs/acknowledgements.md">the catalog limits and recovery contract</a>.</li>
+<li><strong>Suspended playback:</strong> Streaming speech completes against the browser audio clock. Queued audio remains owned while the AudioContext is suspended; Stop remains available. A closed context reports an error instead of claiming completion. Rehearse actual audible playback on the event machine.</li>
+<li><strong>Channel selection:</strong> Select a registered Python channel and confirm the saved active value. The picker rejects older discovery results and disables changes until a save is confirmed. Failed saves keep the previous server selection and permit a Channel-tab retry. Python channel selection does not reroute the browser’s <code>/api/chat</code> voice response.</li>
+</ul>
+<p><a href="Providers.html">Provider and speech boundaries</a> · <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/Korina/js/channel-ui.js">Channel picker source</a> · <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/korina/services/stt_resolution.py">Shared STT policy source</a></p>
 <h2>Verification and remaining gaps</h2>
 <p>Event-specific Meta requirements have not been supplied. This preparation does not claim a particular Meta integration or hackathon eligibility.</p>
 <p>Deterministic tests cover backend contracts, fallback behavior, request limits, background-worker concurrency, frontend health behavior, module imports, portable paths, and packaging. Local checks and final CI results are recorded in <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">issue #23</a> and the <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">code review</a>.</p>

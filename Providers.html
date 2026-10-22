@@ -146,24 +146,29 @@ footer code{color:var(--ink-faint)}
 <a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
 </div>
 <div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
-</div></nav><div style='max-width:900px;margin:3rem auto;padding:0 1.5rem'><a href='index.html' style='display:inline-block;margin-bottom:1.5rem;color:var(--ink-soft)'>&#8592; Back to Home</a><h1 style='border-bottom:1px solid var(--rule);padding-bottom:.5rem;margin-top:0'>Provider Architecture</h1><p style='color:var(--ink-soft);font-size:1.05em;margin-top:1rem;white-space:pre-wrap'>Korina exposes a backend-owned provider registry at GET /api/capabilities.
-
-Providers are OpenAI-compatible LLM endpoints: llama.cpp, LM Studio, Ollama, OpenAI-compatible, and Anthropic-compatible. The registry is backend-owned -- providers register their capabilities on startup and the frontend consumes the registry for provider selection.
-
-Model catalog helpers handle endpoint-loaded models, local GGUFs, LM Studio catalogs, and mmproj sidecar detection.
-
-Browser settings changes use partial patches and explicit save revisions. A delayed initial GET cannot replace a user's draft or a completed save, and untouched HTML defaults are not posted as guessed saved settings. Provider activation waits for a loaded baseline; failed initial reads retry from Settings.
-
-Local activation and refresh account for response, multimodal STT, and enabled agent roles before stopping or restarting services. Protected conflicts and unavailable prerequisites fail before teardown; uncertain stop results are reported rather than claimed as confirmed. Configuration selection is saved before activation and is not automatically rolled back on failure.
-
-Model-folder append/delete merges atomically with the latest settings. Removing the last folder preserves an explicit empty selection rather than silently restoring environment defaults.
-
-Catalogs normalize valid UTF-8 IDs up to 512 Unicode characters. Each role/source returns at most 512 IDs / 256 KiB of JSON-escaped identifier bytes, with shared metadata capped at 1024 IDs / 512 KiB. Selected IDs found in a source survive truncation. Missing saved choices remain annotated in the UI with known incompatibility warnings.
-
-Local discovery visits at most 10,000 entries per source; manifest and LM Studio CLI data are capped at 2 MiB, with a 30-second CLI deadline. Sidecar estimates use a request-scoped parent cache and a separate 10,000-entry budget. Incomplete estimates and errors are visible. Explicit activation admission is independent of display traversal limits.
-
-Browser model discovery caps declared and streamed bodies at 8 MiB before parsing and preserves prior options/cache on malformed or oversized responses. Health loaded-model lists are bounded too; malformed TTS health degrades readiness while Korina liveness stays available.
-
-Candidate agent discovery accepts an explicit bounded POST body without saving settings or activating a provider. Credentials inherit only for the matching actual API base.
-
-See the full architecture report for the capability schema.</p></div></body></html>
+</div></nav>
+<main class="wrap">
+<a href="index.html" class="back-link">← Back to Home</a>
+<h1>Provider architecture</h1>
+<div class="req-note"><strong>Hackathon refactor preview · 22 October 2026.</strong>
+Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>alpha</code>.
+These changes are not yet merged into <code>alpha</code> or the release branch.
+<a href="Hackathon.html">Setup and rehearsal guide</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Progress and verification evidence</a> · <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">Review PR #24</a>.</div>
+<p><code>GET /api/capabilities</code> is the backend-owned registry for the response and agent roles. Response choices include llama.cpp, LM Studio, Ollama, and generic OpenAI-compatible endpoints. The agent registry separately exposes OpenAI-compatible and Anthropic-compatible APIs. The browser uses declared capabilities for URL editability and presets.</p>
+<h2>Settings and local lifecycle</h2>
+<p>Settings saves send observed field changes with explicit save revisions. A delayed initial read preserves drafts and newer confirmed saves; untouched HTML defaults are not posted as guessed settings. Provider activation waits for a loaded baseline, and failed initial reads retry from Settings.</p>
+<p>Local activation and refresh consider response, multimodal STT, and enabled agent roles before stopping or restarting a service. Protected conflicts and missing prerequisites fail before teardown. Confirmed stops are distinguished from uncertain stop requests. Selection is saved before activation and is not automatically rolled back if activation fails.</p>
+<p>Model-folder append/delete merges atomically with current settings. Removing the final folder preserves an explicit empty selection instead of restoring environment defaults.</p>
+<h2>Model discovery</h2>
+<p>Catalogs cover endpoint-loaded models, local GGUFs, LM Studio catalogs, and mmproj sidecars. IDs must be valid UTF-8 and fit 512 Unicode characters. Each role/source returns at most 512 IDs within 256 KiB of JSON-escaped identifiers; shared metadata covers at most 1024 IDs within 512 KiB. A selected ID found in a source survives truncation. Missing saved choices remain annotated with known incompatibility warnings.</p>
+<p>Local discovery visits at most 10,000 entries per source. Manifest and LM Studio CLI data are capped at 2 MiB, with a 30-second CLI deadline. Request-scoped sidecar estimates have a separate 10,000-entry budget. Incomplete results and errors stay visible; activation admission is independent of display traversal limits.</p>
+<p>Browser discovery bounds declared and streamed bodies at 8 MiB before parsing and preserves previous options/cache on malformed or oversized replies. Candidate agent discovery uses a bounded POST body without saving settings or activating a provider. Credentials inherit only when the actual normalized API base matches.</p>
+<h2>Transcription and speech</h2>
+<p>Buffered, partial, and SSE transcription share <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/korina/services/stt_resolution.py">one multimodal capability-cache and Whisper fallback policy</a>, including provider failures and no-speech handling. An empty selected model does not let a historical empty-key rejection cover every model on the endpoint. Whisper fallback keeps VAD filtering off to preserve quiet or clipped speech. Conversion and inference run away from the async event loop.</p>
+<p>Compatible speech services must obey browser download, sample-rate, and duration budgets. Streamed playback finishes against the AudioContext clock: suspension cannot mark still-queued speech complete, and Stop remains usable. Closing the audio context before completion produces an error. See the <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/Korina/js/speech.js">playback implementation</a>.</p>
+<h2>Optional acknowledgements</h2>
+<p>The ACK manifest has bounded, typed validation and unique normalized IDs. Invalid or missing catalogs leave startup and required voice readiness available. Health reports an explicit ACK error with unknown clip counts; ACK catalog/status/rebuild endpoints return HTTP 503 until the file is repaired. Invalid rebuilds preserve cached audio and queued work.</p>
+<p>A voice change saves settings before requesting a rebuild. Failed saves request no rebuild. Browser requests coalesce pending choices and publish diagnostics only for their current voice/session; ACK status is separate from transcription status. A queued rebuild describes pending work, not ready audio.</p>
+<p><a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/docs/acknowledgements.md">ACK bounds and recovery contract</a> · <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/docs/wiki/Architecture.md">Current architecture source</a> · <a href="Hackathon.html">Setup and rehearsal</a></p>
+<p>Health bounds loaded-model lists and distinguishes unavailable models from liveness. Malformed or unverified TTS health fails required readiness; a reachable lazy Kokoro still needs speech warm-up before a demo.</p>
+</main><footer><div class="wrap"><p>Korina Agent &amp; Korina Converse — <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Hackathon progress</a></p><p>Documentation preview updated 22 October 2026. <code>gh-pages</code> stores these static pages; live hosting is not configured.</p></div></footer></body></html>
