@@ -2,7 +2,7 @@
 
 import { state } from './state.js';
 import { $ } from './dom.js';
-import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from './labels.js';
+import { prettyModelLabel } from './labels.js';
 
 // Settings getters
 
@@ -210,7 +210,7 @@ export function applyConfig(c = {}, { preserveKeys = [], updateSnapshot = true, 
 
 // Idle activity tracking
 
-export function markActivity(reason = 'activity') {
+export function markActivity(_reason = 'activity') {
   state.lastActivityAt = performance.now();
   state.idleAckCount = 0;
   // Keep this quiet except in the status debug area to avoid log spam.

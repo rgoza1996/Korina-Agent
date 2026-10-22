@@ -5,14 +5,13 @@ import { apiErrorMessage } from './api-errors.js';
 import { ttsProviderLabel, llmProviderLabel } from './labels.js';
 import { $, setDot, status } from './dom.js';
 import {
-  applyConfig, ttsProvider, collectConfig, syncConverseSettingsUI,
+  applyConfig, collectConfig, syncConverseSettingsUI,
   sttBackend,
   sttDevice, sttModel,
   effectiveSttLlmModel, effectiveSttLlmBaseUrl,
   sttLlmReasoningEnabled,
   llmReasoningEnabled,
   llmProvider, llmBaseUrl, lmModel,
-  partialWindowMsSetting,
   markActivity,
 } from './settings-ui.js';
 import { loadAgentModelOptions, loadCapabilities, setBaseUrlEditability } from './providers-ui.js';
@@ -282,7 +281,7 @@ export async function health() {
       state.audioLimitsError = '';
     }
     state.healthFailures = 0;
-  } catch (e) {
+  } catch {
     if (!current()) return;
     j = null;
     pageFailed = true;

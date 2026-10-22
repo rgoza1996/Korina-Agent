@@ -10,6 +10,13 @@ export default [
     },
     rules: {
       'no-undef': 'error',
+      'no-unused-vars': ['error', {
+        args: 'after-used',
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrors: 'all',
+        caughtErrorsIgnorePattern: '^_',
+      }],
       'no-dupe-args': 'error',
       'no-dupe-keys': 'error',
       'no-unreachable': 'error',

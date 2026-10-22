@@ -16,15 +16,12 @@ import {
   syncConverseSettingsUI,
 } from "./settings-ui.js";
 import {
-  saveConfigNow,
   listAudioProbes,
-  clearAudioProbe,
   normalizeTripleBaseUrl,
 } from "./api.js";
 import {
   filterModelsByCapability,
   sttLlmModelRequirement,
-  setCapabilityFilterOverride,
 } from "./capability-filter.js";
 
 export async function loadCapabilities(force=false){
