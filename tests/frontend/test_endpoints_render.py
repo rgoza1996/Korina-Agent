@@ -10,22 +10,18 @@ contract and exercise the real JS module via node + a DOM shim."""
 
 import json
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
-import shutil  # noqa: E402  -- inserted by /tmp/fix_tests.py
-
-NODE_BIN = shutil.which("node") or "node"  # CI runners have node on PATH
-
-_HAS_NODE = shutil.which("node") is not None
+NODE_BIN = shutil.which("node")
 
 
 def _node_bin():
     """Return the node executable, or skip the test if node is unavailable."""
-    if not _HAS_NODE:
-        import pytest
+    if NODE_BIN is None:
         pytest.skip("node not in PATH (test shells out to node to render JS)")
     return NODE_BIN
 
@@ -69,7 +65,7 @@ def test_endpoints_js_has_loadKey_for_every_external_group():
         )
 
 
-def _run_node_module(js_path, fetch_stub_js, health=None):
+def _run_node_module(js_path, fetch_stub_js, directory, health=None):
     """Run endpoints.js under node with a DOM shim and the provided
     fetch stub. Returns CompletedProcess."""
     src = js_path.read_text()
@@ -86,14 +82,14 @@ def _run_node_module(js_path, fetch_stub_js, health=None):
         cjs_src,
         flags=re.M,
     )
-    tmp_module = Path('/tmp/_endpoints_populate_cjs.js')
+    tmp_module = directory / 'endpoints.cjs'
     tmp_module.write_text(cjs_src)
-    driver = Path('/tmp/_endpoints_populate_driver.js')
+    driver = directory / 'driver.cjs'
     health_block = ''
     if health is not None:
         # Write JSON to its own file to avoid inlining JS object literals
         # (which collide with the driver f-string's quote escaping).
-        health_file = Path('/tmp/_endpoints_populate_health.json')
+        health_file = directory / 'health.json'
         health_file.write_text(json.dumps(health))
         health_block = f"const __HEALTH = require({json.dumps(str(health_file))});\n"
     driver.write_text(
@@ -140,7 +136,7 @@ def _extract_html(stdout):
     return '\n'.join(lines[start:end])
 
 
-def test_endpoints_js_renders_without_throwing_under_node():
+def test_endpoints_js_renders_without_throwing_under_node(tmp_path):
     """Integration: real /api/health → all four external groups render
     without throwing (the bug was a post-fetch TypeError that left the
     modal stuck on Loading…)."""
@@ -151,7 +147,7 @@ def test_endpoints_js_renders_without_throwing_under_node():
         'global.fetch = async () => ({ ok: true, json: async () => __HEALTH });\n'
         'global.location = { hostname: "100.71.89.62", origin: "http://100.71.89.62:8001" };\n'
     )
-    result = _run_node_module(REPO / 'Korina/js/endpoints.js', fetch_stub, health=HEALTH)
+    result = _run_node_module(REPO / 'Korina/js/endpoints.js', fetch_stub, tmp_path, health=HEALTH)
     if result.returncode != 0:
         pytest.fail(
             f"populateEndpoints threw: rc={result.returncode}\n"
@@ -164,7 +160,7 @@ def test_endpoints_js_renders_without_throwing_under_node():
         assert grp in html, f'missing group {grp!r} in rendered HTML:\n{html[:400]}'
 
 
-def test_endpoints_js_handles_failed_health_without_sticking():
+def test_endpoints_js_handles_failed_health_without_sticking(tmp_path):
     """If /api/health fails entirely, populateEndpoints must NOT leave
     'Loading…' on screen — it must show a real error message."""
     fetch_stub = (
@@ -174,7 +170,7 @@ def test_endpoints_js_handles_failed_health_without_sticking():
         'global.fetch = async () => { throw new Error("boom"); };\n'
         'global.location = { hostname: "127.0.0.1", origin: "http://127.0.0.1:8001" };\n'
     )
-    result = _run_node_module(REPO / 'Korina/js/endpoints.js', fetch_stub)
+    result = _run_node_module(REPO / 'Korina/js/endpoints.js', fetch_stub, tmp_path)
     if result.returncode != 0:
         pytest.fail(
             f"failed-health path broke: rc={result.returncode}\n"

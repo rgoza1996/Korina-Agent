@@ -18,15 +18,18 @@ FastAPI routes → small service functions → configured model endpoints
 - `services/agent_service.py` owns one worker, one coalesced follow-up prompt, at most five pending injections, a 100-event ring, and reset generation tokens. Session reset invalidates stale in-flight results.
 - `agents/` defines adapters. `converse/` defines channel registration and cursor-based response delivery. Hermes remains a stub.
 - `services/provider_manager.py` owns local provider activation. Path discovery and executable/socket ownership checks replace personal host assumptions and broad process patterns.
-- `runtime/limits.py` rejects oversized bodies before request parsing: 2 MiB JSON/control requests and 50 MiB transcription uploads. Schemas also bound fields and conversation turns.
+- `runtime/limits.py` resolves shared audio budgets and rejects oversized bodies before request parsing: 2 MiB JSON/control requests and 50 MiB transcription uploads. Schemas also bound fields and conversation turns.
 - `tts/` owns optional Kokoro runtime, bounded synthesis admission, and streaming/buffered responses.
 - `Korina/js/state.js` holds active UI state. `agent-ui.js` is the agent delivery path; a dormant duplicate EventBus was removed.
+- `Korina/js/bounded-recorder.js` owns duration/byte limits for complete manual, live, and interruption recordings. Native chunks remain one decodable file. Silent recordings rotate; confirmed speech becomes a complete turn; an oversized or late capture is discarded whole with recovery text.
 
 ## Health and readiness
 
 `GET /api/health` remains HTTP 200 for a live backend with unavailable models. Independent provider probes run concurrently; matching endpoint/model/credentials reuse a probe within that request. Runtime blocks describe response LLM, audio-model STT, agent, TTS, Whisper, and ACK state.
 
 `GET /api/ready` returns a check map for frontend assets, response LLM, selected STT dependencies, TTS, and enabled agent. It returns 503 when a required check fails. A reachable lazy Kokoro pipeline counts as available; rehearsal must warm actual models.
+
+Health advertises the effective upload and decoded duration budgets in read-only `audio_limits`. Browser captures leave encoding/multipart headroom and retain at most 24 MiB. Invalid server limit settings remain visible through `audio_limits_error`, fail readiness, and prevent new recordings. Stop, Clear Session, replacement, and recorder errors release capture timers and owned audio buffers.
 
 ## Assets and state
 

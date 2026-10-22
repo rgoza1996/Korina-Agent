@@ -51,9 +51,10 @@ jobs:
       - name: Verify installed UI assets
         run: |
           python -m venv /tmp/korina-wheel
-          /tmp/korina-wheel/bin/pip install dist/*.whl
+          /tmp/korina-wheel/bin/pip install dist/*.whl 'httpx>=0.27,<1'
+          checkout="$PWD"
           cd /tmp
-          /tmp/korina-wheel/bin/python -c "from korina.util.paths import INDEX_PATH; assert INDEX_PATH.is_file(), INDEX_PATH"
+          /tmp/korina-wheel/bin/python "$checkout/scripts/check_installed.py" --source-assets "$checkout/Korina"
 
   speech-dependencies:
     runs-on: ubuntu-24.04

@@ -15,6 +15,7 @@ import { $ } from './dom.js';
 
 const PAGE_SERVER_ENDPOINTS = [
   { group: 'Page server', key: 'GET  /api/health', path: '/api/health' },
+  { group: 'Page server', key: 'GET  /api/ready', path: '/api/ready' },
   { group: 'Page server', key: 'GET  /api/config', path: '/api/config' },
   { group: 'Page server', key: 'GET  /api/capabilities', path: '/api/capabilities' },
   { group: 'Page server', key: 'GET  /api/models', path: '/api/models' },
@@ -23,6 +24,7 @@ const PAGE_SERVER_ENDPOINTS = [
   { group: 'Page server', key: 'GET  /api/acks/status', path: '/api/acks/status' },
   { group: 'Page server', key: 'GET  /api/audio-probe', path: '/api/audio-probe' },
   { group: 'Page server', key: 'GET  /api/agent/status', path: '/api/agent/status' },
+  { group: 'Page server', key: 'GET  /api/agent/capabilities', path: '/api/agent/capabilities' },
   { group: 'Page server', key: 'GET  /api/agent/events', path: '/api/agent/events' },
   { group: 'Page server', key: 'GET  /api/agent/models', path: '/api/agent/models' },
   { group: 'Page server', key: 'POST /api/chat', path: '/api/chat', method: 'POST' },
