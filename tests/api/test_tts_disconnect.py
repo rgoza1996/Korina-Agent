@@ -1,7 +1,8 @@
-"""Retire buffered synthesis between native steps, without force-cancelling one."""
+"""Retire synthesis between native steps, without force-cancelling one."""
 from __future__ import annotations
 
 import json
+import asyncio
 import socket
 import threading
 import time
@@ -17,12 +18,20 @@ from korina.tts import server as tts
 from korina.tts.runtime import SynthesisRuntime
 
 
-@pytest.mark.parametrize('stage', ['load', 'prime', 'later_step'])
-@pytest.mark.parametrize('retirement', ['disconnect', 'scope_cancel'])
-def test_retired_buffered_synthesis_finishes_active_work_then_frees_same_slot(monkeypatch, stage, retirement):
+CASES = [(endpoint, stage, retirement)
+         for endpoint in ('/v1/audio/speech', '/stream/speech', '/stream/wav')
+         for stage in ('load', 'prime', 'later_step')
+         for retirement in ('disconnect', 'scope_cancel')]
+CASES += [(endpoint, stage, 'task_cancel')
+          for endpoint in ('/stream/speech', '/stream/wav') for stage in ('load', 'prime', 'later_step')]
+
+
+@pytest.mark.parametrize('endpoint,stage,retirement', CASES)
+def test_retired_synthesis_finishes_active_work_then_frees_same_slot(monkeypatch, stage, retirement, endpoint):
     entered, release, retired, closed, finished = (threading.Event() for _ in range(5))
     steps = []
     loads = []
+    active_receives = max_receives = 0
 
     def pipeline(text, voice, speed):
         if text == 'fresh':
@@ -66,20 +75,53 @@ def test_retired_buffered_synthesis_finishes_active_work_then_frees_same_slot(mo
 
     @app.post('/cancel-inflight')
     async def cancel_inflight():
-        active['scope'].cancel()
+        active['task' if retirement == 'task_cancel' else 'scope'].cancel()
         return {'ok': True}
 
     async def observed_app(scope, receive, send):
+        nonlocal active_receives, max_receives
         if scope['type'] != 'http' or b'old=1' not in scope['query_string']:
             return await app(scope, receive, send)
+        started = complete = False
+
+        async def tracked_send(message):
+            nonlocal started, complete
+            if message['type'] == 'http.response.start':
+                started = True
+            if message['type'] == 'http.response.body' and not message.get('more_body'):
+                complete = True
+            await send(message)
+
+        async def tracked_receive():
+            nonlocal active_receives, max_receives
+            active_receives += 1
+            max_receives = max(max_receives, active_receives)
+            try:
+                return await receive()
+            finally:
+                active_receives -= 1
+
         try:
             if retirement == 'disconnect':
-                return await app(scope, receive, send)
-            with anyio.CancelScope() as owner:
-                active['scope'] = owner
-                await app(scope, receive, send)
-            if owner.cancel_called:
-                await JSONResponse({'detail': 'test request cancelled'}, status_code=499)(scope, receive, send)
+                return await app(scope, tracked_receive, tracked_send)
+            if retirement == 'task_cancel':
+                active['task'] = asyncio.current_task()
+                try:
+                    await app(scope, tracked_receive, tracked_send)
+                except asyncio.CancelledError:
+                    cancelled = True
+                else:
+                    cancelled = False
+            else:
+                with anyio.CancelScope() as owner:
+                    active['scope'] = owner
+                    await app(scope, tracked_receive, tracked_send)
+                cancelled = owner.cancel_called
+            if cancelled:
+                if not started:
+                    await JSONResponse({'detail': 'test request cancelled'}, status_code=499)(scope, receive, send)
+                elif not complete:
+                    await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
         finally:
             finished.set()
 
@@ -98,7 +140,7 @@ def test_retired_buffered_synthesis_finishes_active_work_then_frees_same_slot(mo
         assert server.started
         browser = socket.create_connection(('127.0.0.1', port), timeout=2)
         payload = json.dumps({'input': 'old', 'device': 'cpu'}).encode()
-        browser.sendall(b'POST /v1/audio/speech?old=1 HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '
+        browser.sendall(f'POST {endpoint}?old=1 HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: '.encode()
                         + str(len(payload)).encode() + b'\r\n\r\n' + payload)
         assert entered.wait(3), 'loading or a native step must already be active'
         if retirement == 'disconnect':
@@ -115,6 +157,7 @@ def test_retired_buffered_synthesis_finishes_active_work_then_frees_same_slot(mo
         assert busy.headers['retry-after'] == '1'
         release.set()
         assert finished.wait(2), 'retired synthesis must close without admitting another native step'
+        assert max_receives == 1, 'body parsing and ownership must never race another disconnect receiver'
         assert steps == {'load': [], 'prime': ['first'], 'later_step': ['first', 'second']}[stage]
         assert closed.is_set() is (stage != 'load')
         fresh = httpx.post(f'http://127.0.0.1:{port}/v1/audio/speech', json={'input': 'fresh', 'device': 'cpu'}, timeout=2)

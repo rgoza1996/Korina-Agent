@@ -4,7 +4,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import threading
 from typing import Literal
+from functools import partial
 
 from anyio import CancelScope
 from fastapi import FastAPI, HTTPException, Request
@@ -12,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import AliasChoices, BaseModel, Field
-from starlette.concurrency import run_in_threadpool
+from starlette.concurrency import iterate_in_threadpool, run_in_threadpool
 
 from korina.runtime.limits import RequestSizeLimit
 from korina.runtime.json_http import RequestCancelledError
@@ -37,18 +39,74 @@ class SpeechRequest(BaseModel):
 
 
 class SpeechStreamResponse(StreamingResponse):
-    """Release synthesis even when the client disconnects before iteration."""
+    """Own preparation and playback, with one consumer of ASGI disconnects."""
 
-    def __init__(self, content, session: SynthesisSession, **kwargs):
+    def __init__(self, content, session: SynthesisSession | None = None, *, prepare=None, **kwargs):
         self._session = session
-        super().__init__(content, **kwargs)
+        self._prepare = prepare
+        self._preparation_lock = threading.Lock()
+        self._formatter = content if prepare is not None else None
+        super().__init__(() if prepare is not None else content, **kwargs)
 
     async def __call__(self, scope, receive, send):
-        try:
-            await super().__call__(scope, receive, send)
-        finally:
-            with CancelScope(shield=True):
-                await run_in_threadpool(self._session.close)
+        owner = RequestOwner()
+        started = False
+
+        def prepare_owned():
+            with self._preparation_lock:
+                session = self._prepare(is_current=owner.is_current)
+                # Store ownership in the worker too: a raw ASGI task cancellation
+                # can abandon its await before an active native step returns.
+                self._session = session
+                try:
+                    check_current(owner.is_current)
+                except BaseException:
+                    session.close()
+                    raise
+                return session
+
+        def close_owned():
+            # A cancelled ASGI task must also drain an abandoned prepare await.
+            with self._preparation_lock:
+                if self._session is not None:
+                    self._session.close()
+
+        async def owned_body(iterator):
+            while True:
+                check_current(owner.is_current)
+                try:
+                    chunk = await iterator.__anext__()
+                except StopAsyncIteration:
+                    return
+                check_current(owner.is_current)
+                yield chunk
+
+        async def tracked_send(message):
+            nonlocal started
+            if message['type'] == 'http.response.start':
+                started = True
+            await send(message)
+
+        async with owner.watch(Request(scope, receive)):
+            try:
+                if self._prepare is not None:
+                    session = await run_in_threadpool(prepare_owned)
+                    self.body_iterator = iterate_in_threadpool(self._formatter(session))
+                self.body_iterator = owned_body(self.body_iterator)
+                check_current(owner.is_current)
+                # RequestOwner is the sole receive consumer, across preparation
+                # and playback; StreamingResponse's second listener is skipped.
+                await self.stream_response(tracked_send)
+            except RequestCancelledError as exc:
+                if not started:
+                    raise HTTPException(499, detail='Speech request was cancelled') from exc
+                await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
+            finally:
+                owner.retire()
+                with CancelScope(shield=True):
+                    await run_in_threadpool(close_owned)
+        if self.background is not None:
+            await self.background()
 
 
 def sse_chunks(session: SynthesisSession):
@@ -96,18 +154,16 @@ def create_app(runtime: SynthesisRuntime | None = None) -> FastAPI:
             raise HTTPException(500, detail=str(exc)) from exc
 
     @app.post('/stream/speech')
-    def stream_speech(request: SpeechRequest):
-        session = open_session(request)
+    async def stream_speech(request: SpeechRequest):
         return SpeechStreamResponse(
-            sse_chunks(session), session, media_type='text/event-stream',
+            sse_chunks, prepare=partial(open_session, request), media_type='text/event-stream',
             headers={'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff'},
         )
 
     @app.post('/stream/wav')
-    def stream_wav(request: SpeechRequest):
-        session = open_session(request)
+    async def stream_wav(request: SpeechRequest):
         return SpeechStreamResponse(
-            wav_chunks(session), session, media_type='audio/wav',
+            wav_chunks, prepare=partial(open_session, request), media_type='audio/wav',
             headers={'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff'},
         )
 

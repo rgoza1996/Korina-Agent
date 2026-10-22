@@ -47,6 +47,40 @@ def test_text_alias_and_invalid_inputs():
             assert client.post('/stream/speech', json=body).status_code == 422
 
 
+@pytest.mark.parametrize('endpoint', ['/stream/speech', '/stream/wav'])
+@pytest.mark.parametrize('failure', ['empty_input', 'load', 'prime', 'busy'])
+def test_stream_preparation_errors_preserve_json_status_before_headers(endpoint, failure):
+    def factory(device):
+        if failure == 'load':
+            raise RuntimeError('fixture model load failed')
+
+        def pipeline(text, voice, speed):
+            if failure == 'prime':
+                raise RuntimeError('fixture first inference failed')
+            yield text, voice, np.zeros(1)
+        return pipeline
+
+    engine = SynthesisRuntime(factory)
+    held = engine.open_session('held', 'af_heart', 1, 'cpu') if failure == 'busy' else None
+    try:
+        with TestClient(create_app(engine)) as client:
+            response = client.post(endpoint, json={'input': '' if failure == 'empty_input' else 'hello', 'device': 'cpu'})
+        assert response.status_code == {'empty_input': 400, 'load': 500, 'prime': 500, 'busy': 503}[failure]
+        assert response.headers['content-type'] == 'application/json'
+        assert isinstance(response.json()['detail'], str)
+        if failure == 'busy':
+            assert response.headers['retry-after'] == '1'
+        else:
+            # A preparation failure never leaks the slot; it reaches the same
+            # validation/load/inference error on retry instead of becoming busy.
+            with TestClient(create_app(engine)) as client:
+                retry = client.post(endpoint, json={'input': '' if failure == 'empty_input' else 'hello', 'device': 'cpu'})
+            assert retry.status_code == response.status_code
+    finally:
+        if held is not None:
+            held.close()
+
+
 def test_busy_model_is_retryable_and_health_stays_available(monkeypatch):
     engine = make_runtime()
     session = engine.open_session('hello', 'af_heart', 1, 'cpu')
@@ -140,7 +174,10 @@ def test_stream_termination_retains_slot_until_active_native_inference_finishes(
         disconnect_sent = asyncio.Event()
 
         async def receive():
-            assert await asyncio.to_thread(entered.wait, 1)
+            # Match ASGI receive: an already available disconnect is returned
+            # without an extra scheduling point, so nonblocking polls see it.
+            if not entered.is_set():
+                assert await asyncio.to_thread(entered.wait, 1)
             disconnect_sent.set()
             return {'type': 'http.disconnect'}
 
