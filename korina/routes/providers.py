@@ -6,6 +6,7 @@ Phase 1.9: inlined from the monolith's _route_activate_provider helper.
 from __future__ import annotations
 
 import threading
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -77,9 +78,10 @@ def clear_audio_probe(provider: str, base_url: str, model: str):
 
 
 class ProbeModelsRequest(BaseModel):
-    provider: str = ''
-    base_url: str = ''
-    models: list[str] = Field(default_factory=list, max_length=64)
+    provider: str = Field('', max_length=64)
+    base_url: str = Field('', max_length=4096)
+    models: list[Annotated[str, Field(max_length=512)]] = Field(default_factory=list, max_length=64)
+    api_key_env: str | None = Field(default=None, max_length=128)
 
 
 @router.post('/api/llm/probe-models')
@@ -115,7 +117,10 @@ def probe_models(req: ProbeModelsRequest):
         mid = str(model or '').strip()
         if not mid:
             continue
-        probe = probe_audio_support(provider_id, base_url_clean, mid)
+        if req.api_key_env is None:
+            probe = probe_audio_support(provider_id, base_url_clean, mid)
+        else:
+            probe = probe_audio_support(provider_id, base_url_clean, mid, api_env=req.api_key_env)
         triple = triple_key(provider_id, base_url_clean, mid)
         results[mid] = {
             'supported': probe.supported,

@@ -50,7 +50,6 @@ def test_probe_audio_support_clears_cache_on_success(monkeypatch, isolated_korin
     from korina.config import (
         audio_unsupported_key,
         load_config,
-        save_config,
         set_audio_unsupported,
     )
 
@@ -166,3 +165,72 @@ def test_probe_audio_support_synthetic_wav_is_valid():
         assert w.getnchannels() == 1
         assert w.getsampwidth() == 2
         assert w.getnframes() == 16000
+
+
+def test_default_probe_forwards_timeout_without_leaking_configured_secret(monkeypatch, config_module):
+    import json
+    from korina.services import active_probe, multimodal_stt
+
+    config_module.update_config_values({
+        'stt_llm_base_url': 'https://configured.test/v1',
+        'stt_llm_provider': 'openai-compatible',
+        'stt_llm_api_key_env': 'PROBE_CONFIGURED_KEY',
+    })
+    monkeypatch.setenv('PROBE_CONFIGURED_KEY', 'configured-secret')
+    calls = []
+
+    def urlopen(request, timeout):
+        calls.append((request, timeout))
+        return io.BytesIO(json.dumps({'choices': [{'message': {'content': 'hello'}, 'finish_reason': 'stop'}]}).encode())
+
+    monkeypatch.setattr(multimodal_stt.urllib.request, 'urlopen', urlopen)
+    result = active_probe.probe_audio_support(
+        'openai-compatible', 'https://candidate.test/v1', 'audio-model', timeout=0.25,
+    )
+    assert result.supported is True
+    assert calls[0][0].full_url == 'https://candidate.test/v1/chat/completions'
+    assert calls[0][0].get_header('Authorization') is None
+    assert calls[0][1] == 0.25
+
+
+def test_probe_auth_and_full_endpoint_normalization_preserve_legacy_callback(config_module):
+    from korina.services import active_probe
+
+    config_module.update_config_values({
+        'stt_llm_base_url': 'https://configured.test/v1',
+        'stt_llm_provider': 'openai-compatible',
+        'stt_llm_api_key_env': 'CONFIGURED_ENV',
+    })
+    calls = []
+
+    def legacy_callback(wav, *, model, base_url, api_env):
+        calls.append((base_url, api_env))
+        return {'text': 'hello'}
+
+    active_probe.probe_audio_support('openai-compatible', 'https://configured.test/v1/chat/completions/', 'a', transcribe_fn=legacy_callback)
+    active_probe.probe_audio_support('openai-compatible', 'https://configured.test/v1', 'a', api_env='', transcribe_fn=legacy_callback)
+    active_probe.probe_many('openai-compatible', 'https://candidate.test/v1', ['a', 'b'], api_env='CANDIDATE_ENV', transcribe_fn=legacy_callback)
+    assert calls == [
+        ('https://configured.test/v1/chat/completions', 'CONFIGURED_ENV'),
+        ('https://configured.test/v1/chat/completions', ''),
+        ('https://candidate.test/v1/chat/completions', 'CANDIDATE_ENV'),
+        ('https://candidate.test/v1/chat/completions', 'CANDIDATE_ENV'),
+    ]
+
+
+@pytest.mark.parametrize('finish_reason,cached', [('length', True), ('content_filter', True), ('stop', False), ('', False)])
+def test_probe_empty_completion_matches_live_finish_reason_classification(config_module, finish_reason, cached):
+    from korina.services import active_probe
+    from korina.config import audio_unsupported_key
+
+    def empty(wav, *, model, base_url, api_env):
+        return {'text': '', 'finish_reason': finish_reason}
+
+    result = active_probe.probe_audio_support('openai-compatible', 'https://probe.test/v1', 'model', transcribe_fn=empty)
+    key = audio_unsupported_key('openai-compatible', 'https://probe.test/v1', 'model')
+    assert (key in config_module.load_config()['audio_unsupported']) is cached
+    assert result.supported is False
+    if cached:
+        assert result.reason == 'silent_200_empty_content'
+    else:
+        assert result.reason == 'transient_empty_text'

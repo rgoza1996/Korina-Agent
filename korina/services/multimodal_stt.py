@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import re
 import time
 import urllib.error
@@ -19,6 +20,7 @@ from korina.config import (
     config_stt_llm_model,
     config_stt_llm_reasoning,
     load_config,
+    normalize_api_base_url,
 )
 from korina.runtime.http import auth_headers_from_env
 from korina.services.model_catalog import llm_models_for
@@ -52,12 +54,27 @@ def lmstudio_models() -> list[str]:
     return llm_models_for(config_llm_base_url(config), str(config.get('llm_api_key_env') or ''))
 
 
-def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url: Optional[str] = None, api_env: Optional[str] = None) -> dict:
+def resolve_stt_api_env(config: dict, base_url: str, api_env: str | None) -> str:
+    """None inherits credentials only for the configured endpoint; empty disables.
+
+    A candidate probe must never receive another endpoint's key merely because
+    its caller omitted an auth setting. Explicit env names remain opt-in.
+    """
+    if api_env is not None:
+        return str(api_env).strip()
+    if normalize_api_base_url(base_url) == normalize_api_base_url(config_stt_llm_base_url(config)):
+        return config_stt_llm_api_env(config)
+    return ''
+
+
+def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url: Optional[str] = None, api_env: Optional[str] = None, timeout: float = 120.0) -> dict:
     """Attempt audio transcription through a multimodal STT model endpoint.
 
     OpenAI-compatible multimodal endpoints definitely support text/images. Audio input
     depends on the loaded model + server support, so this endpoint returns a clear
-    error if the selected model rejects input_audio.
+    error if the selected model rejects input_audio. None auth inherits only
+    for the configured STT endpoint; an empty env name disables auth. timeout
+    applies to the HTTP call and is bounded to (0, 120] seconds.
 
     Phase 5 (2026-06-27): the returned dict now carries ``finish_reason`` from
     the OpenAI chat-completion response. Callers in the audio-probe / stt route
@@ -65,11 +82,18 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
     finish_reason != 'stop') as structurally audio-incompatible.
     """
     config = load_config()
-    resolved_base_url = str(base_url or config_stt_llm_chat_url(config)).strip()
-    resolved_api_env = str(api_env or config_stt_llm_api_env(config) or '').strip()
+    resolved_base_url = str(base_url if base_url is not None else config_stt_llm_chat_url(config)).strip()
+    from urllib.parse import urlsplit
+    parsed = urlsplit(resolved_base_url)
+    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+        raise ValueError('Multimodal STT requires an http(s) endpoint')
+    timeout = float(timeout)
+    if not math.isfinite(timeout) or not 0 < timeout <= 120:
+        raise ValueError('Multimodal STT timeout must be greater than zero and at most 120 seconds')
+    resolved_api_env = resolve_stt_api_env(config, resolved_base_url, api_env)
     selected_model = (model or config_stt_llm_model(config)).strip()
     if not selected_model:
-        available = llm_models_for(config_stt_llm_base_url(config), resolved_api_env)
+        available = llm_models_for(normalize_api_base_url(resolved_base_url), resolved_api_env)
         selected_model = available[0].strip() if available else ''
     if not selected_model:
         raise RuntimeError('No multimodal STT model available for the selected endpoint')
@@ -104,7 +128,7 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
         method='POST',
     )
     try:
-        with urllib.request.urlopen(http_req, timeout=120) as resp:
+        with urllib.request.urlopen(http_req, timeout=timeout) as resp:
             body = json.loads(resp.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         detail = e.read().decode('utf-8', errors='replace')

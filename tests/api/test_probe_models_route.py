@@ -93,3 +93,32 @@ def test_probe_models_route_marks_transient_as_uncached(monkeypatch, client, iso
     assert payload['results']['x']['cached'] is False
     triple = audio_unsupported_key('lmstudio', 'http://127.0.0.1:1234/v1', 'x')
     assert triple not in load_config()['audio_unsupported']
+
+
+def test_probe_models_passes_explicit_auth_env(monkeypatch, client):
+    from korina.routes import providers
+    from korina.services.active_probe import ProbeResult
+
+    calls = []
+
+    def probe(provider, base_url, model, *, api_env):
+        calls.append(api_env)
+        return ProbeResult(model, True, '', 1, 200, '', '')
+
+    monkeypatch.setattr(providers, 'probe_audio_support', probe)
+    for env in ['CANDIDATE_KEY', '']:
+        response = client.post('/api/llm/probe-models', json={
+            'provider': 'openai-compatible', 'base_url': 'https://candidate.test/v1',
+            'models': ['a'], 'api_key_env': env,
+        })
+        assert response.status_code == 200
+    assert calls == ['CANDIDATE_KEY', '']
+
+
+def test_probe_models_bounds_transport_and_model_identifiers(client):
+    default = {'provider': 'openai-compatible', 'base_url': 'https://candidate.test/v1', 'models': ['a']}
+    for extra in [
+        {'provider': 'p' * 65}, {'base_url': 'x' * 4097},
+        {'models': ['m' * 513]}, {'api_key_env': 'k' * 129},
+    ]:
+        assert client.post('/api/llm/probe-models', json={**default, **extra}).status_code == 422

@@ -22,10 +22,12 @@ Contract for ``supported``:
 from __future__ import annotations
 
 import io
+import json
 import re
 import time
 import wave
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Optional
 
@@ -82,13 +84,17 @@ def probe_audio_support(
     model: str,
     *,
     timeout: float = 15.0,
+    api_env: str | None = None,
     transcribe_fn=None,
 ) -> ProbeResult:
     """Probe a single (provider, base_url, model) triple.
 
     transcribe_fn defaults to
     ``korina.services.multimodal_stt.lmstudio_transcribe_wav``. Tests inject
-    a stub; production callers should rely on the default.
+    a stub; production callers should rely on the default. The timeout is
+    forwarded to the production HTTP request; legacy injected callbacks retain
+    their four-argument calling convention. api_env=None inherits auth only for
+    the configured STT endpoint; an empty string explicitly disables auth.
 
     Side effects:
       - On supported=True, the persistent audio_unsupported cache entry for
@@ -101,14 +107,16 @@ def probe_audio_support(
       - On supported=False with a transient classification, the cache is
         *not* updated -- transient failures should not stick.
     """
-    from korina.services.audio_probe import classify_failure, triple_key
-    from korina.config import set_audio_unsupported, clear_audio_unsupported
+    from korina.services.audio_probe import classify_failure
+    from korina.config import load_config, normalize_api_base_url, set_audio_unsupported, clear_audio_unsupported
+    from korina.services.multimodal_stt import resolve_stt_api_env
 
     if transcribe_fn is None:
-        from korina.services.multimodal_stt import lmstudio_transcribe_wav as transcribe_fn
+        from korina.services.multimodal_stt import lmstudio_transcribe_wav
+        transcribe_fn = partial(lmstudio_transcribe_wav, timeout=timeout)
 
     provider_id = str(provider or "").strip().lower()
-    base_url_clean = str(base_url or "").strip()
+    base_url_clean = normalize_api_base_url(str(base_url or "").strip())
     # Normalize to the chat-completions endpoint the same way the runtime
     # streaming STT path does. lmstudio returns a 200-with-error-body when
     # you POST to the bare /v1 base URL, which would silently mask every
@@ -116,7 +124,7 @@ def probe_audio_support(
     if base_url_clean and not base_url_clean.rstrip("/").endswith("/chat/completions"):
         base_url_clean = base_url_clean.rstrip("/") + "/chat/completions"
     model_id = str(model or "").strip()
-    triple_key_value = triple_key(provider_id, base_url_clean, model_id)
+    resolved_api_env = resolve_stt_api_env(load_config(), base_url_clean, api_env)
 
     tmp_path: Optional[Path] = None
     started = time.time()
@@ -125,7 +133,7 @@ def probe_audio_support(
         with tempfile.NamedTemporaryFile(prefix="korina-probe-", suffix=".wav", delete=False) as f:
             f.write(_build_synthetic_wav())
             tmp_path = Path(f.name)
-        result = transcribe_fn(tmp_path, model=model_id, base_url=base_url_clean, api_env="")
+        result = transcribe_fn(tmp_path, model=model_id, base_url=base_url_clean, api_env=resolved_api_env)
         text = str((result or {}).get("text") or "").strip()
         latency_ms = int((time.time() - started) * 1000)
         if text:
@@ -139,12 +147,14 @@ def probe_audio_support(
                 body_excerpt=text[:200],
                 error="",
             )
-        # 200 with empty text -- silent failure. Treat as transient unless
-        # we have a specific reason string in result.error.
+        # Match the live STT path: non-stop completion with empty content is
+        # structural incompatibility; ordinary silence/unknown remains transient.
         reason_excerpt = str((result or {}).get("error") or "empty_text")
-        unsupported, reason = classify_failure(200, reason_excerpt)
+        finish_reason = str((result or {}).get('finish_reason') or '')
+        body = json.dumps({'choices': [{'message': {'content': text}, 'finish_reason': finish_reason}]})
+        unsupported, reason = classify_failure(200, body, finish_reason=finish_reason)
         if unsupported:
-            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, reason_excerpt)
+            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, body)
         return ProbeResult(
             model=model_id,
             supported=False,  # empty 200 is a UI-visible red mark either way
@@ -185,6 +195,7 @@ def probe_many(
     models: list[str],
     *,
     timeout: float = 15.0,
+    api_env: str | None = None,
     transcribe_fn=None,
 ) -> list[ProbeResult]:
     """Sequentially probe a list of models. Sequential (not parallel) so we
@@ -203,6 +214,7 @@ def probe_many(
                 base_url,
                 mid,
                 timeout=timeout,
+                api_env=api_env,
                 transcribe_fn=transcribe_fn,
             )
         )
