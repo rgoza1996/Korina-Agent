@@ -309,19 +309,17 @@ def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
 
 # --- Phase 1.5 helpers moved from korina.config ---
 
-def parse_model_ids(body: dict) -> list:
-    models = []
+def parse_model_ids(body: dict, *, pinned=()) -> list:
+    from korina.model_ids import limit_model_ids
     data = body.get('data', []) if isinstance(body, dict) else []
-    if isinstance(data, list):
-        for item in data:
-            mid = item.get('id') if isinstance(item, dict) else item
-            if isinstance(mid, str) and mid.strip():
-                models.append(mid.strip())
-    return models
+    if not isinstance(data, list):
+        data = []
+    return limit_model_ids((item.get('id') if isinstance(item, dict) else item
+                            for item in data), pinned=pinned)
 
 
 def agent_model_choices(config: dict | None = None) -> list:
     from korina.config import agent_models_url, agent_auth_headers, load_config
     config = config if config is not None else load_config()
     body = request_json(agent_models_url(config), headers=agent_auth_headers(config), timeout=20)
-    return parse_model_ids(body)
+    return parse_model_ids(body, pinned=[config.get('agent_model') or config.get('lm_model')])

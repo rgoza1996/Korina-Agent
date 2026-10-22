@@ -37,10 +37,11 @@ def test_candidate_discovery_uses_unsaved_endpoint_without_writes_and_get_stays_
     assert config_module.CONFIG_PATH.read_bytes() == saved_discovery
 
     saved = client.get('/api/agent/models').json()
-    assert saved == {
+    assert {key: value for key, value in saved.items() if key != 'catalog_info'} == {
         'ok': True, 'models': ['saved-model'], 'provider': 'openai-compatible',
         'default': 'saved-model', 'error': None,
     }
+    assert saved['catalog_info']['returned'] == 1
     assert str(calls[1].url) == 'https://saved.test/v1/models'
     assert calls[1].headers.get('Authorization') == 'Bearer saved-agent-key'
     assert all(request.method == 'GET' for request in calls)

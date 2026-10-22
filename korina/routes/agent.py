@@ -32,6 +32,7 @@ from korina.services.agent_service import (
 )
 from korina.util.paths import LMSTUDIO_MODEL
 from korina.runtime.json_http import HTTPStatusError
+from korina.model_ids import limit_model_ids, model_list_info
 
 router = APIRouter()
 
@@ -116,7 +117,9 @@ def agent_models():
 def _discover_agent_models(config: dict, *, candidate: bool = False):
     result = {'provider': agent_provider(config), 'default': _default_model(config)}
     try:
-        return {'ok': True, 'models': agent_model_choices(config), **result, 'error': None}
+        discovered = agent_model_choices(config)
+        choices = limit_model_ids(discovered, pinned=[result['default']], sources=[discovered])
+        return {'ok': True, 'models': choices, 'catalog_info': model_list_info(choices), **result, 'error': None}
     except Exception as e:
         # Candidate keys travel only in the request body. Do not reflect an
         # upstream diagnostic that could contain those credentials.

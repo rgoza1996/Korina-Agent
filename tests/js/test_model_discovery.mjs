@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
 import { loadAgentModelOptions, loadModelOptions } from '../../Korina/js/providers-ui.js';
 import { loadLocalModelRoots, wireLocalModelsUi } from '../../Korina/js/local-models.js';
+import { MAX_MODEL_RESPONSE_BYTES } from '../../Korina/js/model-catalog.js';
 
 const elements = new Map();
 function element(id) {
@@ -21,9 +22,10 @@ function deferred() {
   const promise = new Promise(done => { resolve = done; });
   return { promise, resolve };
 }
-const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
+const response = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 function payload(tag) {
   return { whisper_models: ['base.en'], llm_models: [`${tag}-response`],
+    llm_default: `${tag}-response`,
     stt_llm_models: [`${tag}-audio`],
     stt_llm_models_capabilities: { [`${tag}-audio`]: { supports_audio_input: true } } };
 }
@@ -44,6 +46,7 @@ beforeEach(() => {
   endpoint('old');
   Object.assign(state, { lastModelsPayload: null, lastModelsQuery: '', lastModelsLoadedAt: 0,
     audioUnsupported: {}, capabilityFilterOverride: false });
+  state.lastModelsNeedsRefresh = false;
   globalThis.fetch = async (url, options) => {
     if (url === '/api/audio-probe') return response({ entries: {} });
     const result = deferred();
@@ -143,7 +146,8 @@ test('partial provider errors render available choices but do not poison the suc
   assert.match(element('modelOptionsStatus').textContent, /upstream timeout/);
   const retry = loadModelOptions(); await waitRequests(3);
   pending[2].resolve(response(payload('recovered'))); await retry;
-  assert.equal(element('lmModel').value, 'recovered-response');
+  assert.equal(element('lmModel').value, 'initial-response', 'discovery retains an existing selection');
+  assert.deepEqual(state.lastModelsPayload, payload('recovered'));
 });
 
 test('current agent discovery preserves a model selected while the request was pending', async () => {
@@ -228,4 +232,128 @@ test('Add Directory requests an atomic append instead of replacing all configure
   pending[3].resolve(response(payload('current'))); await adding;
   assert.equal(element('localModelRootsList').children.length, 2);
   assert.match(element('localModelsStatus').textContent, /Added \/second/);
+});
+
+test('forty thousand old-server models cannot expand options/cache or offer invalid IDs', async () => {
+  const ids = Array.from({ length: 40000 }, (_, index) => `model-${index}`);
+  element('lmModel').value = ids.at(-1);
+  state.capabilityFilterOverride = true;
+  const loading = loadModelOptions(true); await waitRequests(1);
+  pending[0].resolve(response({ llm_models: [...ids, 'x'.repeat(513), '\ud800'], stt_llm_models: ids,
+    llm_default: ids.at(-1), unused: 'discard me', labels: { unrelated: 'unrelated' } }));
+  await loading;
+  assert.equal(element('lmModel').options.length, 512);
+  assert.equal(element('sttLlmModel').options.length, 513);
+  assert.equal(element('lmModel').value, ids.at(-1));
+  assert.equal(element('sttLlmModel').value, '', 'explicit STT inheritance remains selected');
+  assert.equal(state.lastModelsPayload.llm_models.includes(ids.at(-1)), true);
+  assert.equal(state.lastModelsPayload.llm_models.some(id => id.length > 512), false);
+  assert.equal('unused' in state.lastModelsPayload, false);
+  assert.ok(JSON.stringify(state.lastModelsPayload).length < 100000);
+  assert.match(element('modelOptionsStatus').textContent, /limited.*Invalid model IDs/i);
+  assert.equal(pending.length, 1, 'discovery never saves rejected or replacement model IDs');
+});
+
+test('missing response/STT selections survive local fallback as annotated unlisted options', async () => {
+  element('lmModel').value = 'saved-response'; element('sttLlmModel').value = 'saved-audio';
+  const loading = loadModelOptions(true); await waitRequests(1);
+  pending[0].resolve(response({ llm_models: [], stt_llm_models: [], llama_cpp_local_models: ['other.gguf'],
+    stt_llm_models_capabilities: { 'other.gguf': { supports_audio_input: true } } }));
+  await loading;
+  assert.equal(element('lmModel').value, 'saved-response');
+  assert.equal(element('sttLlmModel').value, 'saved-audio');
+  assert.equal(element('lmModel').options.at(-1).dataset.unlisted, 'true');
+  assert.equal(element('sttLlmModel').options.at(-1).dataset.unlisted, 'true');
+  assert.match(element('modelOptionsStatus').textContent, /Saved selections.*retained/);
+});
+
+for (const mode of ['declared-oversize', 'stream-oversize', 'malformed-json', 'invalid-utf8']) {
+  test(`${mode} model discovery preserves options/cache and remains retryable`, async () => {
+    const first = loadModelOptions(true); await waitRequests(1);
+    pending[0].resolve(response(payload('saved'))); await first;
+    const cached = state.lastModelsPayload;
+    const before = element('lmModel').options.map(option => option.value);
+    let cancelled = false;
+    const source = mode === 'stream-oversize' ? new Uint8Array(MAX_MODEL_RESPONSE_BYTES + 1)
+      : mode === 'invalid-utf8' ? new Uint8Array([0xff]) : new TextEncoder().encode('{broken');
+    const stream = new ReadableStream({ start(controller) { controller.enqueue(source); }, cancel() { cancelled = true; } });
+    const broken = mode.startsWith('malformed') || mode === 'invalid-utf8' ? new Response(source)
+      : new Response(stream, { headers: mode === 'declared-oversize' ? { 'Content-Length': MAX_MODEL_RESPONSE_BYTES + 1 } : {} });
+    const failed = loadModelOptions(true); await waitRequests(2);
+    pending[1].resolve(broken); await failed;
+    assert.equal(state.lastModelsPayload, cached);
+    assert.deepEqual(element('lmModel').options.map(option => option.value), before);
+    assert.match(element('modelOptionsStatus').textContent, /load failed/i);
+    if (mode.includes('oversize')) assert.equal(cancelled, true);
+    const retry = loadModelOptions(); await waitRequests(3);
+    pending[2].resolve(response(payload('retried'))); await retry;
+    assert.deepEqual(state.lastModelsPayload, payload('retried'));
+    assert.equal(element('lmModel').value, 'saved-response');
+  });
+}
+
+test('agent old-server discovery has the same ID/option bounds and preserves its saved selection', async () => {
+  element('agentModel').value = 'not-listed';
+  const loading = loadAgentModelOptions(); await waitRequests(1);
+  pending[0].resolve(response({ ok: true, models: ['x'.repeat(513), '\ud800', ...Array.from({length: 40000}, (_, index) => `agent-${index}`)] }));
+  await loading;
+  assert.equal(element('agentModel').value, 'not-listed');
+  assert.equal(element('agentModel').options.length, 514, '512 valid choices, inherit, saved');
+  assert.equal(element('agentModel').options.at(-1).dataset.unlisted, 'true');
+  assert.match(element('modelOptionsStatus').textContent, /limited.*Invalid model IDs/i);
+  assert.equal(pending.length, 1);
+});
+
+for (const [name, metadata] of [
+  ['capability map string', { llm_models_capabilities: 'bad' }],
+  ['capability map array', { llm_models_capabilities: [] }],
+  ['capability map null', { llm_models_capabilities: null }],
+  ...['bad', [], true, null].map(value => ['capability value ' + JSON.stringify(value), { llm_models_capabilities: { other: value } }]),
+  ...['bad', [], true, null].map(value => ['status value ' + JSON.stringify(value), { llm_models_status: { other: value } }]),
+  ['status usable string', { llm_models_status: { other: { usable: 'true' } } }],
+  ['status non-string reasons', { llm_models_status: { other: { reasons: [3] } } }],
+  ['invalid label value', { labels: { other: [] } }],
+]) {
+  test(`${name} is rejected before replacing the last good picker/cache and stays retryable`, async () => {
+    const good = loadModelOptions(true); await waitRequests(1);
+    pending[0].resolve(response(payload('saved'))); await good;
+    const cached = state.lastModelsPayload;
+    const options = element('lmModel').options.map(option => option.value);
+    const failed = loadModelOptions(true); await waitRequests(2);
+    pending[1].resolve(response({ llm_models: ['other'], stt_llm_models: [], ...metadata })); await failed;
+    assert.equal(state.lastModelsPayload, cached);
+    assert.deepEqual(element('lmModel').options.map(option => option.value), options);
+    assert.equal(element('lmModel').value, 'saved-response');
+    assert.match(element('modelOptionsStatus').textContent, /load failed.*Invalid model/i);
+    const retry = loadModelOptions(); await waitRequests(3);
+    pending[2].resolve(response(payload('retried'))); await retry;
+    assert.deepEqual(state.lastModelsPayload, payload('retried'));
+    assert.equal(element('lmModel').value, 'saved-response');
+  });
+}
+
+test('an incomplete metadata budget is visible without claiming additional model IDs were omitted', async () => {
+  const loading = loadModelOptions(true); await waitRequests(1);
+  pending[0].resolve(response({ ...payload('estimated'), catalog_info: { metadata: {
+    max_entries: 10000, visited_entries: 10000, directories_scanned: 1, truncated: true, incomplete: true,
+  } } })); await loading;
+  assert.match(element('modelOptionsStatus').textContent, /mmproj capability estimates are incomplete/);
+  assert.doesNotMatch(element('modelOptionsStatus').textContent, /additional models omitted/);
+  assert.equal(state.lastModelsPayload.catalog_info.metadata.incomplete, true);
+});
+
+test('a retained saved STT choice keeps its known no-audio and red unusable warnings', async () => {
+  element('sttLlmModel').value = 'saved-audio';
+  const loading = loadModelOptions(true); await waitRequests(1);
+  pending[0].resolve(response({ llm_models: ['response'], stt_llm_models: ['saved-audio'],
+    stt_llm_models_capabilities: { 'saved-audio': { supports_audio_input: false } },
+    stt_llm_models_status: { 'saved-audio': { usable: false, summary: 'no audio input support', reasons: ['no audio input support'] } },
+  })); await loading;
+  const saved = element('sttLlmModel').options.at(-1);
+  assert.equal(element('sttLlmModel').value, 'saved-audio');
+  assert.equal(saved.dataset.unlisted, 'true');
+  assert.equal(saved.dataset.audioCapable, 'false');
+  assert.equal(saved.dataset.unusable, 'true');
+  assert.match(saved.textContent, /no audio.*red: no audio input support.*saved; not listed/);
+  assert.match(saved.title, /no audio input support.*retained/);
 });

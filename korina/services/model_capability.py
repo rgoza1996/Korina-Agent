@@ -19,6 +19,7 @@ the `?All models` dropdown toggle in the multimodal STT UI.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from typing import Any
 
 from korina.util.presets import (
@@ -39,13 +40,15 @@ _NON_MULTIMODAL_HINTS = ("nomic-embed", "orpheus-", "embed-text", "qwen3-vl")
 _HARD_ALLOWLIST = ("gemma-4-e2b", "gpt-4o-audio", "ultravox", "qwen2-audio")
 
 
-def _has_mmproj(model_id: str) -> bool:
+def _has_mmproj(model_id: str, lookup: Callable[[str], bool] | None = None) -> bool:
     """True iff find_mmproj_for_model() finds a matching mmproj file.
 
     Imported lazily to avoid a top-level circular import (model_catalog
     imports util.paths which is fine, but keeping the import local makes
     the dependency direction obvious).
     """
+    if lookup is not None:
+        return lookup(model_id)
     try:
         from korina.services.model_catalog import find_mmproj_for_model
         return bool(find_mmproj_for_model(model_id))
@@ -53,7 +56,7 @@ def _has_mmproj(model_id: str) -> bool:
         return False
 
 
-def _heuristic_capability(model_id: str) -> dict[str, Any]:
+def _heuristic_capability(model_id: str, mmproj_lookup: Callable[[str], bool] | None = None) -> dict[str, Any]:
     """Compute capability from name and filesystem signals.
 
     The result is a best-effort filter, not a truth claim. Defaults to
@@ -71,13 +74,13 @@ def _heuristic_capability(model_id: str) -> dict[str, Any]:
             return {
                 "supports_audio_input": False,
                 "source": "local_gguf",
-                "has_mmproj": _has_mmproj(model_id),
+                "has_mmproj": _has_mmproj(model_id, mmproj_lookup),
                 "approx_vram_gb": None,
                 "_inference": "blacklist",
             }
 
     # Positive signal 1: model has a real mmproj file on disk.
-    if model_id.endswith(".gguf") and _has_mmproj(model_id):
+    if model_id.endswith(".gguf") and _has_mmproj(model_id, mmproj_lookup):
         return {
             "supports_audio_input": True,
             "source": "local_gguf",
@@ -125,6 +128,7 @@ def get_model_capability(
     model_id: str,
     *,
     allowlist: tuple[str, ...] | list[str] | None = None,
+    mmproj_lookup: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """Return capability metadata for a single model id.
 
@@ -152,4 +156,4 @@ def get_model_capability(
         explicit["_inference"] = "registry"
         return explicit
 
-    return _heuristic_capability(model_id)
+    return _heuristic_capability(model_id, mmproj_lookup)

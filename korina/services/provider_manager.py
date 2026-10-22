@@ -672,7 +672,9 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
         if not mid:
             return (False, "lmstudio requires a model id (catalog id)")
         try:
-            catalog = discover_lmstudio_catalog_models()
+            # Discovery is a bounded display catalog. Preserve a legitimate
+            # explicit selection even when it sorts beyond the displayed IDs.
+            catalog = discover_lmstudio_catalog_models(pinned=[mid])
         except Exception:
             catalog = []
         if mid in catalog:

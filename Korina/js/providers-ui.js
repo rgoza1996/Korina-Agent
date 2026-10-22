@@ -3,6 +3,8 @@
 import { state } from "./state.js";
 import { $ } from "./dom.js";
 import { prettyModelLabel } from "./labels.js";
+import { readResponseBlob, responseError } from './response-body.js';
+import { boundedModelIds, boundedModelPayload, catalogNotice, normalizeModelId, MAX_MODEL_RESPONSE_BYTES } from './model-catalog.js';
 import {
   llmBaseUrl,
   effectiveSttLlmProvider,
@@ -100,21 +102,58 @@ export async function setBaseUrlEditability(){
   await loadCapabilities();
   const llmId = $("llmProvider")?.value || "";
   const llmCaps = getResponseLlmProviderCaps(llmId);
-  const llmEditable = llmCaps ? !!llmCaps.editable_base_url : (llmId === "openai-compatible");
+  const llmEditable = llmCaps?.editable_base_url === true;
   if($("llmBaseUrl")) $("llmBaseUrl").disabled = !llmEditable;
   const sttId = String($("sttLlmProvider")?.value || "").trim();
   const sttCaps = getResponseLlmProviderCaps(sttId);
-  const sttEditable = sttCaps ? !!sttCaps.editable_base_url : (sttId === "openai-compatible");
+  const sttEditable = sttCaps?.editable_base_url === true;
   if($("sttLlmBaseUrl")) $("sttLlmBaseUrl").disabled = !sttEditable;
   const agentId = String($("agentProvider")?.value || "").trim();
   const agentCaps = getAgentProviderCaps(agentId);
-  const agentEditable = agentCaps ? !!agentCaps.editable_base_url : (agentId === "openai-compatible" || agentId === "anthropic");
+  const agentEditable = agentCaps?.editable_base_url === true;
   if($("agentBaseUrl")) $("agentBaseUrl").disabled = !agentEditable;
 }
 
 let modelsRequest = 0;
 let agentModelsRequest = 0;
 let modelStatusRequest = 0;
+let modelsController = null;
+let agentModelsController = null;
+
+async function discoveryJson(response, signal, isCurrent) {
+  if (!response.ok) throw await responseError(response, { signal, isCurrent });
+  const blob = await readResponseBlob(response, { maxBytes: MAX_MODEL_RESPONSE_BYTES, signal, isCurrent });
+  const bytes = await blob.arrayBuffer();
+  signal.throwIfAborted();
+  if (!isCurrent()) throw new DOMException('Discovery is no longer current.', 'AbortError');
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+}
+
+function keepModelSelection(select, current, fallback = '', { statuses, capabilities } = {}) {
+  const selected = normalizeModelId(current) || normalizeModelId(fallback) || '';
+  let unlisted = false;
+  if (selected && !Array.from(select.options).some(option => option.value === selected)) {
+    const option = document.createElement('option');
+    option.value = selected;
+    applyModelOptionStatus(option, prettyModelLabel(selected), modelStatus(statuses, selected), capabilities?.[selected]);
+    option.textContent += ' (saved; not listed)';
+    option.title = (option.title ? option.title + ' • ' : '') + 'Discovery did not list this saved selection. It has been retained.';
+    option.dataset.unlisted = 'true';
+    select.appendChild(option);
+    unlisted = true;
+  }
+  select.value = selected;
+  return unlisted;
+}
+
+function localModelPool(payload) {
+  const source = [
+    ...(payload.llama_cpp_local_models || []).map(id => ({ id, group: 'llama.cpp (local GGUF)' })),
+    ...(payload.lmstudio_catalog_models || []).map(id => ({ id, group: 'lmstudio (catalog)' })),
+  ];
+  const entries = new Map(source.map(entry => [entry.id, entry]));
+  return boundedModelIds(source.map(entry => entry.id), [lmModel(), sttLlmModel()]).ids.map(id => entries.get(id));
+}
 
 export function modelDiscoveryQuery(){
   return new URLSearchParams({
@@ -138,6 +177,9 @@ function agentDiscoverySettings(){
 }
 
 export async function loadModelOptions(force=false){
+  modelsController?.abort();
+  const controller = new AbortController();
+  modelsController = controller;
   const request = ++modelsRequest;
   const statusRequest = ++modelStatusRequest;
   const query = modelDiscoveryQuery();
@@ -159,14 +201,11 @@ export async function loadModelOptions(force=false){
     }
     if(!isCurrent()) return;
     let j=state.lastModelsPayload;
-    if(force || !j || query!==state.lastModelsQuery){
-      const r=await fetch(`/api/models?${query}`);
-      if(!r.ok) throw new Error(`HTTP ${r.status} from /api/models`);
-      j=await r.json();
+    if(force || state.lastModelsNeedsRefresh || !j || query!==state.lastModelsQuery){
+      const r=await fetch(`/api/models?${query}`, { signal: controller.signal });
+      const payload = await discoveryJson(r, controller.signal, isCurrent);
       if(!isCurrent()) return;
-      if(!j || !Array.isArray(j.llm_models) || !Array.isArray(j.stt_llm_models)){
-        throw new Error('invalid model list response');
-      }
+      j = boundedModelPayload(payload, { response: lmModel(), stt: sttLlmModel() });
       // Partial discovery still renders local/fallback choices and its error,
       // but must retry the unavailable provider on the next picker request.
       if(j.llm_error || j.stt_llm_error) clearFailedCache();
@@ -174,6 +213,7 @@ export async function loadModelOptions(force=false){
         state.lastModelsQuery=query;
         state.lastModelsPayload=j;
         state.lastModelsLoadedAt=Date.now();
+        state.lastModelsNeedsRefresh=false;
       }
     }
     if(!isCurrent()) return;
@@ -188,23 +228,18 @@ export async function loadModelOptions(force=false){
       $("sttModel").value=j.whisper_models.includes(current)?current:(j.whisper_models.includes("base.en")?"base.en":j.whisper_models[0]);
     }
 
+    const currentResponse = lmModel();
+    $("lmModel").innerHTML="";
     if(Array.isArray(j.llm_models) && j.llm_models.length){
-      const current=lmModel(); $("lmModel").innerHTML="";
       for(const m of j.llm_models){
         const o=document.createElement("option");
         o.value=m;
         applyModelOptionStatus(o, (j.labels&&j.labels[m])||prettyModelLabel(m), modelStatus(llmStatuses, m), (j.llm_models_capabilities||{})[m]);
         $("lmModel").appendChild(o);
       }
-      $("lmModel").value=j.llm_models.includes(current)?current:(j.llm_default||j.llm_models[0]);
     } else if($("lmModel")){
-      const localPool = [
-        ...((j.llama_cpp_local_models || []).map(id => ({ id, group: 'llama.cpp (local GGUF)' }))),
-        ...((j.lmstudio_catalog_models || []).map(id => ({ id, group: 'lmstudio (catalog)' }))),
-      ];
+      const localPool = localModelPool(j);
       if(localPool.length){
-        const current=lmModel();
-        $("lmModel").innerHTML="";
         let lastGroup = null;
         for(const entry of localPool){
           const o=document.createElement("option");
@@ -215,11 +250,10 @@ export async function loadModelOptions(force=false){
           if(entry.group !== lastGroup){ lastGroup = entry.group; }
           $("lmModel").appendChild(o);
         }
-        const saved = current || j.llm_default;
-        const match = saved && localPool.some(e => e.id === saved);
-        $("lmModel").value = match ? saved : localPool[0].id;
       }
     }
+    let unlistedSelection = keepModelSelection($("lmModel"), currentResponse, j.llm_default,
+      { statuses: llmStatuses, capabilities: j.llm_models_capabilities });
 
     let sttFilterInfo = "";
     if($("sttLlmModel")){
@@ -249,10 +283,7 @@ export async function loadModelOptions(force=false){
       }
       const allSttIds = Array.from($("sttLlmModel").options).map(o => o.value).filter(Boolean);
       if(allSttIds.length === 0){
-        const localPool = [
-          ...((j.llama_cpp_local_models || []).map(id => ({ id, group: 'llama.cpp (local GGUF)' }))),
-          ...((j.lmstudio_catalog_models || []).map(id => ({ id, group: 'lmstudio (catalog)' }))),
-        ];
+        const localPool = localModelPool(j);
         if(localPool.length){
           // Apply the same capability filter to the local-pool fallback.
           const filteredPool = filterModelsByCapability(
@@ -270,13 +301,10 @@ export async function loadModelOptions(force=false){
             if(entry.group !== lastGroup){ lastGroup = entry.group; }
             $("sttLlmModel").appendChild(o);
           }
-          const saved = current || j.stt_llm_default;
-          const match = saved && filteredPool.some(e => e.id === saved);
-          $("sttLlmModel").value = match ? saved : (filteredPool[0]?.id || "");
         }
-      } else {
-        $("sttLlmModel").value=[...$("sttLlmModel").options].some(o=>o.value===current)?current:"";
       }
+      unlistedSelection = keepModelSelection($("sttLlmModel"), current, '',
+        { statuses: sttStatuses, capabilities: j.stt_llm_models_capabilities }) || unlistedSelection;
       const renderedSttIds = Array.from($("sttLlmModel").options).map(o => o.value).filter(Boolean);
       const sttRed = renderedSttIds.filter(id => modelStatus(sttStatuses, id)?.usable === false).length;
       sttFilterInfo = sttRed > 0 ? ` · ${sttRed} shown in red as likely unusable` : "";
@@ -306,43 +334,45 @@ export async function loadModelOptions(force=false){
     const previousStatus = $("modelOptionsStatus").textContent;
     syncConverseSettingsUI();
     $("modelOptionsStatus").textContent = statusRequest === modelStatusRequest
-      ? `Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo}`.trim()
+      ? `Loaded ${(j.llm_models||[]).length} response models from ${j.llm_base_url||llmBaseUrl()} and ${(j.stt_llm_models||[]).length} multimodal STT models from ${j.stt_llm_base_url||effectiveSttLlmBaseUrl()}. ${j.llm_error?("LLM error: "+j.llm_error+" "):""}${j.stt_llm_error?("STT multimodal error: "+j.stt_llm_error):""}${sttFilterInfo} ${catalogNotice(j.catalog_info)} ${unlistedSelection ? 'Saved selections not listed by discovery were retained.' : ''}`.trim()
       : previousStatus;
     return j;
   }catch(e){
     if(!isCurrent()) return;
-    clearFailedCache();
+    state.lastModelsNeedsRefresh=true;
     if(statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent="Model list load failed: "+e.message;
+  } finally {
+    if (modelsController === controller) modelsController = null;
   }
 }
 
 export async function loadAgentModelOptions(){
+  agentModelsController?.abort();
+  const controller = new AbortController();
+  agentModelsController = controller;
   const request = ++agentModelsRequest;
   const statusRequest = ++modelStatusRequest;
   const query = JSON.stringify(agentDiscoverySettings());
   const isCurrent = () => request === agentModelsRequest && query === JSON.stringify(agentDiscoverySettings());
   try{
     const r=await fetch("/api/agent/models", {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: query,
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: query, signal: controller.signal,
     });
-    if(!r.ok) throw new Error(`HTTP ${r.status} from /api/agent/models`);
-    const j=await r.json();
+    const j=await discoveryJson(r, controller.signal, isCurrent);
     if(!isCurrent()) return;
     if(!j || j.ok === false || !Array.isArray(j.models)) throw new Error(j?.error || 'invalid agent model list response');
     const current=$("agentModel")?.value||"";
+    const bounded = boundedModelIds(j.models, [current]);
     if($("agentModel")){
       $("agentModel").innerHTML="";
       const blank=document.createElement("option"); blank.value=""; blank.textContent="Use Korina Converse model"; $("agentModel").appendChild(blank);
-      for(const m of (j.models||[])){ const o=document.createElement("option"); o.value=m; o.textContent=prettyModelLabel(m); $("agentModel").appendChild(o); }
-      if (current && ![...$("agentModel").options].some(option => option.value === current)) {
-        const saved = document.createElement('option');
-        saved.value = current; saved.textContent = prettyModelLabel(current) + ' (saved)';
-        $("agentModel").appendChild(saved);
-      }
-      $("agentModel").value = current;
+      for(const m of bounded.ids){ const o=document.createElement("option"); o.value=m; o.textContent=prettyModelLabel(m); $("agentModel").appendChild(o); }
+      keepModelSelection($("agentModel"), current);
     }
-    if(statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent=`Loaded ${j.models.length} Korina Agent models from ${j.provider}.`;
+    if(statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent=`Loaded ${bounded.ids.length} Korina Agent models from ${String(j.provider || '').slice(0,64)}. ${catalogNotice({ server: j.catalog_info, browser: bounded.info })}`.trim();
   }catch(e){
     if(isCurrent() && statusRequest === modelStatusRequest) $("modelOptionsStatus").textContent="Agent model list load failed: "+e.message;
+  } finally {
+    if (agentModelsController === controller) agentModelsController = null;
   }
 }

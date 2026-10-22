@@ -349,8 +349,8 @@ def test_invalid_legacy_roots_report_status_without_breaking_models_or_mutating_
     roots = client.get('/api/models/roots')
     assert roots.status_code == 200
     assert all(root['reason'].startswith('invalid_path:') for root in roots.json()['roots'])
-    monkeypatch.setattr(models, 'llm_models_for', lambda *args: [])
-    monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda: [])
+    monkeypatch.setattr(models, 'llm_models_for', lambda *args, **kwargs: [])
+    monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda **kwargs: [])
     assert client.get('/api/models').status_code == 200
     assert config_path.read_bytes() == before
     removed = client.delete('/api/models/roots', params={'path': 'x' * 5000})

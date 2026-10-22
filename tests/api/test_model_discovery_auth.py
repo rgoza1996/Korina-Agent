@@ -38,8 +38,8 @@ def test_discovery_auth_is_scoped_to_its_endpoint(monkeypatch, client, config_mo
 
     mock_provider_http(request_handler)
     monkeypatch.setattr(models, 'llm_models_for', model_catalog.llm_models_for)
-    monkeypatch.setattr(models, 'discover_local_gguf_models', lambda: [])
-    monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda: [])
+    monkeypatch.setattr(models, 'discover_local_gguf_models', lambda **kwargs: [])
+    monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda **kwargs: [])
     response = client.get('/api/models', params=params)
     assert response.status_code == 200
     assert len(calls) == 2
@@ -56,8 +56,8 @@ def test_default_stt_discovery_still_inherits_saved_response_auth(monkeypatch, c
         'stt_llm_base_url': '', 'stt_llm_api_key_env': '',
     })
     calls = []
-    monkeypatch.setattr(models, 'llm_models_for', lambda base, env: calls.append((base, env)) or [])
-    monkeypatch.setattr(models, 'discover_local_gguf_models', lambda: [])
-    monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda: [])
+    monkeypatch.setattr(models, 'llm_models_for', lambda base, env, **kwargs: calls.append((base, env)) or [])
+    monkeypatch.setattr(models, 'discover_local_gguf_models', lambda **kwargs: [])
+    monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda **kwargs: [])
     assert client.get('/api/models').status_code == 200
     assert calls == [('https://saved.test/v1', 'RESPONSE_KEY')] * 2

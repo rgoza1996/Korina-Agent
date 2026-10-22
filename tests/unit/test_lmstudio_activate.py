@@ -63,7 +63,7 @@ def fake_lms(tmp_path, monkeypatch):
 
     fake_catalog = ['qwen/qwen3.5-2b', 'gemma/gemma-4-e4b-it']
     from korina.services import model_catalog as mc_mod
-    monkeypatch.setattr(mc_mod, 'discover_lmstudio_catalog_models', lambda: list(fake_catalog))
+    monkeypatch.setattr(mc_mod, 'discover_lmstudio_catalog_models', lambda **kwargs: list(fake_catalog))
 
     yield {'lms': fake, 'log': log_path, 'port': port, 'pm': pm_mod, 'paths': paths_mod, 'catalog': fake_catalog}
 
