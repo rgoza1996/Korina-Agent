@@ -4,6 +4,8 @@ Korina is a local voice workspace: speak in the browser, transcribe with Whisper
 
 **Hackathon work:** [`codex/hackathon-refactor`](https://github.com/rgoza1996/Korina-Agent/tree/codex/hackathon-refactor), based on `alpha`. Track verification in [#23](https://github.com/rgoza1996/Korina-Agent/issues/23). `master` remains the v0.0.1 release snapshot. See the [demo guide](docs/hackathon.md) and [current architecture](docs/wiki/Architecture.md).
 
+**Documentation:** [Public Pages site](https://rgoza1996.github.io/Korina-Agent/), published from `gh-pages`, describes the refactor preview and its verification evidence.
+
 ## Run from a checkout
 
 Use Python 3.10+ and install the system `ffmpeg` executable. Node 22 is needed only for frontend development checks. The UI uses native ES modules; it has no build step.
