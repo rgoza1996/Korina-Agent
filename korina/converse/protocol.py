@@ -24,10 +24,10 @@ class ConverseRequest:
     Attributes:
         transcript: ordered list of {role, text} turns from the user.
             The Converse layer flattens voice session events into this list.
-        delivery_mode: "prompt" (treat as a new turn) or "inject" (prepend
-            without resetting the assistant's state). Default "prompt".
-        reason: short human-readable reason for the request (used by the
-            KorinaAdapter to log hidden-mode injections). Default "".
+        delivery_mode: adapter-defined compatibility field, default "prompt".
+            The built-in Korina channel ignores it and submits a normal turn.
+        reason: adapter-defined diagnostic reason, default "". The built-in
+            Korina channel does not forward this field.
         metadata: free-form adapter-defined metadata (e.g. session_id,
             feature_flag overrides).
     """

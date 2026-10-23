@@ -137,7 +137,7 @@ router.add_api_route('/api/agent/models', agent_candidate_models, methods=['POST
 
 @router.post('/api/agent/state-report')
 def agent_state_report(req: AgentStateRequest):
-    """Service-function call; not state-coupled. No gateway change yet."""
+    """Generate a stateless built-in report independently of the registered adapter."""
     if str(load_config().get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'state_report': '', 'disabled': True}
     try:

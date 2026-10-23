@@ -105,16 +105,17 @@
 
       <div id="settingsChannel" class="grid settingsPanel">
         <details class="settingsGroup" open>
-          <summary>Converse Channel</summary>
+          <summary>Python Converse channel</summary>
           <div class="settingsGroupBody">
-            <p class="sectionLead">Select the channel used by Python integrations. The default <code>korina</code> connects to the in-process Korina Agent. Selection is saved across restarts. Browser voice replies use the response provider in Models &amp; Providers.</p>
-            <div><label for="channelSelect">Active channel</label><select id="channelSelect"></select></div>
+            <p class="sectionLead">Select the channel used by Python integrations. The default <code>korina</code> connects to the in-process Korina Agent. Selection is saved across restarts. This control does not reroute browser chat, transcription, agent deliveries or speech output. Browser replies use the response provider in Models &amp; Providers.</p>
+            <div><label for="channelSelect">Active Python channel</label><select id="channelSelect"></select></div>
             <p class="small mono" id="channelSelectHint">Loading registered channels&hellip;</p>
           </div>
         </details>
       </div>
       <div id="settingsAgent" class="grid settingsPanel">
         <div class="secretNote"><label>Korina Agent</label><div class="toggleLine"><input id="agentEnabled" type="checkbox" checked><span>Enable hidden state reports and injection</span></div></div>
+        <p class="small secretNote">One agent is shared by this server. Other tabs share its reports, permission requests and resets.</p>
         <div><label for="agentProvider">Agent endpoint type</label><select id="agentProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="anthropic">Anthropic-compatible</option><option value="meta">Meta Model API</option></select></div>
         <div><label for="agentBaseUrl">Agent API base URL</label><input id="agentBaseUrl" type="text" value="http://127.0.0.1:1234/v1" placeholder="OpenAI: .../v1 · Anthropic: .../v1"></div>
         <div><label for="agentApiKey">Agent API key</label><input id="agentApiKey" type="password" autocomplete="off" placeholder="Optional; saved locally in config.json" title="Blank inherits response credentials only for the same API base URL; the explicit Meta profile otherwise uses server environment MODEL_API_KEY."></div>
