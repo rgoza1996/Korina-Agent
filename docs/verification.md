@@ -2,6 +2,14 @@
 
 Work is tracked in [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24) and [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23). This page records observed local and hosted software evidence; it does not claim event eligibility, physical microphone behavior or GPU performance.
 
+## Acceptance audit follow-up
+
+At `e4f66f3`, one added regression holds the actual built-in background transcript worker and requires both status and event polling to finish before its report is released. The focused API file passed **8/8** on Python 3.12 and **8/8** on minimum-dependency Python 3.10, serially; Ruff and diff checks passed. This is a test-only addition, separate from the archived full phases below. The July architecture verdict is now explicitly marked historical.
+
+Hosted `393f08e` passed **all nine jobs with zero annotations**, observed through Code Review at **17:07:03 UTC**. [Exact proof](https://rgoza1996.github.io/Korina-Agent/verification/github-393f08e.json). Newer-head checks must be inspected separately in [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24); these prior successes are not a result for the newer head.
+
+The issue acceptance audit distinguishes implemented behavior from broader roadmap work: external adapters, a unified positive/transient probe-metadata history, browser-cache freshness, per-client isolation and tool execution remain separate. Readiness conservatively checks the selected STT backend; per-turn Whisper fallback does not make it a distinct aggregate degraded-readiness mode. Physical presentation hardware remains unverified.
+
 ## Current archived verification
 
 Work resumed after the earlier 15% usage stop under the updated boundary: stop at **10% weekly usage remaining or when the weekly allowance resets to 100%**, whichever arrives first.
@@ -330,6 +338,6 @@ Transport follow-up tests hold connected agent and ACK HTTP requests across rese
 - Physical microphone/headset capture, speakers, echo cancellation, and human interruptions.
 - The actual presentation headset and longer conversations with the selected response/agent models, including useful output and first/warm timing on that hardware.
 - GPU execution and remote HTTPS/CORS deployment if used at the event.
-- Final Official Rules/submission artifacts, actual kickoff SHA, and successful hosted CI after account billing is resolved.
+- Final Official Rules/submission artifacts, actual kickoff SHA, and final review/merge.
 
 Use the [rehearsal checklist](hackathon.md) and record further evidence in issue #23.
