@@ -67,7 +67,6 @@ def test_browser_disconnect_closes_provider_and_same_pool_worker_recovers(monkey
     provider_thread.start()
     config = {'llm_base_url': f'http://127.0.0.1:{provider.server_address[1]}/v1', 'lm_model': 'fixture-model'}
     monkeypatch.setattr(response_llm, 'load_config', lambda: config)
-    monkeypatch.setattr(chat, 'load_config', lambda: config)
     request_json = response_llm.request_json
     workers = []
 

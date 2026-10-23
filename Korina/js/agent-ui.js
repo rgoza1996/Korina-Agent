@@ -19,6 +19,45 @@ let activeInterruptSpeech = null;
 let permissionAnswerInFlight = null;
 const ownedRequests = new Set();
 const chatRequests = new Set();
+let responseUsageOwner = null;
+
+function renderResponseUsage(message, observation = null) {
+  const write = (id, value) => { const element = $(id); if (element) element.textContent = value; };
+  write('responseUsageStatus', message);
+  const settings = observation?.settings;
+  write('responseUsageSettings', settings
+    ? `Provider: ${settings.provider} · Model: ${settings.model} · Output budget: ${settings.max_tokens} · ${settings.provider === 'meta'
+      ? `Reasoning effort: ${settings.reasoning_effort || 'model default'}` : `Reasoning: ${settings.reasoning}`}`
+    : 'Request settings unavailable.');
+  for (const [field, id] of Object.entries({
+    prompt_tokens: 'responsePromptTokens', completion_tokens: 'responseCompletionTokens',
+    reasoning_tokens: 'responseReasoningTokens', cached_tokens: 'responseCachedTokens',
+  })) write(id, observation?.usage?.[field] == null ? 'Unavailable' : String(observation.usage[field]));
+}
+
+function responseUsageObservation(result) {
+  const record = value => value && typeof value === 'object' && !Array.isArray(value);
+  const bounded = (value, limit) => typeof value === 'string' && value.length <= limit * 2 && [...value].length <= limit;
+  const settings = result?.request_settings;
+  if (!record(settings) || !bounded(settings.provider, 64) || !settings.provider.trim()
+      || !bounded(settings.model, 512) || !settings.model.trim()
+      || !Number.isSafeInteger(settings.max_tokens) || settings.max_tokens < 1 || settings.max_tokens > 8192) return null;
+  if (settings.provider === 'meta') {
+    if (settings.reasoning !== null || !['', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(settings.reasoning_effort)) return null;
+  } else if (settings.reasoning_effort !== null || !bounded(settings.reasoning, 64)) return null;
+  let usage = result.usage;
+  const fields = ['prompt_tokens', 'completion_tokens', 'reasoning_tokens', 'cached_tokens'];
+  if (!record(usage) || fields.some(field => usage[field] !== null && (!Number.isSafeInteger(usage[field]) || usage[field] < 0))
+      || (usage.cached_tokens !== null && usage.prompt_tokens !== null && usage.cached_tokens > usage.prompt_tokens)
+      || (usage.reasoning_tokens !== null && usage.completion_tokens !== null && usage.reasoning_tokens > usage.completion_tokens)) usage = null;
+  else usage = Object.fromEntries(fields.map(field => [field, usage[field]]));
+  return { settings, usage };
+}
+
+export function clearResponseUsage() {
+  responseUsageOwner = null;
+  renderResponseUsage('No response yet.');
+}
 
 // Clear retires all existing conversation requests; later requests own new controllers.
 export function cancelChatRequests() {
@@ -421,6 +460,9 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort, { once: true });
   chatRequests.add(controller);
+  const usageOwner = { pending: true };
+  responseUsageOwner = usageOwner;
+  renderResponseUsage('Waiting for response…');
   try {
     const r = await fetch('/api/chat', {
       method: 'POST',
@@ -448,13 +490,27 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
     if (j.reply.trim() && includedReport && state.pendingAgentReportVersion === reportVersion && state.pendingAgentStateReport === report) {
       state.pendingAgentStateReport = '';
     }
+    if (responseUsageOwner === usageOwner) {
+      const observation = responseUsageObservation(j);
+      const reported = observation?.usage && Object.values(observation.usage).some(value => value !== null);
+      renderResponseUsage(reported ? 'Provider-reported usage received.' : 'Usage unavailable for this response.', observation);
+      usageOwner.pending = false;
+    }
     return j.reply;
   } catch (error) {
     if (!current()) return null;
+    if (responseUsageOwner === usageOwner) {
+      renderResponseUsage('Response failed; usage unavailable.');
+      usageOwner.pending = false;
+    }
     throw error;
   } finally {
     signal?.removeEventListener('abort', abort);
     chatRequests.delete(controller);
+    if (responseUsageOwner === usageOwner && usageOwner.pending && session === state.agentSession) {
+      renderResponseUsage('Response cancelled; usage unavailable.');
+      usageOwner.pending = false;
+    }
   }
 }
 

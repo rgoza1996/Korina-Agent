@@ -29,6 +29,67 @@ class TextCompletion:
     finish_reason: str = ''
 
 
+MAX_USAGE_TOKENS = 2**53 - 1  # Preserve exact integer values in the browser.
+
+
+@dataclass(frozen=True)
+class CompletionUsage:
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    reasoning_tokens: int | None = None
+    cached_tokens: int | None = None
+
+
+def openai_completion_usage(body: object) -> CompletionUsage | None:
+    """Read optional observations without making malformed usage a reply error.
+
+    Missing counts remain unavailable. Unknown provider fields are ignored;
+    malformed known fields or contradictory breakdowns discard the observation.
+    These counts are not cumulative usage or a billing estimate.
+    """
+    if not isinstance(body, dict) or body.get('usage') is None:
+        return None
+    usage = body['usage']
+    if not isinstance(usage, dict):
+        return None
+
+    def count(value: object) -> int | None:
+        if value is None:
+            return None
+        if type(value) is not int or not 0 <= value <= MAX_USAGE_TOKENS:
+            raise ValueError('Invalid token count')
+        return value
+
+    def detail(parent: str, key: str) -> int | None:
+        value = usage.get(parent)
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise ValueError('Invalid token details')
+        return count(value.get(key))
+
+    try:
+        parsed = CompletionUsage(
+            prompt_tokens=count(usage.get('prompt_tokens')),
+            completion_tokens=count(usage.get('completion_tokens')),
+            reasoning_tokens=detail('completion_tokens_details', 'reasoning_tokens'),
+            cached_tokens=detail('prompt_tokens_details', 'cached_tokens'),
+        )
+    except ValueError:
+        return None
+    if (parsed.prompt_tokens is not None and parsed.cached_tokens is not None
+            and parsed.cached_tokens > parsed.prompt_tokens):
+        return None
+    if (parsed.completion_tokens is not None and parsed.reasoning_tokens is not None
+            and parsed.reasoning_tokens > parsed.completion_tokens):
+        return None
+    if all(value is None for value in (
+        parsed.prompt_tokens, parsed.completion_tokens, parsed.reasoning_tokens, parsed.cached_tokens,
+    )):
+        return None
+    return parsed
+
+
 def openai_text_completion(body: object) -> TextCompletion:
     """Read the first text choice without embedding provider data in errors.
 

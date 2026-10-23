@@ -1,19 +1,15 @@
-"""POST /api/chat — single-turn chat completion via the configured LLM.
-
-Phase 1.9: inlined from the monolith's _route_chat helper.
-"""
+"""POST /api/chat — single-turn completion and optional provider observations."""
 
 from __future__ import annotations
 
 import time
+from dataclasses import asdict
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
-from korina.config import load_config
 from korina.schemas import ChatRequest
-from korina.services.response_llm import response_llm_chat
-from korina.util.paths import LMSTUDIO_MODEL
+from korina.services.response_llm import ResponseChatResult, response_llm_chat_result
 from korina.runtime.json_http import RequestCancelledError
 from korina.runtime.request_owner import RequestOwner, check_current
 
@@ -26,11 +22,11 @@ async def chat(req: ChatRequest, request: Request):
         raise HTTPException(status_code=400, detail='No message provided')
     started = time.time()
     try:
-        reply = await _owned_chat_reply(req, request)
+        result = await _owned_chat_result(req, request)
         return JSONResponse({
-            'reply': reply,
+            **asdict(result),
             'seconds': time.time() - started,
-            'model': req.model or str(load_config().get('lm_model') or LMSTUDIO_MODEL),
+            'model': result.request_settings.model,
         })
     except RequestCancelledError as exc:
         raise HTTPException(status_code=499, detail='Chat request was cancelled') from exc
@@ -38,7 +34,7 @@ async def chat(req: ChatRequest, request: Request):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def _owned_chat_reply(req: ChatRequest, request: Request) -> str:
+async def _owned_chat_result(req: ChatRequest, request: Request) -> ResponseChatResult:
     """Release connected provider I/O when the browser abandons this reply.
 
     The watcher is an async task; HTTP work keeps using one existing pool
@@ -46,6 +42,6 @@ async def _owned_chat_reply(req: ChatRequest, request: Request) -> str:
     """
     owner = RequestOwner()
     async with owner.watch(request):
-        reply = await run_in_threadpool(response_llm_chat, req, is_current=owner.is_current)
+        result = await run_in_threadpool(response_llm_chat_result, req, is_current=owner.is_current)
         check_current(owner.is_current)
-        return reply
+        return result

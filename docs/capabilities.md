@@ -34,6 +34,14 @@ Meta reasoning may consume this output budget before any visible answer, includi
 
 The built-in Meta/OpenAI-compatible agent reports the same empty-budget condition through its existing error status/events and preserves its previous report. Its **State report max tokens** control is independent; deliberate adjustment does not reset memory or silently retry. Intentional empty reports ending with `stop` remain suppressed normally.
 
+## Response usage observations
+
+Successful `POST /api/chat` replies retain `reply`, `seconds` and `model`, and add `request_settings` plus optional `usage`. The top-level model and settings describe the original outbound request, even if settings change while inference is pending. `request_settings` contains `provider`, `model`, `max_tokens`, `reasoning_effort` and `reasoning`: Meta uses an explicit effort or blank/model default with null local reasoning; other providers preserve their submitted reasoning string with null Meta effort. Credentials and endpoints are not included.
+
+`usage` is null or contains nullable `prompt_tokens`, `completion_tokens`, `reasoning_tokens` and `cached_tokens`. Counts are exact nonnegative integers within JavaScript’s safe range. Missing counts stay null. Malformed known fields or contradictory breakdowns discard the optional observation while preserving a valid reply. Cached input is part of input; reasoning is part of output. Unknown provider fields are not forwarded. The existing direct Python `response_llm_chat()` function still returns only text.
+
+The browser’s **Last response usage** panel accepts observations only for the latest dispatched chat that still belongs to the current session. Clear retires that owner before aborting requests. Stopping pending Live chat cancels its observation; stopping completed audio preserves it. Provider counts stay outside speech, conversation history and agent context. Older backends and invalid optional metadata show unavailable counts without rejecting a valid answer. This is one response’s provider report, without cumulative usage, prices, cache-retention or latency-saving claims; no observation is persisted across reloads.
+
 ## Saving and activation
 
 `POST /api/config` validates and atomically saves settings. It does not activate providers. Independent STT and agent endpoints stay independent; settings saves cannot replace the server-owned audio-probe cache.

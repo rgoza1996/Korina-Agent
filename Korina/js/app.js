@@ -49,7 +49,7 @@ import {
 import { wireLocalModelsUi, loadLocalModelRoots } from "./local-models.js";
 import {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
-  interruptConverse, askAndSpeak, askLM, agentDebug, cancelChatRequests,
+  interruptConverse, askAndSpeak, askLM, agentDebug, cancelChatRequests, clearResponseUsage,
   setAgentEnabledFromUi, isPermissionAnswerPending,
 } from "./agent-ui.js";
 import { openEndpoints, closeEndpoints, populateEndpoints } from "./endpoints.js";
@@ -271,6 +271,7 @@ function stopPlayback() {
 }
 
 async function clearSession() {
+  clearResponseUsage();
   state.agentResetBlocked = true;
   cancelChatRequests();
   const resumeLive = state.live;

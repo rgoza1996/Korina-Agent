@@ -211,6 +211,20 @@
     <audio id="audio" controls></audio>
   </section>
 
+  <section class="card">
+    <details id="responseUsagePanel" open>
+      <summary>Last response usage</summary>
+      <p class="small" id="responseUsageStatus" role="status" aria-live="polite">No response yet.</p>
+      <p class="small mono" id="responseUsageSettings">Request settings unavailable.</p>
+      <div class="grid small">
+        <p>Input tokens: <strong id="responsePromptTokens">Unavailable</strong></p>
+        <p>Output tokens: <strong id="responseCompletionTokens">Unavailable</strong></p>
+        <p>Reasoning tokens: <strong id="responseReasoningTokens">Unavailable</strong></p>
+        <p>Cached input tokens: <strong id="responseCachedTokens">Unavailable</strong></p>
+      </div>
+      <p class="small">Provider-reported observations for the latest request. Missing counts are unavailable; zero is a reported count. Reasoning is part of output, and cached input is part of input.</p>
+    </details>
+  </section>
   <section class="card"><label>Conversation</label><div class="log" id="log"></div></section>
   <section class="card"><label>Korina Agent Debug</label><div class="debugLog" id="agentDebug">Agent prompts, injection deliveries, and outputs will appear here.</div></section>
 </main>

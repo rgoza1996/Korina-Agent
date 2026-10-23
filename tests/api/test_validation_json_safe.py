@@ -52,7 +52,7 @@ def test_invalid_nested_turn_text_is_rejected_before_chat_or_agent_admission(cli
     def forbidden(*args, **kwargs):
         pytest.fail('malformed conversation reached provider or adapter admission')
 
-    monkeypatch.setattr(chat, 'response_llm_chat', forbidden)
+    monkeypatch.setattr(chat, 'response_llm_chat_result', forbidden)
     monkeypatch.setattr(agent, 'agent_gateway', forbidden)
     monkeypatch.setattr(agent, 'generate_agent_state_report', forbidden)
     body = {'message': 'valid current turn', field: [{'role': 'user', 'content': invalid}]}
