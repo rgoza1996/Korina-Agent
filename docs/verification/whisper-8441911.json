@@ -1,0 +1,101 @@
+{
+  "source_sha": "8441911497785e4c2c15322d27a9420b8f33fa8a",
+  "date_utc": "2026-10-23",
+  "boundary": "In-process TestClient, production create_app and FFmpeg/faster-whisper; cached offline model; no external service or provider calls.",
+  "python": "3.12.3",
+  "packages": {
+    "fastapi": "0.159.1",
+    "starlette": "1.9.0",
+    "uvicorn": "0.54.0",
+    "pydantic": "2.14.1",
+    "anyio": "4.15.1",
+    "httpx": "0.28.1",
+    "python-multipart": "0.0.32",
+    "faster-whisper": "1.2.1",
+    "ctranslate2": "4.8.3",
+    "av": "18.1.0",
+    "numpy": "2.5.4",
+    "soundfile": "0.14.0"
+  },
+  "model": {
+    "id": "base.en",
+    "revision": "3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+    "device": "cpu",
+    "compute_type": "int8",
+    "cpu_threads": 4,
+    "beam_size": 1,
+    "offline": true
+  },
+  "input": {
+    "name": "question-source.wav",
+    "sha256": "83a3636c3eeffe1b6e324fd5942a33a4dc927ea7794c7539604990a14b35fce5"
+  },
+  "results": [
+    {
+      "endpoint": "/api/transcribe",
+      "http_status": 200,
+      "text": "What is my project called and when is our practice?",
+      "wall_seconds": 5.6521,
+      "reported_seconds": 5.445696115493774,
+      "duration_seconds": 4.0785625,
+      "samples": 65257,
+      "sample_rate": 16000,
+      "backend": "faster-whisper",
+      "device": "cpu",
+      "compute_type": "int8",
+      "events": [],
+      "same_cached_model": true,
+      "model_leases_after_response": 0
+    },
+    {
+      "endpoint": "/api/transcribe/partial",
+      "http_status": 200,
+      "text": "What is my project called and when is our practice?",
+      "wall_seconds": 4.9649,
+      "reported_seconds": 4.823914289474487,
+      "duration_seconds": 4.0785625,
+      "samples": 65257,
+      "sample_rate": 16000,
+      "backend": "faster-whisper",
+      "device": "cpu",
+      "compute_type": "int8",
+      "events": [],
+      "same_cached_model": true,
+      "model_leases_after_response": 0
+    },
+    {
+      "endpoint": "/api/transcribe/stream",
+      "http_status": 200,
+      "text": "What is my project called and when is our practice?",
+      "wall_seconds": 4.5071,
+      "reported_seconds": 4.500791311264038,
+      "duration_seconds": 4.0785625,
+      "samples": 65257,
+      "sample_rate": 16000,
+      "backend": "faster-whisper",
+      "device": "cpu",
+      "compute_type": "int8",
+      "events": [
+        "status",
+        "status",
+        "segment",
+        "done"
+      ],
+      "same_cached_model": true,
+      "model_leases_after_response": 0
+    }
+  ],
+  "limitations": [
+    "Sequential compatibility smoke, not a concurrency or cancellation test.",
+    "First request may include model initialization; timings are not a latency comparison.",
+    "No browser microphone, playback, physical audio, LLM, TTS, or paid API exercised."
+  ],
+  "source_files_sha256": {
+    "korina/services/whisper_service.py": "7dcc1f6a03920b1c9307e5eb86afdcee9f6ba55dcb163e1017a9d91c36ab0c41",
+    "korina/routes/stt.py": "0eade2c2498b687309683480b2feffcf2807ae273a11d874cfe417cf931aac06",
+    "korina/app_factory.py": "3092b43d8a0cf8ae73699ace45e27195727866a48df377e16c2ef4ca46e3f9f7"
+  },
+  "model_leases_after_shutdown": 0,
+  "cached_models_after_shutdown": 1,
+  "ok": true
+}

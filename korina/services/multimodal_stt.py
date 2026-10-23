@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import base64
-import json
+import math
 import re
 import time
-import urllib.error
-import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 from typing import Optional
 
@@ -18,8 +17,12 @@ from korina.config import (
     config_stt_llm_model,
     config_stt_llm_reasoning,
     load_config,
+    normalize_api_base_url,
 )
 from korina.runtime.http import auth_headers_from_env
+from korina.runtime.json_http import HTTPStatusError, request_json
+from korina.runtime.completion import openai_text_completion
+from korina.runtime.request_owner import check_current
 from korina.services.model_catalog import llm_models_for
 
 
@@ -28,6 +31,16 @@ _TRANSIENT_WHISPER_FALLBACK_PATTERNS = [
     (re.compile(r"model has crashed", re.IGNORECASE), "model_crashed"),
     (re.compile(r"empty_text", re.IGNORECASE), "empty_text"),
 ]
+
+
+class MultimodalSttError(RuntimeError):
+    """Keep provider status/detail available to the shared fallback policy."""
+
+    def __init__(self, model: str, status_code: int, detail: str):
+        self.model, self.status_code, self.detail = model, status_code, detail
+        super().__init__(
+            f'Multimodal STT model {model!r} rejected audio transcription request: HTTP {status_code}: {detail}'
+        )
 
 
 def transient_whisper_fallback_reason(detail: str) -> str | None:
@@ -46,32 +59,52 @@ def transient_whisper_fallback_reason(detail: str) -> str | None:
     return None
 
 
-def lmstudio_models() -> list[str]:
-    config = load_config()
-    return llm_models_for(config_llm_base_url(config), str(config.get('llm_api_key_env') or ''))
+def resolve_stt_api_env(config: dict, base_url: str, api_env: str | None) -> str:
+    """None inherits credentials only for the configured endpoint; empty disables.
+
+    A candidate probe must never receive another endpoint's key merely because
+    its caller omitted an auth setting. Explicit env names remain opt-in.
+    """
+    if api_env is not None:
+        return str(api_env).strip()
+    if normalize_api_base_url(base_url) == normalize_api_base_url(config_stt_llm_base_url(config)):
+        return config_stt_llm_api_env(config)
+    return ''
 
 
-def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url: Optional[str] = None, api_env: Optional[str] = None) -> dict:
+def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url: Optional[str] = None, api_env: Optional[str] = None, timeout: float = 120.0,
+                           is_current: Callable[[], bool] | None = None) -> dict:
     """Attempt audio transcription through a multimodal STT model endpoint.
 
     OpenAI-compatible multimodal endpoints definitely support text/images. Audio input
     depends on the loaded model + server support, so this endpoint returns a clear
-    error if the selected model rejects input_audio.
+    error if the selected model rejects input_audio. None auth inherits only
+    for the configured STT endpoint; an empty env name disables auth. timeout
+    applies to the HTTP call and is bounded to (0, 120] seconds.
 
-    Phase 5 (2026-06-27): the returned dict now carries ``finish_reason`` from
-    the OpenAI chat-completion response. Callers in the audio-probe / stt route
-    use this to classify silent-empty failures (HTTP 200 + empty content +
-    finish_reason != 'stop') as structurally audio-incompatible.
+    The result carries the provider's ``finish_reason`` for the shared
+    fallback policy. Empty length-limited output can exhaust its reasoning
+    budget without proving audio incompatibility, so it is not cached as
+    unsupported.
     """
+    check_current(is_current)
     config = load_config()
-    resolved_base_url = str(base_url or config_stt_llm_chat_url(config)).strip()
-    resolved_api_env = str(api_env or config_stt_llm_api_env(config) or '').strip()
+    resolved_base_url = str(base_url if base_url is not None else config_stt_llm_chat_url(config)).strip()
+    from urllib.parse import urlsplit
+    parsed = urlsplit(resolved_base_url)
+    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+        raise ValueError('Multimodal STT requires an http(s) endpoint')
+    timeout = float(timeout)
+    if not math.isfinite(timeout) or not 0 < timeout <= 120:
+        raise ValueError('Multimodal STT timeout must be greater than zero and at most 120 seconds')
+    resolved_api_env = resolve_stt_api_env(config, resolved_base_url, api_env)
     selected_model = (model or config_stt_llm_model(config)).strip()
     if not selected_model:
-        available = llm_models_for(config_stt_llm_base_url(config), resolved_api_env)
+        available = llm_models_for(normalize_api_base_url(resolved_base_url), resolved_api_env, is_current=is_current)
         selected_model = available[0].strip() if available else ''
     if not selected_model:
         raise RuntimeError('No multimodal STT model available for the selected endpoint')
+    check_current(is_current)
     data = wav.read_bytes()
     b64 = base64.b64encode(data).decode('ascii')
     started = time.time()
@@ -96,24 +129,15 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
         'reasoning': config_stt_llm_reasoning(config),
     }
     headers = {'Content-Type': 'application/json'} | auth_headers_from_env(resolved_api_env)
-    http_req = urllib.request.Request(
-        resolved_base_url,
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers,
-        method='POST',
-    )
     try:
-        with urllib.request.urlopen(http_req, timeout=120) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode('utf-8', errors='replace')
-        raise RuntimeError(
-            f'Multimodal STT model {selected_model!r} rejected audio transcription request: HTTP {e.code}: {detail}'
-        )
-    choice = (body.get('choices') or [{}])[0] or {}
-    message = choice.get('message') or {}
-    text = (message.get('content') or '').strip()
-    finish_reason = str(choice.get('finish_reason') or '')
+        body = request_json(resolved_base_url, method='POST', headers=headers, json_body=payload, timeout=timeout,
+                            is_current=is_current)
+    except HTTPStatusError as e:
+        raise MultimodalSttError(selected_model, e.status_code, e.detail) from e
+    check_current(is_current)
+    completion = openai_text_completion(body)
+    check_current(is_current)
+    text, finish_reason = completion.text, completion.finish_reason
     return {
         'text': text,
         'finish_reason': finish_reason,

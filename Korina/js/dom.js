@@ -1,5 +1,4 @@
-// js/dom.js
-import { state } from './state.js';
+// DOM lookup and status helpers.
 
 export const $ = (id) => document.getElementById(id);
 

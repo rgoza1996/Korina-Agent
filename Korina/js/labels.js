@@ -31,5 +31,6 @@ export function llmProviderLabel(p) {
   if (v === 'lmstudio') return 'LM Studio';
   if (v === 'ollama') return 'Ollama';
   if (v === 'openai-compatible') return 'OpenAI-compat';
+  if (v === 'meta') return 'Meta Model API';
   return v || 'LLM';
 }

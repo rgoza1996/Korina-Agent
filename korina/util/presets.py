@@ -13,7 +13,17 @@ No state, no side effects -- safe to import anywhere.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, get_args
+
+
+MetaReasoningEffort = Literal['', 'minimal', 'low', 'medium', 'high', 'xhigh']
+_META_REASONING_EFFORTS = frozenset(get_args(MetaReasoningEffort))
+
+
+def normalize_meta_reasoning_effort(value: object) -> str:
+    """Old or invalid settings safely leave the provider parameter omitted."""
+    effort = value.strip().lower() if isinstance(value, str) else ''
+    return effort if effort in _META_REASONING_EFFORTS else ''
 
 
 # Registry: {provider_id: capability_dict}.
@@ -27,6 +37,7 @@ from typing import Any
 #   is_local:              bool  -- is this a localhost inference server?
 #   agent_only:            bool  -- only valid for the agent path
 #   response_llm_only:     bool  -- only valid for the response-LLM path
+#   default_api_key_env:   str   -- optional env-name hint for this exact base
 PROVIDER_CAPABILITIES: dict[str, dict[str, Any]] = {
     "llama.cpp": {
         "label": "llama.cpp local",
@@ -68,6 +79,17 @@ PROVIDER_CAPABILITIES: dict[str, dict[str, Any]] = {
         "agent_only": False,
         "response_llm_only": False,
     },
+    "meta": {
+        "label": "Meta Model API",
+        "default_base_url": "https://api.meta.ai/v1",
+        "default_api_key_env": "MODEL_API_KEY",
+        "editable_base_url": False,
+        "manageable": False,
+        "model_sources": ["endpoint_loaded"],
+        "is_local": False,
+        "agent_only": False,
+        "response_llm_only": False,
+    },
     "anthropic": {
         "label": "Anthropic-compatible",
         "default_base_url": "",
@@ -89,16 +111,17 @@ def provider_preset_base_url(provider: str) -> str:
     return str(cap.get("default_base_url") or "")
 
 
-def is_local_provider_base_url(base_url: str, provider: str = "") -> bool:
-    base = str(base_url or "").strip().rstrip("/")
-    provider = str(provider or "").strip().lower()
-    cap = PROVIDER_CAPABILITIES.get(provider, {})
-    if cap.get("is_local"):
-        return True
-    for cap in PROVIDER_CAPABILITIES.values():
-        if cap.get("is_local") and base == str(cap.get("default_base_url") or "").rstrip("/"):
-            return True
-    return False
+def provider_default_api_key_env(provider: str, base_url: str) -> str:
+    """Resolve a named profile's default only for its canonical API base.
+
+    Generic/custom endpoints never acquire credentials by hostname inference.
+    Explicit configured credentials are resolved separately by their caller.
+    """
+    cap = PROVIDER_CAPABILITIES.get(str(provider or "").strip().lower(), {})
+    base = str(base_url or "").strip().rstrip("/").removesuffix("/chat/completions")
+    if base != cap.get("default_base_url"):
+        return ""
+    return str(cap.get("default_api_key_env") or "")
 
 
 def capabilities_for_section(section: str) -> dict[str, dict[str, Any]]:

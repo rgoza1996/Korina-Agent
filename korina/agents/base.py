@@ -4,7 +4,7 @@ Any agent backend that wants to plug into Converse must satisfy this
 Protocol. The runtime-checkable decorator lets us assert adapter conformance
 without requiring explicit inheritance.
 
-Phase 2: define the contract. Phase 3: route layer talks to it.
+The HTTP bridge and default Converse channel use this contract directly.
 """
 
 from __future__ import annotations
@@ -13,9 +13,22 @@ from typing import Any, Protocol, runtime_checkable
 
 from korina.schemas import (
     AgentCapabilities,
+    AgentPermissionAnswer,
+    AgentTranscriptRequest,
     PermissionAnswerEvent,
     UserTurn,
 )
+
+# Built-in report transport allowance; the channel adds completion grace.
+AGENT_REPORT_TIMEOUT_SECONDS = 90.0
+
+
+class AgentAdmissionRejected(RuntimeError):
+    """The adapter guarantees this request admitted no background work.
+
+    Callers may retry without resetting agent memory. Other submission
+    exceptions remain uncertain and may require explicit recovery.
+    """
 
 
 @runtime_checkable
@@ -35,8 +48,10 @@ class AgentAdapter(Protocol):
     def submit_turn(self, turn: UserTurn) -> None:
         """Submit a user utterance to the agent.
 
-        Fire-and-forget or async; the agent processes the turn and emits
+        The synchronous submission returns immediately; background work emits
         events that are observable via :meth:`poll_events`.
+        AgentAdmissionRejected explicitly guarantees no work was admitted;
+        callers treat other submission failures as uncertain.
         """
         ...
 
@@ -58,4 +73,22 @@ class AgentAdapter(Protocol):
 
     def health_check(self) -> dict:
         """Lightweight liveness probe; returns ``{"ok": bool, ...}``."""
+        ...
+
+@runtime_checkable
+class LegacyAgentHttpAdapter(Protocol):
+    """Optional compatibility extension for the original HTTP wire contract.
+
+    The core AgentAdapter remains sufficient for new backends. Adapters that
+    need full transcript/injection semantics can additionally implement this
+    extension; the built-in Korina adapter already does.
+    """
+
+    def snapshot(self) -> dict[str, Any]:
+        ...
+
+    def submit_transcript_legacy(self, req: AgentTranscriptRequest) -> dict[str, Any]:
+        ...
+
+    def answer_permission_legacy(self, req: AgentPermissionAnswer) -> dict[str, Any]:
         ...

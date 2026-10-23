@@ -1,0 +1,76 @@
+{
+  "kind": "pre-event-screen-recording-attempt",
+  "observed_on": "2026-10-23",
+  "source_commit": "5ef3c9d2352dd56744fc8d4e414d5cd7c1643894",
+  "accepted_as_voice_rehearsal": false,
+  "complete": false,
+  "input": {
+    "seed": "For this demonstration, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence.",
+    "planned_question": "What is my project called and when is our practice?",
+    "microphone": "Generated mono 16 kHz PCM WAV with speech at 1.5–5.1 seconds and a long silent tail; no physical microphone.",
+    "agent": "off",
+    "acknowledgements": "off"
+  },
+  "observed": {
+    "model": "muse-spark-1.3-contributor",
+    "reasoning_effort": "minimal",
+    "max_tokens": 2048,
+    "seed_reply": "Got it, Cedar rehearsal is Friday at ten in the morning.",
+    "seed_meta_http": 200,
+    "seed_kokoro_sse_http": 200,
+    "seed_native_playback_ended_wait_passed": true,
+    "seed_playback_completion_seconds_from_browser_start": 18.827,
+    "live_clicked_seconds_from_browser_start": 19.063,
+    "voice_chat_requests": 0,
+    "transcription_requests_after_live": 0,
+    "page_errors": 0,
+    "failure": "Timed out waiting for the next chat response after 120 seconds with Live armed; no generated-microphone transcription was observed.",
+    "cause": "Not established in this attempt. Unpaid capture calibration follows separately."
+  },
+  "usage": {
+    "prompt_tokens": 211,
+    "completion_tokens": 86,
+    "reasoning_tokens": 63,
+    "cached_tokens": 0,
+    "finish_reason": "stop",
+    "transport_wall_seconds": 2.738,
+    "estimated_call_usd": "0.0000383"
+  },
+  "cost_accounting": {
+    "task_generation_calls_before": 38,
+    "task_generation_calls_after": 39,
+    "prior_estimated_usd": "0.005595506",
+    "task_estimated_usd_after": "0.005633806",
+    "authorized_cap_usd": "3.00",
+    "prior_records_unchanged": true,
+    "reasoning_already_in_completion_tokens": true,
+    "paid_openrouter_generations": 0,
+    "scope": "Returned-token estimate including all prior priming/stopped attempts; not an invoice or account-enforced spending cap."
+  },
+  "cleanup": {
+    "browser_closed": true,
+    "backend_graceful_shutdown_logged": true,
+    "tts_graceful_shutdown_logged": true,
+    "owned_ports_closed": true,
+    "successful_stop_button_observation": false
+  },
+  "media": {
+    "raw_video": {
+      "codec": "vp9",
+      "width": 1440,
+      "height": 1200,
+      "duration_seconds": 139.56,
+      "bytes": 20831804,
+      "audio_tracks": 0,
+      "published": false
+    },
+    "native_pcm_files_saved": false,
+    "scope": "The silent raw video is retained privately. Native buffer export occurred only after the planned full interaction, so no PCM WAVs were saved before this failure. No reconstructed or synchronized output is claimed."
+  },
+  "scope": [
+    "This attempt is not additional microphone-to-answer voice evidence; the earlier accepted bc7c8c5 observation retains its own source identity.",
+    "One real generation was billed and retained; no automatic paid retry occurred.",
+    "Generated capture and digital playback observations do not establish physical microphone/headset behavior, GPU execution, final event acceptance or a latency benchmark.",
+    "All content was synthetic; Contributor content may train Meta models."
+  ]
+}

@@ -26,8 +26,13 @@ import re
 import time
 import wave
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
+from collections.abc import Callable
 from typing import Optional
+
+from korina.runtime.json_http import RequestCancelledError
+from korina.runtime.request_owner import check_current
 
 
 @dataclass
@@ -82,13 +87,19 @@ def probe_audio_support(
     model: str,
     *,
     timeout: float = 15.0,
+    api_env: str | None = None,
     transcribe_fn=None,
+    is_current: Callable[[], bool] | None = None,
 ) -> ProbeResult:
     """Probe a single (provider, base_url, model) triple.
 
     transcribe_fn defaults to
     ``korina.services.multimodal_stt.lmstudio_transcribe_wav``. Tests inject
-    a stub; production callers should rely on the default.
+    a stub; production callers should rely on the default. The timeout is
+    forwarded to the production HTTP request; legacy injected callbacks retain
+    their four-argument calling convention. api_env=None inherits auth only for
+    the configured STT endpoint; an empty string explicitly disables auth.
+    Retired owners cancel connected HTTP work and skip cache publication.
 
     Side effects:
       - On supported=True, the persistent audio_unsupported cache entry for
@@ -101,14 +112,17 @@ def probe_audio_support(
       - On supported=False with a transient classification, the cache is
         *not* updated -- transient failures should not stick.
     """
-    from korina.services.audio_probe import classify_failure, triple_key
-    from korina.config import set_audio_unsupported, clear_audio_unsupported
+    from korina.services.audio_probe import classify_failure
+    from korina.config import load_config, normalize_api_base_url, set_audio_unsupported, clear_audio_unsupported
+    from korina.services.multimodal_stt import resolve_stt_api_env
 
+    check_current(is_current)
     if transcribe_fn is None:
-        from korina.services.multimodal_stt import lmstudio_transcribe_wav as transcribe_fn
+        from korina.services.multimodal_stt import lmstudio_transcribe_wav
+        transcribe_fn = partial(lmstudio_transcribe_wav, timeout=timeout, is_current=is_current)
 
     provider_id = str(provider or "").strip().lower()
-    base_url_clean = str(base_url or "").strip()
+    base_url_clean = normalize_api_base_url(str(base_url or "").strip())
     # Normalize to the chat-completions endpoint the same way the runtime
     # streaming STT path does. lmstudio returns a 200-with-error-body when
     # you POST to the bare /v1 base URL, which would silently mask every
@@ -116,20 +130,24 @@ def probe_audio_support(
     if base_url_clean and not base_url_clean.rstrip("/").endswith("/chat/completions"):
         base_url_clean = base_url_clean.rstrip("/") + "/chat/completions"
     model_id = str(model or "").strip()
-    triple_key_value = triple_key(provider_id, base_url_clean, model_id)
+    resolved_api_env = resolve_stt_api_env(load_config(), base_url_clean, api_env)
 
     tmp_path: Optional[Path] = None
     started = time.time()
     try:
         import tempfile
+        check_current(is_current)
         with tempfile.NamedTemporaryFile(prefix="korina-probe-", suffix=".wav", delete=False) as f:
-            f.write(_build_synthetic_wav())
             tmp_path = Path(f.name)
-        result = transcribe_fn(tmp_path, model=model_id, base_url=base_url_clean, api_env="")
+            f.write(_build_synthetic_wav())
+        check_current(is_current)
+        result = transcribe_fn(tmp_path, model=model_id, base_url=base_url_clean, api_env=resolved_api_env)
+        check_current(is_current)
         text = str((result or {}).get("text") or "").strip()
         latency_ms = int((time.time() - started) * 1000)
         if text:
-            clear_audio_unsupported(provider_id, base_url_clean, model_id)
+            check_current(is_current)
+            clear_audio_unsupported(provider_id, base_url_clean, model_id, is_current=is_current)
             return ProbeResult(
                 model=model_id,
                 supported=True,
@@ -139,29 +157,30 @@ def probe_audio_support(
                 body_excerpt=text[:200],
                 error="",
             )
-        # 200 with empty text -- silent failure. Treat as transient unless
-        # we have a specific reason string in result.error.
+        # Match the live STT policy. Empty output can exhaust a reasoning
+        # budget without proving audio incompatibility.
         reason_excerpt = str((result or {}).get("error") or "empty_text")
-        unsupported, reason = classify_failure(200, reason_excerpt)
-        if unsupported:
-            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, reason_excerpt)
         return ProbeResult(
             model=model_id,
-            supported=False,  # empty 200 is a UI-visible red mark either way
-            reason=reason if unsupported else "transient_empty_text",
+            supported=False,
+            reason="transient_empty_text",
             latency_ms=latency_ms,
             status=200,
             body_excerpt=reason_excerpt[:200],
-            error=reason_excerpt if not unsupported else "",
+            error=reason_excerpt,
         )
+    except RequestCancelledError:
+        raise
     except Exception as e:
+        check_current(is_current)
         latency_ms = int((time.time() - started) * 1000)
         status, body = _classify_runtime_error(e)
         unsupported, reason = classify_failure(status, body)
         body_excerpt = body[:200]
         error = str(e)[:200]
         if unsupported:
-            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, body)
+            check_current(is_current)
+            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, body, is_current=is_current)
         return ProbeResult(
             model=model_id,
             supported=False,
@@ -177,33 +196,3 @@ def probe_audio_support(
                 tmp_path.unlink()
             except Exception:
                 pass
-
-
-def probe_many(
-    provider: str,
-    base_url: str,
-    models: list[str],
-    *,
-    timeout: float = 15.0,
-    transcribe_fn=None,
-) -> list[ProbeResult]:
-    """Sequentially probe a list of models. Sequential (not parallel) so we
-    do not flood the active STT endpoint with N simultaneous multimodal
-    requests; most user-facing hosts have a single loaded model at a time
-    anyway.
-    """
-    results: list[ProbeResult] = []
-    for model in models:
-        mid = str(model or "").strip()
-        if not mid:
-            continue
-        results.append(
-            probe_audio_support(
-                provider,
-                base_url,
-                mid,
-                timeout=timeout,
-                transcribe_fn=transcribe_fn,
-            )
-        )
-    return results

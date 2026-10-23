@@ -32,9 +32,9 @@ def test_models_endpoint_adds_capability_fields_and_labels(monkeypatch, client, 
 
     gguf = tmp_path / "Gemma-4-E2B_q4_0-it.gguf"
     gguf.write_text("gguf")
-    monkeypatch.setattr(models_route, "llm_models_for", lambda base, api_env: ["endpoint-model"])
-    monkeypatch.setattr(models_route, "discover_local_gguf_models", lambda: [str(gguf)])
-    monkeypatch.setattr(models_route, "discover_lmstudio_catalog_models", lambda: ["owner/repo"])
+    monkeypatch.setattr(models_route, "llm_models_for", lambda base, api_env, **kwargs: ["endpoint-model"])
+    monkeypatch.setattr(models_route, "discover_local_gguf_models", lambda **kwargs: [str(gguf)])
+    monkeypatch.setattr(models_route, "discover_lmstudio_catalog_models", lambda **kwargs: ["owner/repo"])
 
     response = client.get(
         "/api/models",
@@ -68,9 +68,9 @@ def test_models_endpoint_adds_model_status_fields(monkeypatch, client, tmp_path)
     bad = bad_dir / "bad-text-only.gguf"
     bad.write_text("gguf")
 
-    monkeypatch.setattr(models_route, "llm_models_for", lambda base, api_env: [str(good), str(bad), "endpoint-only"])
-    monkeypatch.setattr(models_route, "discover_local_gguf_models", lambda: [str(good), str(bad)])
-    monkeypatch.setattr(models_route, "discover_lmstudio_catalog_models", lambda: ["endpoint-only"])
+    monkeypatch.setattr(models_route, "llm_models_for", lambda base, api_env, **kwargs: [str(good), str(bad), "endpoint-only"])
+    monkeypatch.setattr(models_route, "discover_local_gguf_models", lambda **kwargs: [str(good), str(bad)])
+    monkeypatch.setattr(models_route, "discover_lmstudio_catalog_models", lambda **kwargs: ["endpoint-only"])
 
     from korina.config import audio_unsupported_key, load_config, save_config
     cfg = load_config()
@@ -111,9 +111,9 @@ def test_models_endpoint_marks_catalog_gguf_with_mmproj_sibling_red_for_stt(monk
 
     main = "google/gemma-4-e2b-it-qat-q4_0-gguf/gemma-4-e2b_q4_0-it.gguf"
     mmproj = "google/gemma-4-e2b-it-qat-q4_0-gguf/gemma-4-e2b-it-mmproj.gguf"
-    monkeypatch.setattr(models_route, "llm_models_for", lambda base, api_env: [main, mmproj])
-    monkeypatch.setattr(models_route, "discover_local_gguf_models", lambda: [])
-    monkeypatch.setattr(models_route, "discover_lmstudio_catalog_models", lambda: [main, mmproj])
+    monkeypatch.setattr(models_route, "llm_models_for", lambda base, api_env, **kwargs: [main, mmproj])
+    monkeypatch.setattr(models_route, "discover_local_gguf_models", lambda **kwargs: [])
+    monkeypatch.setattr(models_route, "discover_lmstudio_catalog_models", lambda **kwargs: [main, mmproj])
     monkeypatch.setattr(models_route, "provider_supports_model", lambda provider, model: (True, "ok"))
 
     response = client.get(
@@ -137,12 +137,12 @@ def test_models_endpoint_marks_catalog_gguf_with_mmproj_sibling_red_for_stt(monk
 def test_models_endpoint_reports_endpoint_errors_without_raising(monkeypatch, client):
     from korina.routes import models as models_route
 
-    def boom(base, api_env):
+    def boom(base, api_env, **kwargs):
         raise RuntimeError("endpoint down")
 
     monkeypatch.setattr(models_route, "llm_models_for", boom)
-    monkeypatch.setattr(models_route, "discover_local_gguf_models", lambda: [])
-    monkeypatch.setattr(models_route, "discover_lmstudio_catalog_models", lambda: [])
+    monkeypatch.setattr(models_route, "discover_local_gguf_models", lambda **kwargs: [])
+    monkeypatch.setattr(models_route, "discover_lmstudio_catalog_models", lambda **kwargs: [])
 
     response = client.get("/api/models")
 

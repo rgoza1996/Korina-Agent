@@ -2,19 +2,32 @@
 //
 // Frontend controller for the "Local GGUF models" settings section.
 
-import { loadModelOptions } from './providers-ui.js';
-import { saveConfigSoon } from './api.js';
+import { loadModelOptions, modelDiscoveryQuery } from './providers-ui.js';
+import { apiErrorMessage } from './api-errors.js';
+import { responseError } from './response-body.js';
 import {
   llmProvider,
   effectiveSttLlmProvider,
   effectiveSttLlmBaseUrl,
+  effectiveSttLlmApiKeyEnv,
+  effectiveSttLlmModel,
 } from './settings-ui.js';
+
+const MAX_PROBE_MODELS = 64;
 
 const listEl = () => document.getElementById('localModelRootsList');
 const statusEl = () => document.getElementById('localModelsStatus');
 const inputEl = () => document.getElementById('newLocalModelRoot');
 const refreshBtn = () => document.getElementById('refreshLocalModelsBtn');
 const addBtn = () => document.getElementById('addLocalModelRootBtn');
+let rootsRequest = 0;
+let localAction = 0;
+
+function beginLocalAction() {
+  const action = ++localAction;
+  const query = modelDiscoveryQuery();
+  return () => action === localAction && query === modelDiscoveryQuery();
+}
 
 function setStatus(text, cls) {
   const el = statusEl();
@@ -54,14 +67,18 @@ function renderList(roots) {
     remove.className = 'secondary';
     remove.textContent = 'Remove';
     remove.addEventListener('click', async () => {
+      const isCurrent = beginLocalAction();
       setStatus('Removing ' + entry.path + '…');
       try {
-        await fetch('/api/models/roots?path=' + encodeURIComponent(entry.path), { method: 'DELETE' });
+        const response = await fetch('/api/models/roots?path=' + encodeURIComponent(entry.path), { method: 'DELETE' });
+        if (!isCurrent()) return;
+        if (!response.ok) throw new Error('HTTP ' + response.status);
         await loadLocalModelRoots();
+        if (!isCurrent()) return;
         await loadModelOptions(true);
-        setStatus('Removed ' + entry.path, 'good');
+        if (isCurrent()) setStatus('Removed ' + entry.path, 'good');
       } catch (e) {
-        setStatus('Remove failed: ' + e.message, 'bad');
+        if (isCurrent()) setStatus('Remove failed: ' + e.message, 'bad');
       }
     });
 
@@ -80,13 +97,16 @@ async function fetchRoots() {
 }
 
 export async function loadLocalModelRoots() {
+  const request = ++rootsRequest;
   try {
     const roots = await fetchRoots();
-    renderList(roots);
+    if (request === rootsRequest) renderList(roots);
     return roots;
   } catch (e) {
-    renderList([]);
-    setStatus('Failed to load roots: ' + e.message, 'bad');
+    if (request === rootsRequest) {
+      renderList([]);
+      setStatus('Failed to load roots: ' + e.message, 'bad');
+    }
     return [];
   }
 }
@@ -97,32 +117,26 @@ async function addRoot() {
     setStatus('Path is empty.', 'bad');
     return;
   }
+  const isCurrent = beginLocalAction();
   setStatus('Adding ' + path + '…');
   try {
     const r = await fetch('/api/models/roots', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roots: [path] }),
+      body: JSON.stringify({ roots: [path], append: true }),
     });
+    if (!isCurrent()) return;
     if (!r.ok) {
-      // Dogfood pass 2026-06-26: parse the FastAPI JSON envelope so the
-      // user sees "path not found: /tmp/…" instead of the raw body
-      // {"detail":"path not found: /tmp/…"}.
-      let detail = '';
-      try {
-        const j = await r.json();
-        detail = j?.detail || '';
-      } catch (_) {
-        detail = await r.text().catch(() => '');
-      }
-      throw new Error(detail || ('HTTP ' + r.status));
+      throw await responseError(r, { isCurrent });
     }
-    if (inputEl()) inputEl().value = '';
+    if (!isCurrent()) return;
+    if (inputEl()?.value.trim() === path) inputEl().value = '';
     await loadLocalModelRoots();
+    if (!isCurrent()) return;
     await loadModelOptions(true);
-    setStatus('Added ' + path, 'good');
+    if (isCurrent()) setStatus('Added ' + path, 'good');
   } catch (e) {
-    setStatus('Add failed: ' + e.message, 'bad');
+    if (isCurrent()) setStatus('Add failed: ' + e.message, 'bad');
   }
 }
 
@@ -132,7 +146,8 @@ async function addRoot() {
 // audio_unsupported cache that the dropdown consults. Called from
 // refreshLocalModels after the existing /api/llm/llama/refresh call returns
 // so the user only triggers probes when they actively want a refresh.
-async function probeActiveModels() {
+async function probeActiveModels(payload, isCurrent) {
+  if (!payload || !isCurrent()) return;
   const provider = String(effectiveSttLlmProvider() || '').trim();
   const baseUrl = String(effectiveSttLlmBaseUrl() || '').trim();
   if (!provider || !baseUrl) return;
@@ -141,47 +156,41 @@ async function probeActiveModels() {
   // /v1/models endpoints and should not be probed by the local-model refresh.
   if (provider !== 'llama.cpp') return;
 
-  // Pull the currently displayed model pool. loadModelOptions(true) above
-  // populates state.lastModelsPayload; re-fetch it explicitly so we probe
-  // the same IDs the dropdown shows.
-  let payload = null;
-  try {
-    const params = new URLSearchParams({
-      llm_base_url: baseUrl,
-      stt_llm_base_url: baseUrl,
-      llm_provider: provider,
-      stt_llm_provider: provider,
-    });
-    const r = await fetch('/api/models?' + params.toString());
-    payload = await r.json();
-  } catch (_) {
-    return;
-  }
+  // Use the accepted discovery response for this action, avoiding a second
+  // discovery request whose endpoint/settings might already have changed.
   const allIds = new Set([
-    ...(payload.llm_models || []),
     ...(payload.stt_llm_models || []),
     ...(payload.llama_cpp_local_models || []),
     ...(payload.lmstudio_catalog_models || []),
   ]);
   // Filter out mmproj sidecars; they aren't real models.
-  const candidates = Array.from(allIds).filter(
+  const available = Array.from(allIds).filter(
     (id) => id && !/mmproj/i.test(String(id))
   );
-  if (candidates.length === 0) return;
+  const selected = effectiveSttLlmModel();
+  if (available.includes(selected)) available.splice(available.indexOf(selected), 1);
+  if (selected && allIds.has(selected) && !/mmproj/i.test(selected)) available.unshift(selected);
+  const candidates = available.slice(0, MAX_PROBE_MODELS);
+  const omitted = available.length - candidates.length;
+  if (!candidates.length) return;
 
   setStatus('Probing audio support for ' + candidates.length + ' model' + (candidates.length === 1 ? '' : 's') + '…');
 
   let probed = 0;
   let failed = 0;
   let transient = 0;
+  let skipped = 0;
   try {
     const r = await fetch('/api/llm/probe-models', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, base_url: baseUrl, models: candidates }),
+      body: JSON.stringify({ provider, base_url: baseUrl, api_key_env: effectiveSttLlmApiKeyEnv(), models: candidates }),
     });
-    if (!r.ok) throw new Error(await r.text());
+    if (!isCurrent()) return;
+    if (!r.ok) throw await responseError(r, { isCurrent });
     const j = await r.json();
+    if (!isCurrent()) return;
+    skipped = Array.isArray(j.skipped_models) ? j.skipped_models.length : 0;
     for (const id of Object.keys(j.results || {})) {
       probed++;
       if (!j.results[id].supported) {
@@ -190,20 +199,24 @@ async function probeActiveModels() {
       }
     }
   } catch (e) {
-    setStatus('Probe failed: ' + (e.message || e), 'bad');
+    if (isCurrent()) setStatus('Probe failed: ' + (e.message || e), 'bad');
     return;
   }
 
   // Re-render the dropdown so red/green state reflects the fresh probe cache.
   await loadModelOptions(true);
+  if (!isCurrent()) return;
 
   const parts = ['Probed ' + probed + ' model' + (probed === 1 ? '' : 's')];
   if (failed > 0) parts.push(failed + ' confirmed audio-unsupported');
   if (transient > 0) parts.push(transient + ' transient (no cache)');
-  setStatus(parts.join(' · ') + '. Dropdown refreshed.', 'good');
+  if (omitted) parts.push(omitted + ' catalog choices omitted (64-model batch limit)');
+  if (skipped) parts.push(skipped + ' not probed (batch time limit)');
+  setStatus(parts.join(' · ') + '. Dropdown refreshed.', omitted || skipped ? 'warn' : 'good');
 }
 
 async function refreshLocalModels() {
+  const isCurrent = beginLocalAction();
   const responseProvider = String(llmProvider() || '').trim();
   const sttProvider = String(effectiveSttLlmProvider() || '').trim();
   if (responseProvider !== 'llama.cpp' && sttProvider !== 'llama.cpp') {
@@ -215,9 +228,12 @@ async function refreshLocalModels() {
   try {
     const r = await fetch('/api/llm/llama/refresh', { method: 'POST' });
     const j = await r.json();
-    if (!r.ok) throw new Error(j.detail || ('HTTP ' + r.status));
+    if (!isCurrent()) return;
+    if (!r.ok) throw new Error(apiErrorMessage(j, 'HTTP ' + r.status));
     await loadLocalModelRoots();
-    await loadModelOptions(true);
+    if (!isCurrent()) return;
+    const payload = await loadModelOptions(true);
+    if (!isCurrent()) return;
     const cacheNote = j.cleared_audio_probes ? (' · cleared ' + j.cleared_audio_probes + ' stale audio probe cache entr' + (j.cleared_audio_probes === 1 ? 'y' : 'ies')) : '';
     if (j.restarted) {
       setStatus('Refreshed · ' + j.discovered_count + ' models · llama.cpp restarted on ' + j.model + cacheNote, 'good');
@@ -225,9 +241,9 @@ async function refreshLocalModels() {
       setStatus('Refreshed · ' + j.discovered_count + ' models · ' + (j.note || 'no restart') + cacheNote, 'good');
     }
     // After the refresh, actively probe so red/green state is fresh.
-    await probeActiveModels();
+    await probeActiveModels(payload, isCurrent);
   } catch (e) {
-    setStatus('Refresh failed: ' + e.message, 'bad');
+    if (isCurrent()) setStatus('Refresh failed: ' + e.message, 'bad');
   }
 }
 

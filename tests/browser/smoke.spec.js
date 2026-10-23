@@ -1,0 +1,578 @@
+import { test, expect } from '@playwright/test';
+import path from 'node:path';
+
+async function mockProviders(page, request) {
+  const config = {
+    ...await (await request.get('/api/config')).json(),
+    stt_backend: 'whisper', ack_enabled: 'off', llm_provider: 'openai-compatible',
+    llm_base_url: 'http://llm.example/v1', lm_model: 'demo-response', llm_reasoning: 'off',
+    stt_llm_provider: '', stt_llm_base_url: '', stt_llm_model: '',
+    agent_enabled: 'off', agent_model: 'saved-agent-model',
+    agent_provider: 'openai-compatible', agent_base_url: 'http://agent.example/v1',
+  };
+  const capabilities = await (await request.get('/api/capabilities')).json();
+  const scenario = { config, configReads: 0, configFailures: 0, configBarrier: null, healthCalls: 0, agentModelCalls: 0, agentModelCompletions: 0, agentModelBarrier: null, ackBarrier: null, failRebuild: false, rebuildVoices: [], rebuildBarrier: null, capabilities, capabilityFailures: 0, capabilityCalls: 0, capabilityBarrier: null, saves: [], activations: [], activeChannel: 'korina', failSave: false, failActivation: false, delaySave: 0, activeSaves: 0, maximumActiveSaves: 0, rebuilds: 0, delayActivation: 0, resets: 0, polls: 0, deliveries: 0, failReset: false, resetBarrier: null, agentEvents: [] };
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const endpoint = url.pathname;
+    let body;
+    let status = 200;
+    if (endpoint === '/api/config' && request.method() === 'POST') {
+      const payload = request.postDataJSON();
+      scenario.saves.push(payload);
+      scenario.activeSaves++;
+      scenario.maximumActiveSaves = Math.max(scenario.maximumActiveSaves, scenario.activeSaves);
+      if (scenario.delaySave) await new Promise(resolve => setTimeout(resolve, scenario.delaySave));
+      scenario.activeSaves--;
+      if (scenario.failSave) { status = 503; body = { detail: 'Disk unavailable for settings' }; }
+      else { Object.assign(config, payload); body = { ...config }; }
+    } else if (endpoint === '/api/config') {
+      scenario.configReads++;
+      body = { ...config };
+      if (scenario.configFailures > 0) {
+        scenario.configFailures--; status = 503; body = { detail: 'Saved settings temporarily unavailable' };
+      }
+      if (scenario.configBarrier) await scenario.configBarrier;
+    }
+    else if (endpoint === '/api/capabilities') {
+      scenario.capabilityCalls++;
+      if (scenario.capabilityBarrier) await scenario.capabilityBarrier;
+      if (scenario.capabilityFailures > 0) {
+        scenario.capabilityFailures--; status = 503; body = { detail: 'Capabilities temporarily unavailable' };
+      } else body = capabilities;
+    }
+    else if (endpoint === '/api/models') body = {
+      whisper_models: ['base.en', 'tiny.en'], llm_models: ['demo-response', 'next-response'],
+      stt_llm_models: ['audio-model'], stt_llm_models_capabilities: { 'audio-model': { supports_audio_input: true } },
+      llm_base_url: config.llm_base_url, stt_llm_base_url: config.stt_llm_base_url,
+    };
+    else if (endpoint === '/api/agent/models') {
+      scenario.agentModelCalls++;
+      if (scenario.agentModelBarrier) await scenario.agentModelBarrier;
+      scenario.agentModelCompletions++;
+      body = { ok: true, models: [], provider: 'openai-compatible' };
+    }
+    else if (endpoint === '/api/models/roots') body = { roots: [] };
+    else if (endpoint === '/api/audio-probe') body = { entries: {} };
+    else if (endpoint === '/api/acks') {
+      if (scenario.ackBarrier) await scenario.ackBarrier;
+      body = { acks: [] };
+    }
+    else if (endpoint === '/api/acks/rebuild') {
+      scenario.rebuilds++;
+      const voice = request.postDataJSON().voice;
+      scenario.rebuildVoices.push(voice);
+      if (scenario.rebuilds === 1 && scenario.rebuildBarrier) await scenario.rebuildBarrier;
+      if (scenario.failRebuild) { status = 503; body = { detail: [{ loc: ['body', 'voice'], msg: 'Acknowledgement service unavailable' }] }; }
+      else body = { ok: true, voice, removed: 0, queued_or_missing: 1 };
+    }
+    else if (endpoint === '/api/agent/events') { scenario.polls++; body = { events: scenario.agentEvents }; }
+    else if (endpoint === '/api/agent/transcript') { scenario.deliveries++; body = { ok: true, accepted: true }; }
+    else if (endpoint === '/api/agent/reset') {
+      scenario.resets++;
+      if (scenario.resetBarrier) await scenario.resetBarrier;
+      if (scenario.failReset) { status = 503; body = { detail: 'Reset backend unavailable' }; }
+      else { scenario.agentEvents = []; body = { ok: true }; }
+    }
+    else if (endpoint === '/api/agent/status') body = { busy: false };
+    else if (endpoint === '/api/converse/channels') body = { channels: ['korina', 'testing'] };
+    else if (endpoint === '/api/converse/channel') body = { channel: scenario.activeChannel };
+    else if (endpoint.startsWith('/api/converse/channel/')) {
+      scenario.activeChannel = decodeURIComponent(endpoint.split('/').at(-1)); body = { ok: true, channel: scenario.activeChannel };
+    } else if (endpoint === '/api/llm/provider/activate') {
+      const payload = request.postDataJSON();
+      scenario.activations.push(payload);
+      config.llm_provider = payload.provider; config.lm_model = payload.model;
+      const saved = { ...config };
+      if (scenario.delayActivation) await new Promise(resolve => setTimeout(resolve, scenario.delayActivation));
+      if (scenario.failActivation) { status = 503; body = { detail: 'Response provider startup failed' }; }
+      else body = { ok: true, saved, activation: { ...payload, started: [], stopped: [] } };
+    } else if (endpoint === '/api/health') {
+      scenario.healthCalls++;
+      body = {
+      ok: true, whisper_available: true, whisper_loaded: false, stt_backend: config.stt_backend,
+      whisper_backend: 'faster-whisper', whisper_device: 'cpu', whisper_compute_type: 'int8',
+      response_llm_provider: config.llm_provider, response_llm_model: config.lm_model,
+      response_llm_base_url: config.llm_base_url,
+      response_llm_load: { ok: true, loaded: true, provider: config.llm_provider, loaded_model: config.lm_model },
+      multimodal_stt_load: { ok: true, loaded: true },
+      tts: { ok: false, loaded: false, provider: 'openai-compatible', base_url: 'http://tts.example/v1', status: 'unverified', probe_supported: false },
+      };
+    }
+    else { status = 404; body = { detail: `Unexpected browser-test endpoint ${endpoint}` }; }
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+  return scenario;
+}
+
+async function waitForBoot(page) {
+  await expect(page.locator('#pageHealth')).not.toHaveText('page server…', { timeout: 15000 });
+  await expect(page.locator('#settingsBtn')).toBeEnabled();
+}
+
+async function loadResponseModels(page) {
+  await page.evaluate(() => window.loadModelOptions(true));
+  await expect(page.locator('#lmModel option[value="next-response"]')).toHaveCount(1);
+}
+
+test('failed capabilities leave config and controls usable and Settings retries recover without runtime errors', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.capabilityFailures = 2;
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await waitForBoot(page);
+  await expect(page.locator('#settingsInfo')).toHaveText('Loaded saved config.json settings.');
+  await expect(page.locator('#settingsActionStatus')).toContainText('Provider capabilities unavailable:');
+  await expect(page.locator('#lmModel')).toHaveValue('demo-response');
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#settingsModal')).toHaveClass(/open/);
+  await expect.poll(() => scenario.capabilityCalls).toBe(2);
+  await expect(page.locator('#settingsActionStatus')).toContainText('Open Settings to retry');
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  await page.locator('#settingsBtn').click();
+  await expect.poll(() => scenario.capabilityCalls).toBe(3);
+  await expect(page.locator('#settingsActionStatus')).not.toContainText('Provider capabilities unavailable:');
+  await expect(page.locator('#llmBaseUrl')).toBeEnabled();
+  await loadResponseModels(page);
+  await expect(page.locator('#settingsLiveStatus')).toContainText('LLM up · STT up');
+  expect(scenario.activations).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('delayed initial capabilities use a provider selected after config and controls are ready', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  let release;
+  scenario.capabilityBarrier = new Promise(resolve => { release = resolve; });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    await page.goto('/'); await waitForBoot(page);
+    await page.locator('#settingsBtn').click();
+    await expect(page.locator('#settingsModal')).toHaveClass(/open/);
+    await page.locator('#llmProvider').selectOption('lmstudio');
+    expect(scenario.capabilityCalls).toBe(1);
+    release();
+    await expect(page.locator('#llmProvider')).toHaveValue('lmstudio');
+    await expect(page.locator('#llmBaseUrl')).toHaveValue(scenario.capabilities.providers.lmstudio.default_base_url);
+    await expect(page.locator('#llmBaseUrl')).toBeDisabled();
+    await expect.poll(() => scenario.config.llm_provider).toBe('lmstudio');
+    expect(scenario.capabilityCalls).toBe(1);
+    expect(scenario.activations).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally { release(); }
+});
+
+test('pending initial discovery and acknowledgements do not delay health or overwrite current edits', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.agent_enabled = 'on';
+  let release;
+  scenario.agentModelBarrier = scenario.ackBarrier = new Promise(resolve => { release = resolve; });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    await page.goto('/');
+    await expect.poll(() => scenario.agentModelCalls).toBe(1);
+    await expect(page.locator('#settingsInfo')).toHaveText('Loaded saved config.json settings.');
+    await waitForBoot(page);
+    expect(scenario.healthCalls).toBeGreaterThan(0);
+    await expect.poll(() => scenario.polls).toBeGreaterThan(0);
+    expect(scenario.agentModelCompletions).toBe(0);
+    await page.locator('#settingsBtn').click();
+    await page.locator('[data-settings-tab="agent"]').click();
+    await page.locator('#agentMaxTokens').fill('1777');
+    release();
+    await expect.poll(() => scenario.agentModelCompletions).toBeGreaterThan(0);
+    await expect(page.locator('#agentMaxTokens')).toHaveValue('1777');
+    expect(scenario.configReads).toBe(1);
+    expect(errors).toEqual([]);
+  } finally { release(); }
+});
+
+test('saved provider editability is refreshed when capabilities finish before config', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.stt_llm_provider = 'openai-compatible';
+  let release;
+  scenario.configBarrier = new Promise(resolve => { release = resolve; });
+  try {
+    await page.goto('/');
+    await expect.poll(() => scenario.capabilityCalls).toBe(1);
+    await expect(page.locator('#llmBaseUrl')).toBeDisabled();
+    release();
+    await waitForBoot(page);
+    await expect(page.locator('#llmProvider')).toHaveValue('openai-compatible');
+    await expect(page.locator('#llmBaseUrl')).toBeEnabled();
+    await expect(page.locator('#sttLlmBaseUrl')).toBeEnabled();
+  } finally { release(); }
+});
+
+test('a completed autosave before the first config reply preserves edits and untouched saved values', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  Object.assign(scenario.config, { voice: 'af_bella', speed: 1.3 });
+  let release;
+  scenario.configBarrier = new Promise(resolve => { release = resolve; });
+  try {
+    await page.goto('/');
+    await page.locator('#settingsBtn').click();
+    await page.locator('#llmProvider').selectOption('ollama');
+    await expect.poll(() => scenario.saves.length).toBe(1);
+    expect(scenario.saves[0]).toEqual({ llm_provider: 'ollama', llm_base_url: scenario.capabilities.providers.ollama.default_base_url });
+    expect(scenario.config.voice).toBe('af_bella');
+    expect(scenario.config.speed).toBe(1.3);
+    release();
+    await expect(page.locator('#settingsInfo')).toHaveText('Loaded saved config.json settings.');
+    await expect(page.locator('#llmProvider')).toHaveValue('ollama');
+    await expect(page.locator('#speed')).toHaveValue('1.3');
+    await expect(page.locator('#voice')).toHaveValue('af_bella');
+    expect(await page.evaluate(() => window.state.appConfig.llm_provider)).toBe('ollama');
+    expect(scenario.configReads).toBe(1);
+    await page.locator('#closeSettingsBtn').click();
+    await expect.poll(() => scenario.activations.length).toBe(1);
+    expect(scenario.activations[0].provider).toBe('ollama');
+  } finally { release(); }
+});
+
+test('an unsaved field edit survives the first config reply and saves only that field', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  let release;
+  scenario.configBarrier = new Promise(resolve => { release = resolve; });
+  try {
+    await page.goto('/');
+    await page.locator('#settingsBtn').click();
+    await page.locator('[data-settings-tab="agent"]').click();
+    await page.locator('#agentMaxTokens').fill('1777');
+    release();
+    await expect(page.locator('#settingsInfo')).toHaveText('Loaded saved config.json settings.');
+    await expect(page.locator('#agentMaxTokens')).toHaveValue('1777');
+    await page.locator('#agentMaxTokens').press('Tab');
+    await expect.poll(() => scenario.saves.length).toBe(1);
+    expect(scenario.saves[0]).toEqual({ agent_max_tokens: 1777 });
+  } finally { release(); }
+});
+
+test('failed initial config reads permit partial edits and recover when Settings retries', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.configFailures = 2;
+  Object.assign(scenario.config, { voice: 'af_bella', speed: 1.3 });
+  await page.goto('/'); await waitForBoot(page);
+  await expect(page.locator('#settingsActionStatus')).toContainText('Settings load failed');
+  await page.locator('#settingsBtn').click();
+  await expect.poll(() => scenario.configReads).toBe(2);
+  await page.locator('[data-settings-tab="agent"]').click();
+  await page.locator('#agentMaxTokens').fill('1777');
+  await page.locator('#agentMaxTokens').press('Tab');
+  await expect.poll(() => scenario.saves.length).toBe(1);
+  expect(scenario.saves[0]).toEqual({ agent_max_tokens: 1777 });
+  expect(scenario.config.voice).toBe('af_bella');
+  expect(scenario.config.llm_provider).toBe('openai-compatible');
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsActionStatus')).toContainText('Open Settings to retry before provider activation');
+  expect(scenario.activations).toEqual([]);
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#settingsInfo')).toHaveText('Loaded saved config.json settings.');
+  await expect(page.locator('#agentMaxTokens')).toHaveValue('1777');
+  await expect(page.locator('#voice')).toHaveValue('af_bella');
+  expect(scenario.configReads).toBe(3);
+});
+
+test('real backend boots, lists channels, and closes settings without runtime errors', async ({ page }) => {
+  const errors = [];
+  const blocked = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    if (request.method() === 'GET' || new URL(request.url()).pathname === '/api/agent/models' && request.method() === 'POST') return route.continue();
+    blocked.push(route.request().url());
+    return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ detail: 'Mutation blocked during real-backend smoke' }) });
+  });
+  await page.goto('/');
+  await waitForBoot(page);
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#settingsModal')).toHaveClass(/open/);
+  await page.locator('[data-settings-tab="channel"]').click();
+  await expect(page.locator('#channelSelect')).toBeEnabled();
+  await expect(page.locator('#channelSelect option[value="korina"]')).toHaveCount(1);
+  await page.screenshot({ path: process.env.KORINA_QA_SCREENSHOT || path.resolve('../korina-browser-qa.png'), fullPage: true });
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  expect(errors).toEqual([]);
+  expect(blocked.filter(url => url.includes('/provider/activate'))).toEqual([]);
+});
+
+test('settings preserve a saved agent model when discovery returns no models', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click();
+  await page.locator('[data-settings-tab="agent"]').click();
+  await expect(page.locator('#agentModel')).toHaveValue('saved-agent-model');
+  await page.locator('[data-settings-tab="channel"]').click();
+  await page.locator('#channelSelect').selectOption('testing');
+  await expect(page.locator('#channelSelectHint')).toContainText('Selection is saved');
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  expect(scenario.activations).toEqual([]);
+  expect(scenario.config.agent_model).toBe('saved-agent-model');
+  expect(errors).toEqual([]);
+});
+
+test('a failed settings save closes the modal, shows the error, and does not activate a provider', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click(); await loadResponseModels(page);
+  scenario.failSave = true;
+  await page.locator('#lmModel').selectOption('next-response');
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  await expect(page.locator('#sttStatus')).toContainText('Disk unavailable for settings');
+  expect(scenario.activations).toEqual([]);
+  expect(scenario.config.lm_model).toBe('demo-response');
+});
+
+test('response model edits activate once on close and remain stable on a second close', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click(); await loadResponseModels(page);
+  await page.locator('#lmModel').selectOption('next-response');
+  await page.locator('#closeSettingsBtn').click();
+  await expect.poll(() => scenario.activations.length).toBe(1);
+  expect(scenario.activations[0]).toEqual({ provider: 'openai-compatible', model: 'next-response' });
+  await page.locator('#settingsBtn').click();
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  expect(scenario.activations).toHaveLength(1);
+});
+
+test('Done saves and activates a changed response model through the same close flow', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click(); await loadResponseModels(page);
+  await page.locator('#lmModel').selectOption('next-response');
+  await page.locator('#saveSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  await expect.poll(() => scenario.activations.length).toBe(1);
+  expect(scenario.activations[0]).toEqual({ provider: 'openai-compatible', model: 'next-response' });
+  expect(scenario.config.lm_model).toBe('next-response');
+});
+
+test('provider activation failure remains visible after Settings closes and a later close retries', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click(); await loadResponseModels(page);
+  scenario.failActivation = true;
+  await page.locator('#lmModel').selectOption('next-response');
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  await expect(page.locator('#settingsActionStatus')).toContainText('Provider activation failed:');
+  await expect(page.locator('#settingsActionStatus')).toContainText('Response provider startup failed');
+  expect(scenario.config.lm_model).toBe('next-response');
+  scenario.failActivation = false;
+  await page.locator('#settingsBtn').click();
+  await page.locator('#closeSettingsBtn').click();
+  await expect.poll(() => scenario.activations.length).toBe(2);
+  await expect(page.locator('#settingsActionStatus')).toContainText('Activated openai-compatible');
+  expect(errors).toEqual([]);
+});
+
+test('STT-only settings never activate or change the response provider', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click();
+  await page.locator('#sttBackend').selectOption('llm');
+  await page.locator('#sttLlmProvider').selectOption('openai-compatible');
+  await page.locator('#sttLlmBaseUrl').fill('http://audio.example/v1');
+  await page.locator('#sttLlmBaseUrl').dispatchEvent('change');
+  await expect(page.locator('#sttLlmModel option[value="audio-model"]')).toHaveCount(1);
+  await page.locator('#sttLlmModel').selectOption('audio-model');
+  await page.locator('#closeSettingsBtn').click();
+  await expect.poll(() => scenario.config.stt_llm_model).toBe('audio-model');
+  expect(scenario.config.llm_provider).toBe('openai-compatible');
+  expect(scenario.config.llm_base_url).toBe('http://llm.example/v1');
+  expect(scenario.config.lm_model).toBe('demo-response');
+  expect(scenario.activations).toEqual([]);
+});
+
+test('saves stay serialized while rapid edits and modal close overlap', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click(); await loadResponseModels(page);
+  scenario.delaySave = 200;
+  await page.locator('#lmModel').selectOption('next-response');
+  await expect.poll(() => scenario.activeSaves).toBe(1);
+  await page.locator('#speed').evaluate(element => { element.value = '1.2'; element.dispatchEvent(new Event('input', { bubbles: true })); });
+  await page.locator('#closeSettingsBtn').click();
+  await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+  await expect.poll(() => scenario.activations.length).toBe(1);
+  expect(scenario.maximumActiveSaves).toBe(1);
+  expect(scenario.config.speed).toBe(1.2);
+});
+
+test('unverified custom TTS has a warning pill and no runtime errors', async ({ page, request }) => {
+  await mockProviders(page, request);
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await waitForBoot(page);
+  await expect(page.locator('#ttsHealth')).toContainText('OpenAI TTS health unverified');
+  await expect(page.locator('#ttsDot')).toHaveClass('dot warn');
+  expect(errors).toEqual([]);
+});
+
+test('speech settings preserve a saved provider and round trip its custom health URL', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.tts_provider = 'saved-compatible-service';
+  scenario.config.tts_health_url = 'http://tts.example/old-health';
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click();
+  await expect(page.locator('#ttsProvider')).toHaveValue('saved-compatible-service');
+  await expect(page.locator('#ttsHealthUrl')).toHaveValue('http://tts.example/old-health');
+  await page.locator('#ttsHealthUrl').fill('http://tts.example/status');
+  await page.locator('#closeSettingsBtn').click();
+  await expect.poll(() => scenario.config.tts_health_url).toBe('http://tts.example/status');
+  expect(scenario.config.tts_provider).toBe('saved-compatible-service');
+  expect(scenario.activations).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+test('changing voice with acknowledgements disabled does not enqueue synthesis', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#voice').selectOption('af_bella');
+  await expect.poll(() => scenario.config.voice).toBe('af_bella');
+  expect(scenario.rebuilds).toBe(0);
+  await expect(page.locator('#ackStatus')).toContainText('Acknowledgements are disabled');
+});
+
+test('a failed voice save preserves cached acknowledgements without requesting a rebuild', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.ack_enabled = 'on';
+  await page.goto('/'); await waitForBoot(page);
+  await page.evaluate(() => {
+    window.previousAckBuffers = [{ marker: 'previous cached audio' }];
+    window.state.ackBuffersByTag.global = window.previousAckBuffers;
+  });
+  scenario.failSave = true;
+  await page.locator('#voice').selectOption('af_bella');
+  await expect(page.locator('#ackStatus')).toContainText('Voice settings save failed: Disk unavailable');
+  expect(scenario.rebuilds).toBe(0);
+  expect(await page.evaluate(() => window.state.ackBuffersByTag.global === window.previousAckBuffers)).toBe(true);
+  expect(await page.evaluate(() => window.state.ackBuffersByTag.global[0].marker)).toBe('previous cached audio');
+});
+
+test('a rebuild failure shows its structured diagnostic without changing transcription status', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.ack_enabled = 'on'; scenario.failRebuild = true;
+  await page.goto('/'); await waitForBoot(page);
+  const stt = await page.locator('#sttStatus').textContent();
+  const transcript = await page.locator('#transcriptInfo').textContent();
+  await page.locator('#voice').selectOption('af_bella');
+  await expect(page.locator('#ackStatus')).toContainText('voice: Acknowledgement service unavailable');
+  await expect(page.locator('#ackStatus')).not.toContainText('[object Object]');
+  await expect(page.locator('#sttStatus')).toHaveText(stt);
+  await expect(page.locator('#transcriptInfo')).toHaveText(transcript);
+});
+
+test('delayed voice rebuilds stay serialized and coalesce to the latest saved voice', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  scenario.config.ack_enabled = 'on';
+  let release;
+  scenario.rebuildBarrier = new Promise(resolve => { release = resolve; });
+  try {
+    await page.goto('/'); await waitForBoot(page);
+    await page.locator('#voice').selectOption('af_bella');
+    await expect.poll(() => scenario.rebuilds).toBe(1);
+    await page.locator('#voice').selectOption('af_nicole');
+    await page.locator('#voice').selectOption('af_sarah');
+    await expect.poll(() => scenario.config.voice).toBe('af_sarah');
+    expect(scenario.rebuilds).toBe(1);
+    release();
+    await expect.poll(() => scenario.rebuilds).toBe(2);
+    expect(scenario.rebuildVoices).toEqual(['af_bella', 'af_sarah']);
+    await expect(page.locator('#ackStatus')).toContainText('queued for af_sarah');
+    await expect(page.locator('#voice')).toHaveValue('af_sarah');
+    await expect(page.locator('#transcriptInfo')).not.toContainText('Ack rebuild');
+  } finally { release(); }
+});
+
+test('a late provider activation cannot overwrite edits made after settings reopen', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click(); await loadResponseModels(page);
+  scenario.delayActivation = 500;
+  await page.locator('#lmModel').selectOption('next-response');
+  await page.locator('#closeSettingsBtn').click();
+  await expect.poll(() => scenario.activations.length).toBe(1);
+  await page.locator('#settingsBtn').click();
+  await page.locator('#lmModel').selectOption('demo-response');
+  await expect(page.locator('#lmModel')).toHaveValue('demo-response');
+  await page.locator('#closeSettingsBtn').click();
+  await expect.poll(() => scenario.activations.length).toBe(2);
+  await expect(page.locator('#lmModel')).toHaveValue('demo-response');
+  expect(scenario.activations.map(request => request.model)).toEqual(['next-response', 'demo-response']);
+});
+
+test('configuration banner stays stable while model and runtime statuses update independently', async ({ page, request }) => {
+  await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  await page.locator('#settingsBtn').click();
+  const banner = await page.locator('#settingsInfo').textContent();
+  expect(banner).toBe('Loaded saved config.json settings.');
+  await loadResponseModels(page);
+  await expect(page.locator('#modelOptionsStatus')).toContainText('Loaded 2 response models');
+  await expect(page.locator('#settingsInfo')).toHaveText(banner);
+  await expect(page.locator('#settingsLiveStatus')).toContainText('LLM up · STT up');
+  await page.locator('#sttBackend').selectOption('llm');
+  await expect(page.locator('#settingsInfo')).toHaveText(banner);
+  await expect(page.locator('#modelOptionsStatus')).toContainText('Multimodal STT selected');
+});
+
+test('agent delivery and polling stay paused while a backend reset is pending', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  let release;
+  scenario.resetBarrier = new Promise(resolve => { release = resolve; });
+  await page.evaluate(() => { document.getElementById('agentEnabled').checked = true; });
+  await page.locator('#clearSessionBtn').click();
+  await expect.poll(() => scenario.resets).toBe(1);
+  scenario.agentEvents = [{ id: 50, type: 'state_report', priority: 'normal', report: 'Stale backend report.' }];
+  try {
+    await page.evaluate(async () => {
+      window.state.history = [{ role: 'user', content: 'A new conversation can continue.' }];
+      await window.pollAgentEvents();
+      await window.deliverTranscriptToAgent('test');
+    });
+    expect(scenario.polls).toBe(0);
+    expect(scenario.deliveries).toBe(0);
+    await expect.poll(() => page.evaluate(() => window.state.agentResetBlocked)).toBe(true);
+    expect(await page.evaluate(() => window.state.pendingAgentStateReport)).toBe('');
+  } finally { release(); }
+  await expect.poll(() => page.evaluate(() => window.state.agentResetBlocked)).toBe(false);
+  await page.evaluate(() => window.deliverTranscriptToAgent('after-reset'));
+  expect(scenario.deliveries).toBe(1);
+});
+
+test('a failed backend reset stays blocked until Clear Session succeeds on retry', async ({ page, request }) => {
+  const scenario = await mockProviders(page, request);
+  await page.goto('/'); await waitForBoot(page);
+  scenario.failReset = true;
+  await page.evaluate(() => { document.getElementById('agentEnabled').checked = true; });
+  await page.locator('#clearSessionBtn').click();
+  await expect(page.locator('#clearSessionBtn')).toHaveText('Retry Clear Session');
+  await expect(page.locator('#sttStatus')).toContainText('Reset backend unavailable');
+  await expect(page.locator('#sttStatus')).toContainText('Retry Clear Session');
+  await page.evaluate(async () => { await window.pollAgentEvents(); await window.deliverTranscriptToAgent('test'); });
+  expect(scenario.polls).toBe(0);
+  expect(scenario.deliveries).toBe(0);
+  expect(await page.evaluate(() => window.state.agentResetBlocked)).toBe(true);
+  scenario.failReset = false;
+  await page.locator('#clearSessionBtn').click();
+  await expect(page.locator('#clearSessionBtn')).toHaveText('Clear Session');
+  await expect.poll(() => page.evaluate(() => window.state.agentResetBlocked)).toBe(false);
+  expect(scenario.resets).toBe(2);
+  await expect(page.locator('#settingsActionStatus')).not.toContainText('Agent reset failed');
+});

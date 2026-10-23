@@ -1,105 +1,255 @@
-// js/acks.js
-//
-// Frontend ack-phrase helpers — loading the per-voice ack catalog,
-// preloading decoded AudioBuffers for instant playback, waiting for
-// scheduled audio to drain, and picking + playing a random ack —
-// extracted verbatim from the original inline <script> in
-// Korina/index.html (lines 697–706, 776–794, 795, 934–955 at commit
-// bdda3cc).
-//
-// Bare top-level globals (ackFiles, ackBuffers, ackBuffersByTag,
-// audioCtx, gain, ackPlayingUntil, ackSource, nextPlayTime,
-// suppressAckUntil, pendingImportantAgentMessage,
-// awaitingAgentPermission) have been migrated to the consolidated
-// `state` object (see state.js). `status` and `$` are imported from
-// dom.js. `addTranscriptEntry` is imported from history.js.
-// `markActivity` and `recordIdleAck` are imported from
-// settings-ui.js. `ensureAudio` is a self-call (speakText-style
-// helper that lives in speech.js — bare reference here resolves at
-// call time once the module graph is wired by the bootstrap in 3.2.15).
-//
-// Consumers import the named exports below.
+// Acknowledgement catalog loading, bounded preloading, and idle playback.
 
-import { state } from "./state.js";
-import { $, status } from "./dom.js";
-import { addTranscriptEntry } from "./history.js";
-import { markActivity, recordIdleAck } from "./settings-ui.js";
+import { state } from './state.js';
+import { $, status } from './dom.js';
+import { apiErrorMessage } from './api-errors.js';
+import { addTranscriptEntry } from './history.js';
+import { markActivity, recordIdleAck } from './settings-ui.js';
+import { ensureAudio } from './speech.js';
+import { MAX_ACK_AUDIO_BYTES, MAX_AUDIO_SECONDS, readResponseBlob, responseError } from './response-body.js';
 
-// --- Ack catalog load (verbatim from index.html:697-706) ---
-//
-// Bare globals `ackFiles` -> `state.ackFiles`.
-export async function loadAcks(tag = 'global') {
-  try {
-    const j = await (await fetch(`/api/acks?voice=${encodeURIComponent($('voice').value)}&tag=${encodeURIComponent(tag)}`)).json();
-    const urls = (j.acks || []).map(a => ({ url: a.url, text: a.text || a.id || a.name || a.url, id: a.id, name: a.name, tags: a.tags || [] }));
-    if (tag === 'global') state.ackFiles = urls;
-    if (urls.length) $('sttStatus').textContent = `Ready. ${urls.length} ${tag} ack phrases for ${$('voice').value}. Queue ${j.status?.queue_depth || 0}; missing ${j.status?.missing_count || 0}.`;
-    else $('sttStatus').textContent = `Ack phrases for ${$('voice').value}/${tag} are queued for generation. Queue ${j.status?.queue_depth || 0}; missing ${j.status?.missing_count || 0}.`;
-    return urls;
-  } catch (e) { console.warn('ack load failed', e); return []; }
-}
+let generation = 0;
+let cachedVoice = null;
+let pendingPlayback = null;
+const preloads = new Map();
+const retryAfter = new Map();
+const EMPTY_RETRY_MS = 2000;
+const ACK_DISABLED_MESSAGE = 'Acknowledgements are disabled.';
+let catalogTimer = null;
+let nextRebuild = null;
+let rebuildWorker = null;
 
-// --- Ack buffer preload (verbatim from index.html:776-794) ---
-//
-// Bare globals `ackBuffersByTag`, `ackFiles`, `audioCtx`, `ackBuffers`
-// -> `state.*`. `ensureAudio` is a self-call resolved at call time.
-export async function preloadAckBuffers(tag = 'global') {
-  ensureAudio();
-  if (state.ackBuffersByTag[tag]?.length) return state.ackBuffersByTag[tag];
-  const urls = tag === 'global' && state.ackFiles.length ? state.ackFiles : await loadAcks(tag);
-  if (!urls.length) return [];
-  const decoded = [];
-  for (const item of urls) {
-    const url = typeof item === 'string' ? item : item.url;
-    try {
-      const ab = await (await fetch(url)).arrayBuffer();
-      const buf = await state.audioCtx.decodeAudioData(ab.slice(0));
-      decoded.push({ url, text: (typeof item === 'string' ? url : (item.text || item.id || item.name || url)), buffer: buf, tag });
-    } catch (e) { console.warn('ack decode failed', url, e); }
+function ackStatus(message, level = 'warn') {
+  if ($('ackStatus')) {
+    state.ackStatusRevision++;
+    status($('ackStatus'), message, level);
   }
-  state.ackBuffersByTag[tag] = decoded;
-  if (tag === 'global') state.ackBuffers = decoded;
-  if (decoded.length) status($('sttStatus'), `Live mode ready. ${decoded.length} ${tag} ack phrases preloaded for ${$('voice').value}.`, 'good');
-  return decoded;
 }
 
-// --- Wait for scheduled audio (verbatim from index.html:795) ---
-//
-// Bare globals `audioCtx`, `nextPlayTime` -> `state.*`.
-export async function waitForScheduledAudio() {
-  if (!state.audioCtx) return;
-  const ms = Math.max(0, (state.nextPlayTime - state.audioCtx.currentTime) * 1000) + 150;
-  if (ms > 0) await new Promise(r => setTimeout(r, ms));
+export function refreshAckEnabledStatus() {
+  const ack = $('ackStatus');
+  state.ackStatusRevision++;
+  // Disabling playback does not repair a failed catalog or voice operation.
+  if (ack?.className?.split(/\s+/).includes('bad')) return;
+  if ($('ackEnabled')?.value === 'off') ackStatus(ACK_DISABLED_MESSAGE);
+  else if (ack?.textContent === ACK_DISABLED_MESSAGE) ackStatus('Acknowledgements enabled; cached clips reload on use.');
 }
 
-// --- Play random ack (verbatim from index.html:934-955) ---
-//
-// Bare globals `suppressAckUntil`, `pendingImportantAgentMessage`,
-// `awaitingAgentPermission`, `ackSource`, `audioCtx`, `gain`,
-// `ackPlayingUntil` -> `state.*`. `ensureAudio` and
-// `preloadAckBuffers` are self-calls (ensureAudio resolves at call
-// time via the speech.js module's global side effect in the current
-// bootstrap). `addTranscriptEntry` is imported from history.js.
-// `recordIdleAck` and `markActivity` are imported from settings-ui.js.
-export async function playRandomAck(tag = 'global') {
-  if ($('ackEnabled').value !== 'on') return;
-  if (performance.now() < state.suppressAckUntil || state.pendingImportantAgentMessage || state.awaitingAgentPermission) return;
+async function ackJson(response, options = {}) {
+  if (!response.ok) throw await responseError(response, options);
+  const blob = await readResponseBlob(response, { ...options, maxBytes: 256 * 1024 });
+  const payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(await blob.arrayBuffer()));
+  if (options.isCurrent && !options.isCurrent()) throw new DOMException('ACK request superseded', 'AbortError');
+  return payload;
+}
+
+// Voice saves precede destructive rebuilds. One worker coalesces newer voice
+// selections. The server serializes cache mutation after a client timeout and
+// rejects an old voice change against the latest saved voice.
+export function changeAckVoice(saveSettings) {
+  cancelAckPlayback();
+  const context = snapshot();
+  ackStatus(`Saving voice ${context.voice}…`);
+  let saved;
+  try { saved = Promise.resolve(saveSettings()); }
+  catch (error) { saved = Promise.reject(error); }
+  const job = { context, saved: saved.then(() => true, error => {
+    if (current(context)) ackStatus(`Voice settings save failed: ${apiErrorMessage(error)}. Retry the voice selection.`, 'bad');
+    return false;
+  }) };
+  nextRebuild = job;
+  return startRebuilds();
+}
+
+function startRebuilds() {
+  if (!rebuildWorker) rebuildWorker = runRebuilds().finally(() => {
+    rebuildWorker = null;
+    if (nextRebuild) return startRebuilds();
+  });
+  return rebuildWorker;
+}
+
+async function runRebuilds() {
+  while (nextRebuild) {
+    const job = nextRebuild;
+    nextRebuild = null;
+    const { context } = job;
+    if (!await job.saved || !current(context)) continue;
+    state.ackFiles = []; state.ackBuffersByTag = {};
+    if ($('ackEnabled').value !== 'on') {
+      ackStatus(`Voice ${context.voice} saved. Acknowledgements are disabled.`);
+      continue;
+    }
+    ackStatus(`Preparing acknowledgements for ${context.voice}…`);
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 15000);
+    try {
+      const response = await fetch('/api/acks/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voice: context.voice, clear: true, require_saved_voice: true }), signal: controller.signal });
+      const payload = await ackJson(response, { signal: controller.signal, isCurrent: () => current(context) });
+      if (!current(context)) continue;
+      if (!payload || payload.ok !== true || payload.voice !== context.voice
+        || !Number.isSafeInteger(payload.removed) || payload.removed < 0
+        || !Number.isSafeInteger(payload.queued_or_missing) || payload.queued_or_missing < 0) throw new Error('Invalid acknowledgement rebuild response');
+      ackStatus(`Acknowledgement rebuild queued for ${context.voice}: ${payload.queued_or_missing} missing clips.`);
+      catalogTimer = setTimeout(() => {
+        catalogTimer = null;
+        if (current(context)) void loadAcks('global', context);
+      }, 1500);
+    } catch (error) {
+      if (current(context)) ackStatus(`Acknowledgement rebuild failed: ${controller.signal.aborted ? 'request timed out' : apiErrorMessage(error)}. Retry the voice selection.`, 'bad');
+    } finally { clearTimeout(deadline); }
+  }
+}
+
+function snapshot() {
+  return { generation, liveSession: state.liveSession, agentSession: state.agentSession,
+    voice: $('voice').value, audio: state.audioCtx };
+}
+
+function current(context, audio = false) {
+  return context.generation === generation && context.liveSession === state.liveSession &&
+    context.agentSession === state.agentSession && context.voice === $('voice').value &&
+    (!audio || context.audio === state.audioCtx && context.audio?.state !== 'closed');
+}
+
+function selectVoice(voice) {
+  if (cachedVoice === voice) return;
+  cachedVoice = voice;
+  state.ackFiles = [];
+  state.ackBuffersByTag = {};
+}
+
+export function cancelAckPlayback() {
+  const ack = $('ackStatus');
+  const hasError = ack?.className?.split(/\s+/).includes('bad');
+  if (!hasError && (nextRebuild || rebuildWorker || catalogTimer)) ackStatus('Acknowledgement playback stopped.');
+  generation++;
+  clearTimeout(catalogTimer);
+  catalogTimer = null;
+  nextRebuild = null;
+  pendingPlayback = null;
+  for (const job of preloads.values()) job.controller.abort();
+  preloads.clear();
+  retryAfter.clear();
+  if (state.ackSource) { try { state.ackSource.stop(); } catch {} }
+  state.ackSource = null;
+  state.ackPlayingUntil = 0;
+  refreshAckEnabledStatus();
+}
+
+export async function loadAcks(tag = 'global', context = snapshot(), { signal } = {}) {
+  selectVoice(context.voice);
   try {
-    ensureAudio();
-    const pool = await preloadAckBuffers(tag);
-    if (!pool.length) return;
-    if (state.ackSource) { try { state.ackSource.stop(); } catch {} }
-    const pick = pool[Math.floor(Math.random() * pool.length)];
-    const src = state.audioCtx.createBufferSource();
-    src.buffer = pick.buffer;
-    src.connect(state.gain);
-    const when = Math.max(state.audioCtx.currentTime + 0.005, state.ackPlayingUntil);
-    src.start(when);
-    state.ackSource = src;
-    state.ackPlayingUntil = when + pick.buffer.duration + 0.05;
-    const ackText = pick.text || pick.url.split('/').pop();
-    addTranscriptEntry('Ack Phrase', ackText, { includeInHistory: false });
-    if (tag === 'idle') recordIdleAck(); else markActivity('ack');
-    $('chunkInfo').textContent = `Ack ${tag}: ${ackText} · ${pick.buffer.duration.toFixed(2)}s`;
-  } catch (e) { console.warn('ack playback failed', e); }
+    const response = await fetch(`/api/acks?voice=${encodeURIComponent(context.voice)}&tag=${encodeURIComponent(tag)}`, { signal });
+    const payload = await ackJson(response, { signal, isCurrent: () => current(context) });
+    if (!current(context)) return [];
+    if (!payload || !Array.isArray(payload.acks) || payload.acks.length > 256
+      || payload.acks.some(item => !item || typeof item.url !== 'string' || !item.url || item.url.length > 2048
+        || item.text !== undefined && typeof item.text !== 'string')) throw new Error('Invalid acknowledgement catalog response');
+    const urls = payload.acks.map(item => ({ url: item.url,
+      text: item.text || item.id || item.name || item.url, id: item.id,
+      name: item.name, tags: item.tags || [] }));
+    if (tag === 'global') state.ackFiles = urls;
+    if (urls.length) retryAfter.delete(tag);
+    if (tag === 'global') {
+      const disabled = $('ackEnabled')?.value === 'off' || payload.status?.enabled === false;
+      const queued = Number.isSafeInteger(payload.status?.queue_depth) && payload.status.queue_depth > 0;
+      const message = disabled ? ACK_DISABLED_MESSAGE
+        : urls.length ? `${urls.length} cached acknowledgement clips available.`
+        : payload.status?.generating === true ? 'Acknowledgement audio is being generated; no cached clips yet.'
+        : queued ? 'Acknowledgement generation is queued; no cached clips yet.'
+        : 'No cached acknowledgement clips available.';
+      ackStatus(message, !disabled && urls.length ? 'good' : 'warn');
+    }
+    return urls;
+  } catch (error) {
+    if (current(context) && error.name !== 'AbortError') ackStatus(`ACK catalog unavailable: ${apiErrorMessage(error)}. Repair the catalog or retry.`, 'bad');
+    return [];
+  }
+}
+
+export async function preloadAckBuffers(tag = 'global') {
+  // Arm playback while starting Live even when acknowledgements are disabled.
+  ensureAudio();
+  if ($('ackEnabled').value !== 'on') return [];
+  const context = snapshot();
+  selectVoice(context.voice);
+  if (state.ackBuffersByTag[tag]?.length) return state.ackBuffersByTag[tag];
+  const retry = retryAfter.get(tag);
+  if (retry && current(retry.context, true) && performance.now() < retry.at) return [];
+  const existing = preloads.get(tag);
+  if (existing && current(existing.context, true)) return existing.promise;
+  existing?.controller.abort();
+  const job = { context, controller: new AbortController(), promise: null };
+  job.promise = (async () => {
+    const urls = tag === 'global' && state.ackFiles.length ? state.ackFiles : await loadAcks(tag, context, { signal: job.controller.signal });
+    const decoded = [];
+    for (const item of urls) {
+      if (!current(context, true)) return [];
+      const url = typeof item === 'string' ? item : item.url;
+      try {
+        const response = await fetch(url, { signal: job.controller.signal });
+        if (!response.ok) throw new Error(`Acknowledgement audio HTTP ${response.status}`);
+        const blob = await readResponseBlob(response, {
+          maxBytes: MAX_ACK_AUDIO_BYTES, signal: job.controller.signal,
+          isCurrent: () => current(context, true),
+        });
+        const bytes = await blob.arrayBuffer();
+        if (!current(context, true)) return [];
+        const buffer = await context.audio.decodeAudioData(bytes);
+        if (!current(context, true)) return [];
+        if (!Number.isFinite(buffer.duration) || buffer.duration <= 0 || buffer.duration > MAX_AUDIO_SECONDS) {
+          throw new Error('Acknowledgement audio exceeds the ten minute audio limit.');
+        }
+        decoded.push({ url, text: typeof item === 'string' ? url : item.text || item.id || item.name || url,
+          buffer, tag });
+      } catch (error) {
+        if (current(context, true) && error.name !== 'AbortError') console.warn('ack decode failed', url, error);
+      }
+    }
+    if (!current(context, true)) return [];
+    state.ackBuffersByTag[tag] = decoded;
+    // Missing/generated-later audio must not turn animation-frame idle checks
+    // into a catalog or WAV request on every frame.
+    if (!decoded.length) retryAfter.set(tag, { context, at: performance.now() + EMPTY_RETRY_MS });
+    return decoded;
+  })().finally(() => { if (preloads.get(tag) === job) preloads.delete(tag); });
+  preloads.set(tag, job);
+  return job.promise;
+}
+
+function canPlay() {
+  return $('ackEnabled').value === 'on' && performance.now() >= state.suppressAckUntil &&
+    !state.pendingImportantAgentMessage && !state.awaitingAgentPermission;
+}
+
+export async function playRandomAck(tag = 'global') {
+  if (!canPlay()) return;
+  if (pendingPlayback && current(pendingPlayback.context, true)) return pendingPlayback.promise;
+  try { ensureAudio(); } catch (error) { console.warn('ack playback failed', error); return; }
+  const context = snapshot();
+  const playback = { context, promise: null };
+  playback.promise = (async () => {
+    try {
+      const pool = await preloadAckBuffers(tag);
+      if (!current(context, true) || !canPlay() || !pool.length) return;
+      if (state.ackSource) { try { state.ackSource.stop(); } catch {} }
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const source = context.audio.createBufferSource();
+      source.buffer = pick.buffer;
+      source.connect(state.gain);
+      const when = Math.max(context.audio.currentTime + 0.005, state.ackPlayingUntil);
+      source.start(when);
+      state.ackSource = source;
+      source.onended = () => { if (state.ackSource === source) state.ackSource = null; };
+      state.ackPlayingUntil = when + pick.buffer.duration + 0.05;
+      const text = pick.text || pick.url.split('/').pop();
+      addTranscriptEntry('Ack Phrase', text, { includeInHistory: false });
+      if (tag === 'idle') recordIdleAck(); else markActivity('ack');
+      $('chunkInfo').textContent = `Ack ${tag}: ${text} · ${pick.buffer.duration.toFixed(2)}s`;
+    } catch (error) { if (current(context, true)) console.warn('ack playback failed', error); }
+  })().finally(() => { if (pendingPlayback === playback) pendingPlayback = null; });
+  pendingPlayback = playback;
+  return playback.promise;
 }

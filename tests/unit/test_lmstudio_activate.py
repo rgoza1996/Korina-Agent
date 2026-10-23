@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-import json
-import os
 import socket
-import subprocess
-import time
 from pathlib import Path
 
 from korina import config as config_mod
@@ -48,20 +44,17 @@ def fake_lms(tmp_path, monkeypatch):
     )
     fake.chmod(0o755)
 
-    # Point korina at the fake lms. Re-import paths so LMS_CLI_BIN picks up the
-    # new env var.
+    # Patch the explicit provider seam. Reloading path-sensitive modules here
+    # leaves fake CLI paths bound in unrelated modules after fixture teardown.
     monkeypatch.setenv('KORINA_LMS_CLI_BIN', str(fake))
-    import importlib
     import korina.util.paths as paths_mod
-    importlib.reload(paths_mod)
     import korina.services.provider_manager as pm_mod
-    importlib.reload(pm_mod)
-    # Patch the module-level references too so the helpers we reloaded see the
-    # new LMS_CLI_BIN.
-    monkeypatch.setattr(pm_mod, 'LMS_CLI_BIN', paths_mod.LMS_CLI_BIN)
-    monkeypatch.setattr(pm_mod, 'LMSTUDIO_BIN', paths_mod.LMSTUDIO_BIN)
-    monkeypatch.setattr(pm_mod, 'LLAMA_SERVER_BIN', paths_mod.LLAMA_SERVER_BIN)
-    monkeypatch.setattr(pm_mod, 'LLAMA_SERVER_USER_UNIT', paths_mod.LLAMA_SERVER_USER_UNIT)
+    monkeypatch.setattr(pm_mod, 'LMS_CLI_BIN', fake)
+    for name, filename in [('LMSTUDIO_BIN', 'lm-studio'), ('LLAMA_SERVER_BIN', 'llama-server')]:
+        executable = tmp_path / filename
+        executable.write_text('#!/bin/sh\nexit 0\n')
+        executable.chmod(0o755)
+        monkeypatch.setattr(pm_mod, name, executable)
 
     # Also patch the symbols that the test client uses (imports made at module
     # load time of routes, etc.).
@@ -70,7 +63,7 @@ def fake_lms(tmp_path, monkeypatch):
 
     fake_catalog = ['qwen/qwen3.5-2b', 'gemma/gemma-4-e4b-it']
     from korina.services import model_catalog as mc_mod
-    monkeypatch.setattr(mc_mod, 'discover_lmstudio_catalog_models', lambda: list(fake_catalog))
+    monkeypatch.setattr(mc_mod, 'discover_lmstudio_catalog_models', lambda **kwargs: list(fake_catalog))
 
     yield {'lms': fake, 'log': log_path, 'port': port, 'pm': pm_mod, 'paths': paths_mod, 'catalog': fake_catalog}
 
@@ -93,7 +86,7 @@ def test_lms_branch_skips_lms_server_start_and_only_loads(fake_lms, isolated_kor
     monkeypatch.setattr(fake_lms['pm'], 'stop_ollama', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'start_lmstudio', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'start_llama_server', lambda *a, **k: None)
-    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda ports=None: fake_lms['pm'].LifecycleActions(stopped=['stray-llama-server']))
     monkeypatch.setattr(fake_lms['pm'], '_is_lmstudio_server_already_up', lambda port=1234: True)
     monkeypatch.setattr(fake_lms['pm'], 'wait_for_lmstudio_server_ready', lambda *a, **k: None)
 
@@ -101,7 +94,8 @@ def test_lms_branch_skips_lms_server_start_and_only_loads(fake_lms, isolated_kor
     assert r.status_code == 200, r.text
     body = r.json()
     assert body['activation']['provider'] == 'lmstudio'
-    assert body['activation']['started'] == ['lm-studio-server']
+    assert body['activation']['started'] == []
+    assert body['activation']['reused'] == ['lm-studio-server']
     assert 'stray-llama-server' in body['activation']['stopped']
 
     log_lines = fake_lms['log'].read_text().splitlines()
@@ -131,12 +125,13 @@ def test_lms_branch_spawns_gui_if_server_not_already_up(fake_lms, isolated_korin
 
     def fake_spawn():
         spawn_calls['count'] += 1
+        return True
 
     monkeypatch.setattr(fake_lms['pm'], 'stop_llama_server', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'stop_ollama', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'start_lmstudio', fake_spawn)
     monkeypatch.setattr(fake_lms['pm'], 'start_llama_server', lambda *a, **k: None)
-    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda ports=None: None)
     monkeypatch.setattr(fake_lms['pm'], '_is_lmstudio_server_already_up', lambda port=1234: False)
     monkeypatch.setattr(fake_lms['pm'], 'wait_for_lmstudio_server_ready', lambda *a, **k: None)
 
@@ -163,7 +158,7 @@ def test_lms_branch_skips_spawn_if_server_already_up(fake_lms, isolated_korina_a
     monkeypatch.setattr(fake_lms['pm'], 'stop_ollama', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'start_lmstudio', fake_spawn)
     monkeypatch.setattr(fake_lms['pm'], 'start_llama_server', lambda *a, **k: None)
-    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda ports=None: None)
     monkeypatch.setattr(fake_lms['pm'], '_is_lmstudio_server_already_up', lambda port=1234: True)
     monkeypatch.setattr(fake_lms['pm'], 'wait_for_lmstudio_server_ready', lambda *a, **k: None)
 
@@ -192,7 +187,7 @@ def test_lms_branch_surfaces_lms_load_error(fake_lms, isolated_korina_app_dir, t
     monkeypatch.setattr(fake_lms['pm'], 'stop_llama_server', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'stop_ollama', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'start_lmstudio', lambda: None)
-    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: None)
+    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda ports=None: None)
     monkeypatch.setattr(fake_lms['pm'], 'wait_for_lmstudio_server_ready', lambda *a, **k: None)
 
     r = client.post('/api/llm/provider/activate', json={'provider': 'lmstudio', 'model': 'qwen/qwen3.5-2b'})
@@ -202,14 +197,25 @@ def test_lms_branch_surfaces_lms_load_error(fake_lms, isolated_korina_app_dir, t
     assert 'load failure simulated' in detail
 
 
-def test_kill_stray_llama_servers_invokes_pkill(isolated_korina_app_dir, monkeypatch):
+def test_kill_stray_llama_servers_only_targets_actual_listener(monkeypatch):
     from korina.services import provider_manager as pm
-    calls = []
-    monkeypatch.setattr(pm.subprocess, 'run',
-                        lambda *a, **k: calls.append(a[0]) or subprocess.CompletedProcess(a[0], 0, '', ''))
+    from korina.services import provider_processes as processes
+
+    # An editor mentions the binary in its argv, and another llama-server
+    # listens on 8080. Neither is the competing listener on 1234.
+    monkeypatch.setattr(processes, 'user_processes', lambda: iter([
+        (101, Path('/usr/bin/editor'), ['editor', 'llama-server --port 1234']),
+        (102, Path('/opt/llama-server'), ['/opt/llama-server', '--port=8080']),
+        (103, Path('/opt/llama-server'), ['/opt/llama-server', '--port=1234']),
+    ]))
+    monkeypatch.setattr(processes, 'listens_on', lambda pid, port: pid == 103 and port == 1234)
+    killed = []
+    monkeypatch.setattr(processes.os, 'kill', lambda pid, signal: killed.append(pid))
+    monkeypatch.setattr(processes, 'wait_for_exit', lambda pids, timeout=2: [])
+
     pm._kill_stray_llama_servers()
-    assert calls and 'pkill' in calls[0] and '--port 1234' in ' '.join(calls[0])
-    assert '-f' in calls[0]
+
+    assert killed == [103]
 
 
 def test_llama_cpp_branch_also_kills_stray_servers(fake_lms, isolated_korina_app_dir, model_root, client, monkeypatch):
@@ -219,7 +225,11 @@ def test_llama_cpp_branch_also_kills_stray_servers(fake_lms, isolated_korina_app
     config_mod.save_config(cfg)
 
     stray_called = []
-    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: stray_called.append('stray'))
+    def stop_stray(ports=None):
+        stray_called.append('stray')
+        return fake_lms['pm'].LifecycleActions(stopped=['stray-llama-server'])
+
+    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', stop_stray)
     monkeypatch.setattr(fake_lms['pm'], 'stop_llama_server', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'stop_ollama', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'start_llama_server', lambda *a, **k: None)
@@ -241,7 +251,11 @@ def test_openai_compatible_branch_also_tears_down_servers(fake_lms, isolated_kor
     config_mod.save_config(cfg)
 
     stray_called = []
-    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', lambda: stray_called.append('stray'))
+    def stop_stray(ports=None):
+        stray_called.append('stray')
+        return fake_lms['pm'].LifecycleActions(stopped=['stray-llama-server'])
+
+    monkeypatch.setattr(fake_lms['pm'], '_kill_stray_llama_servers', stop_stray)
     monkeypatch.setattr(fake_lms['pm'], 'stop_llama_server', lambda: None)
     monkeypatch.setattr(fake_lms['pm'], 'stop_ollama', lambda: None)
 

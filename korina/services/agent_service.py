@@ -3,20 +3,27 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
-import urllib.error
-import urllib.request
+from collections.abc import Callable
 
 from korina.config import (
     agent_auth_headers,
     agent_chat_url,
-    agent_models_url,
     agent_provider,
+    config_agent_reasoning_effort,
     load_config,
 )
 
-from korina.agents.state import agent_state
+from korina.agents.state import agent_state, expected_builtin_generation, record_builtin_admission_cursor
+from korina.agents.base import AGENT_REPORT_TIMEOUT_SECONDS
+from korina.runtime.json_http import HTTPStatusError, RequestCancelledError, request_json
+from korina.runtime.completion import anthropic_text_completion, openai_text_completion
+from korina.services.agent_priority import PERMISSION_REQUEST, classify_agent_priority
+from korina.services.agent_context import (
+    AgentContext, build_agent_context, prepare_queued_injection, previous_with_injections,
+)
+from korina.services.agent_events import MAX_AGENT_EVENT_BYTES, MAX_AGENT_EVENTS, agent_json_size
 
 from korina.schemas import (
     AgentStateRequest,
@@ -26,15 +33,13 @@ from korina.schemas import (
 from korina.util.paths import LMSTUDIO_MODEL
 
 
-def generate_agent_state_report(req: AgentStateRequest) -> str:
-    config = load_config()
+def generate_agent_state_report(
+    req: AgentStateRequest, *, is_current: Callable[[], bool] | None = None,
+    config: dict | None = None, context: AgentContext | None = None,
+) -> str:
+    config = config if config is not None else load_config()
     selected_model = (req.model or str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL)).strip()
-    turns = []
-    for m in req.transcript[-int(config.get('agent_max_turns') or 16):]:
-        role = m.get('role')
-        content = m.get('content')
-        if role in ('user', 'assistant') and isinstance(content, str) and content.strip():
-            turns.append({'role': role, 'content': content.strip()[:2000]})
+    user_payload = context if context is not None else build_agent_context(req, config)
     autonomy_note = (
         f"Pi-style settings: yolo_mode={config.get('agent_yolo_mode')}, project_trust={config.get('agent_project_trust')}, "
         f"injection_mode={config.get('agent_injection_mode')}, follow_up_mode={config.get('agent_follow_up_mode')}, "
@@ -53,52 +58,41 @@ def generate_agent_state_report(req: AgentStateRequest) -> str:
         f'{autonomy_note}\n'
         'Use compact plain text with short headings.'
     )
-    user_payload = {
-        'previous_report': req.previous_report[-4000:],
-        'recent_transcript': turns,
-    }
     provider = agent_provider(config)
     headers = {'Content-Type': 'application/json'} | agent_auth_headers(config)
+    payload: dict = {
+        'model': selected_model,
+        'temperature': 0.2,
+        'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
+    }
+    user_message = {'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)}
     if provider == 'anthropic':
-        payload = {
-            'model': selected_model,
-            'system': system,
-            'messages': [{'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)}],
-            'temperature': 0.2,
-            'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
-        }
+        payload['system'] = system
+        payload['messages'] = [user_message]
     else:
-        payload = {
-            'model': selected_model,
-            'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)},
-            ],
-            'temperature': 0.2,
-            'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
-            'stream': False,
-        }
-    http_req = urllib.request.Request(
-        agent_chat_url(config),
-        data=json.dumps(payload).encode('utf-8'),
-        headers=headers,
-        method='POST',
-    )
+        payload['messages'] = [{'role': 'system', 'content': system}, user_message]
+        payload['stream'] = False
+        if provider == 'meta':
+            effort = config_agent_reasoning_effort(config)
+            if effort:
+                payload['reasoning_effort'] = effort
     try:
-        with urllib.request.urlopen(http_req, timeout=90) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode('utf-8', errors='replace')
-        raise RuntimeError(f'Korina Agent {provider} HTTP {e.code}: {detail}')
+        body = request_json(agent_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=AGENT_REPORT_TIMEOUT_SECONDS, is_current=is_current)
+    except RequestCancelledError:
+        raise
+    except HTTPStatusError as e:
+        raise RuntimeError(f'Korina Agent {provider} HTTP {e.status_code}: {e.detail}') from e
     except Exception as e:
         raise RuntimeError(f'Korina Agent request failed: {e}')
-    try:
-        if provider == 'anthropic':
-            parts = body.get('content') or []
-            return ''.join(part.get('text', '') for part in parts if isinstance(part, dict)).strip()
-        return (body['choices'][0]['message']['content'] or '').strip()
-    except Exception:
-        raise RuntimeError(f'Unexpected Korina Agent response: {body!r}')
+    if provider == 'anthropic':
+        return anthropic_text_completion(body)
+    completion = openai_text_completion(body)
+    if not completion.text and completion.finish_reason == 'length':
+        raise RuntimeError(
+            'Agent model exhausted its output-token budget before returning a report. '
+            'Increase State report max tokens in Korina Agent settings or choose another agent model.'
+        )
+    return completion.text
 
 def sanitize_agent_report(report: str) -> str:
     text = report or ''
@@ -111,39 +105,22 @@ def sanitize_agent_report(report: str) -> str:
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
-def classify_agent_priority(report: str) -> str:
-    text = (report or '').lower()
-    m = re.search(r'^\s*priority\s*:\s*(low|normal|important|critical)\b', text, re.I | re.M)
-    explicit = m.group(1).lower() if m else None
-    critical_cues = ['permission request:', 'explicit permission', 'approve this command', 'authorization required', 'destructive command', 'delete data', 'data loss', 'secret leaked', 'credential exposed']
-    garbled_cues = ['garbled', 'whisper', 'transcription uncertainty', 'stt', 'unclear transcript']
-    self_loop_cues = ['<think>', 'state report', 'korina agent interrupt', 'acknowledgment loop', 'ack phrase']
-    # Guardrail: even if the model says critical/important, garbled STT or self-referential reporting alone is not interrupt-worthy.
-    has_critical_cue = any(word in text for word in critical_cues)
-    if explicit in ('critical', 'important') and any(word in text for word in garbled_cues + self_loop_cues) and not has_critical_cue:
-        return 'normal'
-    # Critical is intentionally narrow: immediate safety/security/data-loss/time-sensitive risk or explicit permission.
-    # A critical cue must override a lower explicit label from the model (for example: "Priority: normal" plus
-    # "Permission request:" still needs to become a permission_request event downstream).
-    if has_critical_cue:
-        return 'critical'
-    if explicit:
-        return explicit
-    if any(word in text for word in ['critical:', 'urgent:', 'blocked:', 'security risk', 'cannot continue without', 'task is blocked']):
-        return 'important'
-    # Garbled STT, Whisper uncertainty, generic errors, and routine warnings should not interrupt by keyword accident.
-    if any(word in text for word in ['garbled', 'whisper', 'transcription uncertainty', 'stt', 'unclear transcript']):
-        return 'normal'
-    return 'normal'
-
-def push_agent_event(event: dict) -> dict:
+def push_agent_event(event: dict, *, generation: int | None = None) -> dict:
+    """Publish owned JSON data; nested values must stay immutable afterward."""
     with agent_state.lock:
-        agent_state.event_seq += 1
+        if generation is not None and generation != agent_state.generation:
+            return {}
         event = dict(event)
-        event['id'] = agent_state.event_seq
+        event['id'] = agent_state.event_seq + 1
         event['created_at'] = time.time()
+        size = agent_json_size(event)
+        agent_state.event_seq += 1
         agent_state.events.append(event)
-        del agent_state.events[:-100]
+        agent_state.event_sizes.append(size)
+        agent_state.event_bytes += size
+        while len(agent_state.events) > MAX_AGENT_EVENTS or agent_state.event_bytes > MAX_AGENT_EVENT_BYTES:
+            agent_state.events.pop(0)
+            agent_state.event_bytes -= agent_state.event_sizes.pop(0)
         return event
 
 def agent_snapshot() -> dict:
@@ -157,64 +134,70 @@ def agent_snapshot() -> dict:
             'last_event_id': agent_state.event_seq,
         }
 
-def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
+# One running request and one replaceable follow-up snapshot. A burst of
+# transcript deliveries never creates another thread or an unbounded job queue.
+_MAX_PENDING_INJECTIONS = 5
+_executor: ThreadPoolExecutor | None = None
+_worker_running = False
+_worker_epoch = 0
+_queued_prompt: tuple[AgentTranscriptRequest, int] | None = None
+
+
+def _queue_injection(req: AgentTranscriptRequest) -> None:
+    """Caller holds agent_state.lock; keep only recent bounded snapshots."""
+    agent_state.pending_injections.append(prepare_queued_injection(req, time.time()))
+    del agent_state.pending_injections[:-_MAX_PENDING_INJECTIONS]
+
+
+def _process_transcript(req: AgentTranscriptRequest, generation: int) -> None:
     config = load_config()
-    with agent_state.lock:
-        if agent_state.busy:
-            agent_state.pending_injections.append({
-                'transcript': req.transcript,
-                'reason': req.reason,
-                'turn_count': req.turn_count,
-                'created_at': time.time(),
-            })
-            queued_busy = True
-        else:
-            queued_busy = False
-        if not queued_busy:
-            agent_state.busy = True
-            agent_state.status = 'working'
-    if queued_busy:
-        push_agent_event({'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; transcript delta queued as injection.'})
+    if str(config.get('agent_enabled') or 'on') == 'off':
         return
-    push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'})
+    with agent_state.lock:
+        if generation != agent_state.generation:
+            return
+        agent_state.status = 'working'
+        previous = previous_with_injections(agent_state.last_report, agent_state.pending_injections)
+        agent_state.pending_injections.clear()
+    push_agent_event({'type': 'agent_status', 'status': 'working', 'priority': 'low', 'message': 'Korina Agent received transcript update.'}, generation=generation)
     try:
-        previous = agent_state.last_report
-        with agent_state.lock:
-            if agent_state.pending_injections:
-                injection_text = '\n\nQueued injection while busy:\n' + json.dumps(agent_state.pending_injections[-5:], ensure_ascii=False)
-                agent_state.pending_injections.clear()
-            else:
-                injection_text = ''
         state_req = AgentStateRequest(
             transcript=req.transcript,
-            previous_report=(previous + injection_text)[-6000:],
+            previous_report=previous,
             model=str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
             max_tokens=int(config.get('agent_max_tokens') or 512),
         )
+        context = build_agent_context(state_req, config)
         agent_input = {
             'delivery_mode': req.delivery_mode,
             'reason': req.reason,
             'turn_count': req.turn_count,
-            'previous_report': state_req.previous_report,
-            'transcript': state_req.transcript,
-            'model': state_req.model,
+            'previous_report': context['previous_report'],
+            'transcript': context['recent_transcript'],
+            'model': (state_req.model or '').strip(),
         }
-        raw_report = generate_agent_state_report(state_req)
-        report = sanitize_agent_report(raw_report)
+        def is_current() -> bool:
+            enabled = str(load_config().get('agent_enabled') or 'on') != 'off'
+            with agent_state.lock:
+                return enabled and generation == agent_state.generation
+
+        report = sanitize_agent_report(generate_agent_state_report(state_req, is_current=is_current, config=config, context=context))
         if not report:
-            push_agent_event({'type': 'agent_status', 'status': 'empty_report_suppressed', 'priority': 'low', 'message': 'Empty/internal Korina Agent report suppressed.', 'agent_input': agent_input})
+            push_agent_event({'type': 'agent_status', 'status': 'empty_report_suppressed', 'priority': 'low', 'message': 'Empty/internal Korina Agent report suppressed.', 'agent_input': agent_input}, generation=generation)
             return
-        priority = classify_agent_priority(raw_report + '\n' + report)
+        # Hidden reasoning must not promote the visible report's priority.
+        priority = classify_agent_priority(report)
         report_hash = hashlib.sha256(report.encode('utf-8')).hexdigest()
         now = time.time()
-        duplicate_recent = report_hash == agent_state.last_emitted_report_hash and (now - agent_state.last_emitted_report_at) < 60 and priority != 'critical'
-        agent_state.last_emitted_report_hash = report_hash
-        agent_state.last_emitted_report_at = now
         with agent_state.lock:
+            if generation != agent_state.generation:
+                return
+            duplicate_recent = report_hash == agent_state.last_emitted_report_hash and (now - agent_state.last_emitted_report_at) < 60 and priority != 'critical'
+            agent_state.last_emitted_report_hash = report_hash
+            agent_state.last_emitted_report_at = now
             agent_state.last_report = report
-            agent_state.status = 'idle'
             agent_state.last_error = None
-        event_type = 'permission_request' if priority == 'critical' and 'permission request:' in report.lower() else 'state_report'
+        event_type = 'permission_request' if priority == 'critical' and PERMISSION_REQUEST.search(report) else 'state_report'
         if not duplicate_recent:
             push_agent_event({
                 'type': event_type,
@@ -226,50 +209,161 @@ def run_agent_transcript_job(req: AgentTranscriptRequest) -> None:
                 'turn_count': req.turn_count,
                 'agent_input': agent_input,
                 'duplicate_suppressed': False,
-            })
+            }, generation=generation)
         else:
-            push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'agent_input': agent_input})
-    except Exception as e:
+            push_agent_event({'type': 'agent_status', 'status': 'duplicate_report_suppressed', 'priority': 'low', 'message': 'Duplicate Korina Agent report suppressed.', 'report': report, 'agent_input': agent_input}, generation=generation)
+    except RequestCancelledError:
+        return
+    except Exception as exc:
         with agent_state.lock:
-            agent_state.status = 'idle'
-            agent_state.last_error = str(e)
-        push_agent_event({'type': 'agent_error', 'priority': 'important', 'message': str(e)})
-    finally:
-        with agent_state.lock:
-            agent_state.busy = False
+            if generation != agent_state.generation:
+                return
+            agent_state.last_error = str(exc)
+        push_agent_event({'type': 'agent_error', 'priority': 'important', 'message': str(exc)}, generation=generation)
 
-def submit_agent_transcript(req: AgentTranscriptRequest) -> dict:
+
+def _drain_transcript_jobs(req: AgentTranscriptRequest, generation: int, epoch: int) -> None:
+    global _worker_running, _queued_prompt
+    while True:
+        with agent_state.lock:
+            if epoch != _worker_epoch:
+                return
+        _process_transcript(req, generation)
+        with agent_state.lock:
+            if epoch != _worker_epoch:
+                return
+            if _queued_prompt is None:
+                _worker_running = False
+                agent_state.busy = False
+                agent_state.status = 'idle'
+                return
+            req, generation = _queued_prompt
+            _queued_prompt = None
+
+
+def reset_agent_state() -> None:
+    """Clear the session and invalidate output from any in-flight model call."""
+    global _queued_prompt
+    with agent_state.lock:
+        agent_state.generation += 1
+        _queued_prompt = None
+        agent_state.events.clear()
+        agent_state.event_sizes.clear()
+        agent_state.event_bytes = 0
+        # Event ids are monotonic within a session; reset restarts the cursor.
+        agent_state.event_seq = 0
+        agent_state.pending_injections.clear()
+        agent_state.busy = False
+        agent_state.status = 'idle'
+        agent_state.last_report = ''
+        agent_state.last_error = None
+        agent_state.last_emitted_report_hash = ''
+        agent_state.last_emitted_report_at = 0.0
+
+
+def shutdown_agent_worker() -> None:
+    """Drop queued work and suppress in-flight output; next submit can restart.
+
+    Owned connected HTTP I/O stops on its next ownership check (about 50 ms).
+    Shutdown does not wait or establish cancellation of remote model compute.
+    """
+    global _executor, _worker_running, _worker_epoch
+    with agent_state.lock:
+        reset_agent_state()
+        executor, _executor = _executor, None
+        _worker_running = False
+        _worker_epoch += 1
+    if executor is not None:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def submit_agent_transcript(req: AgentTranscriptRequest, *, require_idle: bool = False) -> dict:
+    return _admit_agent_request(req, require_idle=require_idle)
+
+
+def submit_agent_permission(req: AgentTranscriptRequest, event: dict) -> dict:
+    """Admit the answer event and its follow-up transcript as one operation."""
+    return _admit_agent_request(req, permission_event=event)
+
+
+def _admit_agent_request(
+    req: AgentTranscriptRequest, *, permission_event: dict | None = None, require_idle: bool = False,
+) -> dict:
+    global _executor, _worker_running, _worker_epoch, _queued_prompt
+    admission_generation = expected_builtin_generation()
+    if admission_generation is None:
+        with agent_state.lock:
+            admission_generation = agent_state.generation
+    # Never acquire the config transaction lock while holding agent_state.lock:
+    # a successful disable persists under that lock before resetting the agent.
     config = load_config()
     if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'accepted': False, 'disabled': True, 'status': agent_snapshot()}
-    if req.delivery_mode == 'injection':
-        with agent_state.lock:
-            agent_state.pending_injections.append({'transcript': req.transcript, 'reason': req.reason, 'turn_count': req.turn_count, 'created_at': time.time()})
-        push_agent_event({'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'})
-        return {'ok': True, 'accepted': True, 'queued_as': 'injection', 'status': agent_snapshot()}
-    threading.Thread(target=run_agent_transcript_job, args=(req,), daemon=True).start()
-    return {'ok': True, 'accepted': True, 'queued_as': 'prompt', 'status': agent_snapshot()}
-
+    with agent_state.lock:
+        if admission_generation != agent_state.generation:
+            return {'ok': True, 'accepted': False, 'stale': True, 'status': agent_snapshot()}
+        if require_idle and _worker_running:
+            return {'ok': True, 'accepted': False, 'busy': True, 'status': agent_snapshot()}
+        if require_idle:
+            record_builtin_admission_cursor(agent_state.event_seq)
+        notification = None
+        if req.delivery_mode == 'injection':
+            _queue_injection(req)
+            notification = {'type': 'agent_status', 'status': 'injection_received', 'priority': 'low', 'message': 'Transcript injection queued for Korina Agent.'}
+            queued_as = 'injection'
+        elif _worker_running:
+            # Full transcript snapshots supersede earlier queued prompts.
+            # Preserve their bounded context as injections for the follow-up.
+            if _queued_prompt is not None:
+                _queue_injection(_queued_prompt[0])
+            _queued_prompt = (req, agent_state.generation)
+            agent_state.busy = True
+            notification = {'type': 'agent_status', 'status': 'busy_queued_injection', 'priority': 'low', 'message': 'Korina Agent is busy; latest transcript queued.'}
+            queued_as = 'injection'
+        else:
+            if _executor is None:
+                _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='korina-agent')
+            previous_busy, previous_status = agent_state.busy, agent_state.status
+            _worker_running = True
+            agent_state.busy = True
+            agent_state.status = 'working'
+            try:
+                _executor.submit(_drain_transcript_jobs, req, agent_state.generation, _worker_epoch)
+            except BaseException:
+                # ThreadPoolExecutor can queue a WorkItem before starting its
+                # thread fails. Retire it and invalidate that job before the
+                # agent lock is released; a retry must use a fresh executor.
+                failed, _executor = _executor, None
+                _worker_epoch += 1
+                _worker_running = False
+                agent_state.busy, agent_state.status = previous_busy, previous_status
+                try:
+                    failed.shutdown(wait=False, cancel_futures=True)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception('Failed to retire agent executor after submission failure')
+                raise
+            queued_as = 'prompt'
+        if permission_event is not None:
+            push_agent_event(permission_event, generation=admission_generation)
+        if notification is not None:
+            push_agent_event(notification, generation=admission_generation)
+    return {'ok': True, 'accepted': True, 'queued_as': queued_as, 'status': agent_snapshot()}
 
 
 # --- Phase 1.5 helpers moved from korina.config ---
 
-def parse_model_ids(body: dict) -> list:
-    models = []
+def parse_model_ids(body: dict, *, pinned=()) -> list:
+    from korina.model_ids import limit_model_ids
     data = body.get('data', []) if isinstance(body, dict) else []
-    if isinstance(data, list):
-        for item in data:
-            mid = item.get('id') if isinstance(item, dict) else item
-            if isinstance(mid, str) and mid.strip():
-                models.append(mid.strip())
-    return models
+    if not isinstance(data, list):
+        data = []
+    return limit_model_ids((item.get('id') if isinstance(item, dict) else item
+                            for item in data), pinned=pinned)
 
 
-def agent_model_choices() -> list:
+def agent_model_choices(config: dict | None = None) -> list:
     from korina.config import agent_models_url, agent_auth_headers, load_config
-    config = load_config()
-    import urllib.request as _ur
-    req = _ur.Request(agent_models_url(config), headers=agent_auth_headers(config), method='GET')
-    with _ur.urlopen(req, timeout=20) as resp:
-        body = json.loads(resp.read().decode('utf-8'))
-    return parse_model_ids(body)
+    config = config if config is not None else load_config()
+    body = request_json(agent_models_url(config), headers=agent_auth_headers(config), timeout=20)
+    return parse_model_ids(body, pinned=[config.get('agent_model') or config.get('lm_model')])

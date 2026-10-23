@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<main>  <div><h1>Korina Voice Lab</h1><p class="sub">Auto-VAD + built-in Whisper or multimodal STT → local response LLM → Kokoro SSE TTS</p></div>
+<main>  <div><h1>Korina Voice Lab</h1><p class="sub">Auto-VAD + built-in Whisper or multimodal STT → response LLM → Kokoro SSE TTS</p></div>
   <div class="row between">
     <span class="pill"><span id="pageDot" class="dot"></span><span id="pageHealth">page server…</span></span>
     <span class="pill"><span id="ttsDot" class="dot"></span><span id="ttsHealth">kokoro…</span></span>
@@ -28,9 +28,9 @@
         <details class="settingsGroup" id="sttSection" open>
           <summary>Speech to Text</summary>
           <div class="settingsGroupBody">
-            <p class="sectionLead">Whisper is built into Korina. Multimodal STT can borrow the LLM Response settings unless you override them here.</p>
+            <p class="sectionLead">Whisper and optional Whistle run locally. Multimodal STT can borrow the LLM Response settings unless you override them here.</p>
             <p class="small mono" id="sttReasoningHint">Reasoning: built-in Whisper does not use this toggle.</p>
-            <div><label for="sttBackend">Speech-to-text backend</label><select id="sttBackend"><option value="whisper" selected>Built-in Whisper</option><option value="llm">Multimodal model</option></select></div>
+            <div><label for="sttBackend">Speech-to-text backend</label><select id="sttBackend"><option value="whisper" selected>Built-in Whisper</option><option value="whistle">Whistle — local CPU</option><option value="llm">Multimodal model</option></select></div>
             <div><label for="endpointMode">Endpointing mode</label><select id="endpointMode"><option value="reading" selected>Reading/dictation — wait longer</option><option value="conversation">Conversation — quicker turns</option></select></div>
             <div id="sttWhisperDeviceWrap"><label for="sttDevice">Whisper device</label><select id="sttDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
             <div id="sttWhisperModelWrap"><label for="sttModel">Whisper model</label><select id="sttModel"><option value="tiny.en">tiny.en — fastest CPU</option><option value="base.en" selected>base.en — CPU balanced</option><option value="small.en">small.en — better, slower</option><option value="turbo">turbo — quality, slow CPU</option><option value="distil-large-v3">distil-large-v3 — faster large English</option></select></div>
@@ -41,16 +41,13 @@
                 <input type="checkbox" id="sttCapabilityFilterOverride">
                 <span>Show all models (override audio-capability filter)</span>
               </label>
-              <div class="small mono">When unchecked, only models with audio input support appear in the multimodal STT dropdown. Non-audio-capable models are hidden, not shown in red.</div>
+              <div class="small mono">When unchecked, the picker shows models estimated to accept audio from metadata, names, and local sidecars. These hints do not prove audio support; active probes and real transcription can still reject a model. Show all models to inspect other choices; warnings are shown in red.</div>
             </div>
             <div id="sttMultimodalBaseUrlWrap"><label for="sttLlmBaseUrl">Base URL</label><input id="sttLlmBaseUrl" type="text" placeholder="blank = inherit from LLM Response"></div>
-            <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit from LLM Response"></div>
+            <div id="sttMultimodalApiKeyWrap" class="settingsHidden"><label for="sttLlmApiKeyEnv">API key env var</label><input id="sttLlmApiKeyEnv" type="text" placeholder="blank = inherit for the same API URL"></div>
             <div id="sttMultimodalReasoningWrap" class="secretNote settingsHidden"><label>Advanced</label><div class="toggleLine"><input id="sttLlmReasoningEnabled" type="checkbox"><span>Allow multimodal STT model reasoning / thinking</span></div></div>
             <div><label for="finalSttMode">End-of-speech finalization</label><select id="finalSttMode"><option value="chunks" selected>Use live chunks — no full paragraph retranscribe</option><option value="full">Full utterance final pass</option></select></div>
             <div><label for="partialWindowMs">Live partial transcript window</label><input id="partialWindowMs" type="range" min="800" max="3200" step="100" value="1800"><div class="fieldHint"><span id="partialWindowMsDisplay">1.8s</span> audio per rolling partial STT window while you are still speaking.</div></div>
-            <div><label for="sttCloudBaseUrl">Cloud STT base URL</label><input id="sttCloudBaseUrl" type="text" placeholder="optional future STT endpoint"></div>
-            <div><label for="sttCloudModel">Cloud STT model</label><input id="sttCloudModel" type="text" placeholder="e.g. whisper-1"></div>
-            <div><label for="sttApiKeyEnv">STT API key env var</label><input id="sttApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
           </div>
         </details>
         <details class="settingsGroup" id="llmResponseSection" open>
@@ -58,11 +55,13 @@
           <div class="settingsGroupBody">
             <p class="sectionLead">Standard response model settings for Korina Converse.</p>
             <p class="small mono" id="llmReasoningHint">Reasoning: off.</p>
-            <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option></select></div>
-            <div><label for="lmModel">Model</label><select id="lmModel"><option value="qwen3.5-2b-uncensored-hauhaucs-aggressive">qwen3.5-2b-uncensored-hauhaucs-aggressive</option></select></div>
+            <div><label for="llmProvider">LLM provider</label><select id="llmProvider"><option value="llama.cpp">llama.cpp local</option><option value="lmstudio">LM Studio local</option><option value="ollama">Ollama local</option><option value="openai-compatible">OpenAI-compatible / generic</option><option value="meta">Meta Model API</option></select></div>
+            <div><label for="lmModel">Model</label><select id="lmModel"><option value="">Select a response model</option></select></div>
             <div><label for="llmBaseUrl">Base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:8080/v1"></div>
             <div><label for="llmApiKeyEnv">API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
-            <div class="secretNote"><label>Advanced</label><div class="toggleLine"><input id="llmReasoningEnabled" type="checkbox"><span>Allow response model reasoning / thinking</span></div></div>
+            <div><label for="llmMaxTokens">Response token budget</label><input id="llmMaxTokens" type="number" min="1" max="8192" step="1" value="180"><p class="fieldHint">Meta reasoning and the spoken answer share this budget. A larger budget may use more tokens.</p></div>
+            <div id="llmReasoningEffortWrap" class="settingsHidden"><label for="llmReasoningEffort">Meta response reasoning effort</label><select id="llmReasoningEffort"><option value="">Model default</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select><p class="fieldHint">Use the model default or request a reasoning level. Reasoning and the answer share the response token budget.</p></div>
+            <div id="llmReasoningEnabledWrap" class="secretNote"><label>Advanced</label><div class="toggleLine"><input id="llmReasoningEnabled" type="checkbox"><span>Allow response model reasoning / thinking</span></div></div>
           </div>
         </details>
         <details class="settingsGroup" id="localModelsSection" open>
@@ -89,10 +88,12 @@
           <div class="settingsGroupBody">
             <p class="sectionLead">Current TTS controls stay the same. The slider below controls how much continuous speech counts as a real turn before Korina answers.</p>
             <div><label for="ttsDevice">Text-to-speech device</label><select id="ttsDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
-            <div><label for="ttsProvider">TTS provider</label><select id="ttsProvider"><option value="kokoro" selected>Kokoro-compatible</option><option value="openai-compatible">OpenAI-compatible / cloud</option><option value="custom">Custom compatible endpoint</option></select></div>
+            <div><label for="ttsProvider">Speech service</label><select id="ttsProvider"><option value="kokoro" selected>Kokoro service</option><option value="custom">Custom Kokoro-compatible service</option></select></div>
             <div><label for="ttsPort">TTS port</label><input id="ttsPort" type="number" min="1" max="65535" value="8880"></div>
-            <div><label for="ttsBaseUrl">TTS base URL override</label><input id="ttsBaseUrl" type="text" placeholder="blank = this host + TTS port"></div>
-            <div><label for="ttsModel">TTS model / engine</label><input id="ttsModel" type="text" value="kokoro" placeholder="kokoro, gpt-4o-mini-tts, etc."></div>
+            <div><label for="ttsBaseUrl">Speech service root URL (without /v1)</label><input id="ttsBaseUrl" type="text" placeholder="http://127.0.0.1:8880"></div>
+            <p class="fieldHint">Use a Kokoro-compatible service with browser access enabled. Authenticated cloud speech services are not supported.</p>
+            <div><label for="ttsHealthUrl">Optional service health URL</label><input id="ttsHealthUrl" type="text" placeholder="blank = /health for Kokoro"><div class="fieldHint">Custom services stay unverified until a working health URL is configured.</div></div>
+            <div><label for="ttsModel">TTS model / engine</label><input id="ttsModel" type="text" value="kokoro" placeholder="kokoro"></div>
             <div>
               <label for="minSpeechMs">Minimum continuous speech before accepting voice input</label>
               <input id="minSpeechMs" type="range" min="600" max="3000" step="100" value="1200">
@@ -104,55 +105,45 @@
 
       <div id="settingsChannel" class="grid settingsPanel">
         <details class="settingsGroup" open>
-          <summary>Converse Channel</summary>
+          <summary>Python Converse channel</summary>
           <div class="settingsGroupBody">
-            <p class="sectionLead">Select which ConverseChannel adapter serves traffic. The default <code>korina</code> is the in-process Korina Agent. Switches are in-process and do not persist across restarts.</p>
-            <div><label for="channelSelect">Active channel</label><select id="channelSelect"></select></div>
+            <p class="sectionLead">Select the channel used by Python integrations. The default <code>korina</code> connects to the in-process Korina Agent. Selection is saved across restarts. This control does not reroute browser chat, transcription, agent deliveries or speech output. Browser replies use the response provider in Models &amp; Providers.</p>
+            <div><label for="channelSelect">Active Python channel</label><select id="channelSelect"></select></div>
             <p class="small mono" id="channelSelectHint">Loading registered channels&hellip;</p>
           </div>
         </details>
       </div>
       <div id="settingsAgent" class="grid settingsPanel">
         <div class="secretNote"><label>Korina Agent</label><div class="toggleLine"><input id="agentEnabled" type="checkbox" checked><span>Enable hidden state reports and injection</span></div></div>
-        <div><label for="agentProvider">Agent endpoint type</label><select id="agentProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="anthropic">Anthropic-compatible</option></select></div>
+        <p class="small secretNote">One agent is shared by this server. Other tabs share its reports, permission requests and resets.</p>
+        <div><label for="agentProvider">Agent endpoint type</label><select id="agentProvider"><option value="openai-compatible" selected>OpenAI-compatible</option><option value="anthropic">Anthropic-compatible</option><option value="meta">Meta Model API</option></select></div>
         <div><label for="agentBaseUrl">Agent API base URL</label><input id="agentBaseUrl" type="text" value="http://127.0.0.1:1234/v1" placeholder="OpenAI: .../v1 · Anthropic: .../v1"></div>
-        <div><label for="agentApiKey">Agent API key</label><input id="agentApiKey" type="password" autocomplete="off" placeholder="Optional; saved locally in config.json"></div>
+        <div><label for="agentApiKey">Agent API key</label><input id="agentApiKey" type="password" autocomplete="off" placeholder="Optional; saved locally in config.json" title="Blank inherits response credentials only for the same API base URL; the explicit Meta profile otherwise uses server environment MODEL_API_KEY."></div>
         <div><label for="agentModel">Korina Agent model</label><select id="agentModel"><option value="">Use Korina Converse model</option></select></div>
         <div><label>&nbsp;</label><button id="refreshAgentModelsBtn" class="secondary" type="button">Refresh Agent models</button></div>
         <div><label for="agentMaxTurns">Transcript turns sent to agent</label><input id="agentMaxTurns" type="number" min="2" max="40" value="16"></div>
         <div><label for="agentMaxTokens">State report max tokens</label><input id="agentMaxTokens" type="number" min="64" max="2048" value="512"></div>
+        <div id="agentReasoningEffortWrap" class="settingsHidden"><label for="agentReasoningEffort">Meta agent reasoning effort</label><select id="agentReasoningEffort"><option value="">Model default</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select><p class="fieldHint">Independent of response effort. The saved setting applies to the next report; reasoning and the report share State report max tokens.</p><p id="agentReasoningHint" class="small mono">Reasoning: Meta provider default.</p></div>
         <div class="secretNote"><label>Converse ↔ Agent coordination</label><p class="small mono">Converse stays real-time; Agent receives transcript deltas independently and returns hidden injection or priority interrupts.</p></div>
         <div><label for="agentFirstDeliveryMode">First transcript delivery</label><select id="agentFirstDeliveryMode"><option value="first_turn_or_timer" selected>After first turn or timer</option><option value="first_turn">After first turn</option><option value="timer">After timer only</option></select></div>
         <div><label for="agentFirstDeliverySeconds">First delivery seconds</label><input id="agentFirstDeliverySeconds" type="number" min="1" value="20"></div>
         <div><label for="agentPeriodicDeliveryTurns">Periodic delivery turns</label><input id="agentPeriodicDeliveryTurns" type="number" min="1" value="2"></div>
         <div><label for="agentPeriodicDeliverySeconds">Periodic delivery seconds</label><input id="agentPeriodicDeliverySeconds" type="number" min="5" value="45"></div>
         <div><label for="agentBusyDeliveryMode">When Agent busy</label><select id="agentBusyDeliveryMode"><option value="injection" selected>Deliver as injection</option><option value="prompt">Deliver as prompt</option></select></div>
-        <div><label for="agentIdleDeliveryMode">When Agent idle</label><select id="agentIdleDeliveryMode"><option value="prompt" selected>Deliver as prompt</option><option value="injection">Deliver as injection</option></select></div>
+        <div><label for="agentIdleDeliveryMode">When Agent idle</label><select id="agentIdleDeliveryMode"><option value="prompt" selected>Deliver as prompt</option><option value="injection">Queue context for next prompt</option></select><div class="fieldHint">Queued context does not start a report while Agent is idle. Choose prompt for automatic reports.</div></div>
         <div><label for="agentInterruptsEnabled">Agent interrupts</label><select id="agentInterruptsEnabled"><option value="on" selected>On</option><option value="off">Off</option></select></div>
         <div><label for="agentInterruptMinPriority">Soft interrupt at</label><select id="agentInterruptMinPriority"><option value="normal">Normal</option><option value="important" selected>Important</option><option value="critical">Critical only</option></select></div>
         <div><label for="agentHardInterruptMinPriority">Hard interrupt at</label><select id="agentHardInterruptMinPriority"><option value="important">Important</option><option value="critical" selected>Critical only</option></select></div>
         <div><label for="agentInterruptCooldownPaddingMs">Interrupt cooldown padding ms</label><input id="agentInterruptCooldownPaddingMs" type="number" min="0" value="3000"></div>
         <div><label for="agentPermissionInterrupts">Permission interrupts</label><select id="agentPermissionInterrupts"><option value="on" selected>On</option><option value="off">Off</option></select></div>
         <div><label for="agentReportInjectionMode">Normal reports</label><select id="agentReportInjectionMode"><option value="next_reply" selected>Inject into next reply</option><option value="silent">Store silently</option></select></div>
-        <div class="secretNote"><label>Pi-style behavior</label><p class="small mono">These mirror Pi Coding Agent-style controls for trust, injection, compaction, thinking, transport, retries, and visual/tool behavior.</p></div>
-        <div class="secretNote"><label>YOLO / autonomous mode</label><div class="toggleLine"><input id="agentYoloMode" type="checkbox"><span>More decisive injection; trust Korina Agent to act without extra confirmation prompts where supported</span></div></div>
-        <div><label for="agentProjectTrust">Project trust</label><select id="agentProjectTrust"><option value="ask" selected>Ask</option><option value="always">Always trust</option><option value="never">Never trust</option></select></div>
-        <div><label for="agentThinkingLevel">Thinking level</label><select id="agentThinkingLevel"><option value="off">Off</option><option value="minimal">Minimal</option><option value="low" selected>Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select></div>
-        <div><label for="agentInjectionMode">Injection mode</label><select id="agentInjectionMode"><option value="one-at-a-time" selected>One at a time</option><option value="all">All queued injection</option></select></div>
-        <div><label for="agentFollowUpMode">Follow-up mode</label><select id="agentFollowUpMode"><option value="one-at-a-time" selected>One at a time</option><option value="all">All follow-ups</option></select></div>
-        <div><label for="agentTransport">Transport</label><select id="agentTransport"><option value="auto" selected>Auto</option><option value="responses">Responses API</option><option value="chat">Chat completions</option></select></div>
-        <div><label for="agentHttpIdleTimeoutMs">HTTP idle timeout ms</label><input id="agentHttpIdleTimeoutMs" type="number" min="0" value="0"></div>
-        <div><label for="agentAutoCompact">Auto compaction</label><select id="agentAutoCompact"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <div><label for="agentHideThinking">Hide thinking block</label><select id="agentHideThinking"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <div><label for="agentCompactionReserveTokens">Compaction reserve tokens</label><input id="agentCompactionReserveTokens" type="number" min="0" value="16384"></div>
-        <div><label for="agentCompactionKeepRecentTokens">Keep recent tokens</label><input id="agentCompactionKeepRecentTokens" type="number" min="0" value="20000"></div>
-        <div><label for="agentRetryEnabled">Retry</label><select id="agentRetryEnabled"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <div><label for="agentMaxRetries">Max retries</label><input id="agentMaxRetries" type="number" min="0" value="3"></div>
-        <div><label for="agentRetryBaseDelayMs">Retry base delay ms</label><input id="agentRetryBaseDelayMs" type="number" min="0" value="2000"></div>
-        <div><label for="agentEnableSkillCommands">Skill commands</label><select id="agentEnableSkillCommands"><option value="on" selected>On</option><option value="off">Off</option></select></div>
-        <div><label for="agentBlockImages">Block images</label><select id="agentBlockImages"><option value="off" selected>Off</option><option value="on">On</option></select></div>
+        <p class="sectionLead">The agent writes reports and permission questions. Tool execution is planned for a future version.</p>
       </div>
-      <p class="small mono" id="settingsInfo">Model pickers query the currently configured /v1/models endpoints when you open them. Endpoint and timing settings save to config.json. <span id="settingsLiveStatus"></span></p>
+      <p class="small mono"><span id="settingsInfo">Loading saved settings…</span><br>
+        <span id="settingsLiveStatus"></span><br>
+        <span id="modelOptionsStatus"></span><br>
+        <span id="settingsActionStatus" role="status" aria-live="polite"></span>
+      </p>
       <button id="clearProbeBtn" style="display:none;">Clear audio probe and retry</button>
       <div class="actions"><button id="saveSettingsBtn">Done</button></div>
     </div>
@@ -189,6 +180,7 @@
       <div>
         <label for="ackEnabled">Ack phrases</label>
         <select id="ackEnabled"><option value="on" selected>On — play random ack while thinking</option><option value="off">Off</option></select>
+        <p class="status" id="ackStatus" aria-live="polite">Acknowledgement catalog loading…</p>
       </div>
     </div>
     <div class="wave" id="wave"></div>
@@ -203,7 +195,7 @@
 
   <section class="card">
     <label for="text">3. Reply / text to speak</label>
-    <textarea id="text" placeholder="Korina's latest reply or text to speak appears here.">Hello, this is Kokoro running through the Roggoz FastAPI streaming server.</textarea>
+    <textarea id="text" placeholder="Korina's latest reply or text to speak appears here.">Hello, I’m Korina. I’m ready to help with your next idea.</textarea>
     <div class="grid" style="margin-top:12px">
       <div><label for="voice">Voice</label><select id="voice"><option selected>af_heart</option><option>af_bella</option><option>af_nicole</option><option>af_sarah</option><option>af_sky</option><option>am_adam</option><option>am_michael</option><option>bf_emma</option><option>bf_george</option></select></div>
       <div><label for="speed">Speed <span id="speedDisplay">1.0×</span></label><input id="speed" type="range" min="0.5" max="2" step="0.1" value="1"></div>
@@ -220,6 +212,20 @@
     <audio id="audio" controls></audio>
   </section>
 
+  <section class="card">
+    <details id="responseUsagePanel" open>
+      <summary>Last response usage</summary>
+      <p class="small" id="responseUsageStatus" role="status" aria-live="polite">No response yet.</p>
+      <p class="small mono" id="responseUsageSettings">Request settings unavailable.</p>
+      <div class="grid small">
+        <p>Input tokens: <strong id="responsePromptTokens">Unavailable</strong></p>
+        <p>Output tokens: <strong id="responseCompletionTokens">Unavailable</strong></p>
+        <p>Reasoning tokens: <strong id="responseReasoningTokens">Unavailable</strong></p>
+        <p>Cached input tokens: <strong id="responseCachedTokens">Unavailable</strong></p>
+      </div>
+      <p class="small">Provider-reported observations for the latest request. Missing counts are unavailable; zero is a reported count. Reasoning is part of output, and cached input is part of input.</p>
+    </details>
+  </section>
   <section class="card"><label>Conversation</label><div class="log" id="log"></div></section>
   <section class="card"><label>Korina Agent Debug</label><div class="debugLog" id="agentDebug">Agent prompts, injection deliveries, and outputs will appear here.</div></section>
 </main>

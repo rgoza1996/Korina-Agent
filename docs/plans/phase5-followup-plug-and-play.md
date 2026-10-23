@@ -1,3 +1,5 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Phase 5 Follow-up: Frontend Replaceability + Backend Plug-and-Play
 
 > **For Hermes:** Use `subagent-driven-development` to execute task-by-task.

@@ -1,0 +1,88 @@
+{
+  "kind": "github-actions-checkpoint",
+  "observed_on": "2026-10-23",
+  "pre_event_preparation": true,
+  "head_revision": "4158cd2e811ea6d8869e5687204f264ea8ac2caf",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "checks": [
+    {
+      "id": 120483474804,
+      "name": "pytest (3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483474804",
+      "annotations_count": 0
+    },
+    {
+      "id": 120483474470,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483474470",
+      "annotations_count": 0
+    },
+    {
+      "id": 120483474336,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483474336",
+      "annotations_count": 0
+    },
+    {
+      "id": 120483474322,
+      "name": "pytest (3.10)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483474322",
+      "annotations_count": 0
+    },
+    {
+      "id": 120483474252,
+      "name": "speech-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483474252",
+      "annotations_count": 0
+    },
+    {
+      "id": 120483474250,
+      "name": "pytest (3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483474250",
+      "annotations_count": 0
+    },
+    {
+      "id": 120483474234,
+      "name": "pytest (3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483474234",
+      "annotations_count": 0
+    },
+    {
+      "id": 120483474190,
+      "name": "minimum-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483474190",
+      "annotations_count": 0
+    },
+    {
+      "id": 120483473995,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39973838799/job/120483473995",
+      "annotations_count": 0
+    }
+  ],
+  "all_nine_passed": true,
+  "scope": [
+    "Observed through the Codex Code Review backend for the exact stated revision; all nine jobs report zero annotations.",
+    "Includes the ACK hint fix, elapsed-time Live VAD confirmation with stale-candidate expiration and the floor installation simplification.",
+    "Separate local incremental verification retains the actual source identity of each Python and frontend phase.",
+    "Provider replies in automated tests are fixtures; actual authenticated Meta recording has separate evidence. Physical headset, final event acceptance and merge remain separate."
+  ]
+}

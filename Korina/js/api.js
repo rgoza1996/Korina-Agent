@@ -1,77 +1,249 @@
-// js/api.js
-//
-// Frontend API client + bootstrap. Provides the canonical wrappers
-// for the page server's HTTP endpoints (`/api/config`, `/api/health`,
-// `/api/llm/provider/activate`) and the application entrypoint
-// `initApp()` that wires up the rest of the page once DOM modules
-// have been extracted.
-//
-// Forward-reference imports: `settings-ui.js` (lands in 3.2.4) and
-// `providers-ui.js` (lands in 3.2.6) are imported statically. Until
-// those modules exist, importing this file will fail to load — this
-// is intentional per the Phase 3 plan and will be resolved by the
-// time `app.js` actually imports this module.
-//
-// Dynamic imports for `acks.js`, `live.js`, and `agent-ui.js` keep
-// this file loadable before those modules land; they are replaced
-// with static imports in Task 3.2.15 (cleanup).
+// Backend API client, runtime health rendering, and application bootstrap.
 
 import { state } from './state.js';
+import { apiErrorMessage } from './api-errors.js';
 import { ttsProviderLabel, llmProviderLabel } from './labels.js';
-import { $, setDot } from './dom.js';
+import { $, setDot, status } from './dom.js';
 import {
-  applyConfig, ttsProvider,
+  applyConfig, collectConfig, syncConverseSettingsUI,
   sttBackend,
   sttDevice, sttModel,
   effectiveSttLlmModel, effectiveSttLlmBaseUrl,
   sttLlmReasoningEnabled,
   llmReasoningEnabled,
   llmProvider, llmBaseUrl, lmModel,
-  partialWindowMsSetting,
+  metaReasoningSummary,
   markActivity,
 } from './settings-ui.js';
-import { loadAgentModelOptions } from './providers-ui.js';   // lands in 3.2.6
+import { loadAgentModelOptions, loadCapabilities, setBaseUrlEditability, syncAudioProbeButton } from './providers-ui.js';
 
-export async function activateSelectedProvider(provider, model = '') {
-  const r = await fetch('/api/llm/provider/activate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, model: model || '' }),
-  });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.detail || JSON.stringify(j));
-  if (j.saved) applyConfig(j.saved);
-  // Signal a pending provider switch so the readiness pill flips to
-  // "loading" until /api/health confirms the new model is loaded.
-  state.providerPending = true;
-  return j;
+let capabilitiesInFlight = null;
+const CAPABILITIES_FAILURE = 'Provider capabilities unavailable: ';
+let healthPollVersion = 0;
+
+export function refreshProviderCapabilities() {
+  if (capabilitiesInFlight) return capabilitiesInFlight;
+  capabilitiesInFlight = (async () => {
+    try {
+      const registry = await loadCapabilities();
+      if (!registry?.providers || typeof registry.providers !== 'object' || Array.isArray(registry.providers)
+        || !Object.keys(registry.providers).length
+        || !registry.agentProviders || typeof registry.agentProviders !== 'object' || Array.isArray(registry.agentProviders)) {
+        throw new Error('The server returned an invalid provider registry');
+      }
+      // Read current selections after the request; a delayed initial reply
+      // must not apply editability for an older form selection.
+      await setBaseUrlEditability();
+      const action = $('settingsActionStatus');
+      if (action?.textContent.startsWith(CAPABILITIES_FAILURE)) action.textContent = '';
+      const stt = $('sttStatus');
+      if (stt?.textContent.startsWith(CAPABILITIES_FAILURE)) status(stt, 'Provider capabilities loaded.', 'good');
+      return true;
+    } catch (error) {
+      state._capabilitiesCache = null;
+      const message = apiErrorMessage({ detail: `${CAPABILITIES_FAILURE}${apiErrorMessage(error)}. Open Settings to retry.` });
+      const action = $('settingsActionStatus');
+      if (action) action.textContent = message;
+      const stt = $('sttStatus');
+      if (stt) status(stt, message, 'bad');
+      return false;
+    } finally {
+      capabilitiesInFlight = null;
+    }
+  })();
+  return capabilitiesInFlight;
 }
 
-// loadConfig — moved verbatim from index.html:583
-export async function loadConfig() {
+export async function activateSelectedProvider(provider, model = '') {
+  healthPollVersion++;
+  const bootstrap = initializeSettingsForm();
+  const writeRevision = bootstrap.writeRevision;
   try {
-    const c = await (await fetch('/api/config')).json();
-    applyConfig(c);
-    syncConverseSettingsUI();
-    $('settingsInfo').textContent = 'Loaded saved config.json settings.';
-  } catch (e) {
-    console.warn('config load failed', e);
+    const r = await fetch('/api/llm/provider/activate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, model: model || '' }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(apiErrorMessage(j, `HTTP ${r.status}`));
+    if (j.saved) {
+      const saved = { ...j.saved };
+      for (const [key, confirmed] of Object.entries(bootstrap.confirmed)) {
+        if (confirmed.revision > writeRevision) saved[key] = confirmed.value;
+      }
+      state.appConfig = { ...state.appConfig, ...saved };
+    }
+    // Signal a pending provider switch so the readiness pill flips to
+    // "loading" until /api/health confirms the new model is loaded.
+    state.providerPending = true;
+    return j;
+  } finally {
+    // A same-selection reload (including a partial failure) can change the
+    // running server without changing the selected configuration identity.
+    healthPollVersion++;
   }
 }
 
-// saveConfigNow + saveConfigSoon — moved verbatim from index.html:587-591
+const sameSetting = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+export function initializeSettingsForm() {
+  if (!state.settingsBootstrap) state.settingsBootstrap = {
+    observed: collectConfig(), dirty: {}, confirmed: {}, writeRevision: 0, loaded: false,
+  };
+  return state.settingsBootstrap;
+}
+
+function observeSettingsForm() {
+  const bootstrap = initializeSettingsForm();
+  const current = collectConfig();
+  for (const [key, value] of Object.entries(current)) {
+    if (key !== 'agent_enabled' && !sameSetting(value, bootstrap.observed[key])) bootstrap.dirty[key] = value;
+  }
+  bootstrap.observed = current;
+  return bootstrap;
+}
+
+function clearSavedEdits(config) {
+  const bootstrap = initializeSettingsForm();
+  for (const [key, value] of Object.entries(config)) {
+    if (sameSetting(value, bootstrap.dirty[key])) delete bootstrap.dirty[key];
+  }
+}
+
+let configReadInFlight = null;
+export function loadConfig() {
+  if (!configReadInFlight) configReadInFlight = readConfig().finally(() => { configReadInFlight = null; });
+  return configReadInFlight;
+}
+
+// A late read may fill untouched fields, but cannot replace local edits or
+// values confirmed by a newer successful save.
+async function readConfig() {
+  const bootstrap = initializeSettingsForm();
+  const writeRevision = bootstrap.writeRevision;
+  const activeSnapshot = state.appConfigSnapshot;
+  const controlVersion = agentControlVersion;
+  try {
+    const response = await fetch('/api/config');
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const c = await response.json();
+    if (!c || typeof c !== 'object' || Array.isArray(c) || c.ok === false || Object.hasOwn(c, 'detail')) {
+      throw new Error('The server returned invalid settings.');
+    }
+    if (state.settingsBootstrap !== bootstrap) return false;
+    observeSettingsForm();
+    const current = { ...c };
+    for (const [key, confirmed] of Object.entries(bootstrap.confirmed)) {
+      if (confirmed.revision > writeRevision) current[key] = confirmed.value;
+    }
+    if (controlVersion !== agentControlVersion || state.agentControlPending) delete current.agent_enabled;
+    applyConfig(current, { preserveKeys: Object.keys(bootstrap.dirty),
+      updateSnapshot: state.appConfigSnapshot === activeSnapshot, snapshot: c });
+    bootstrap.observed = collectConfig();
+    bootstrap.loaded = true;
+    syncConverseSettingsUI();
+    // Config and capabilities load independently. Re-read these selections
+    // even when an overlapping capabilities refresh already applied its UI.
+    if (state._capabilitiesCache) await setBaseUrlEditability();
+    $('settingsInfo').textContent = 'Loaded saved config.json settings.';
+    const action = $('settingsActionStatus');
+    if (action.textContent.startsWith('Settings load failed:')
+      || action.textContent === 'Saved settings have not loaded. Open Settings to retry before provider activation.') action.textContent = '';
+    if ($('sttStatus').textContent.startsWith('Settings load failed:')) status($('sttStatus'), 'Saved settings loaded.', 'good');
+    return true;
+  } catch (e) {
+    if (!bootstrap.loaded) $('settingsInfo').textContent = 'Saved settings have not loaded. Open Settings to retry.';
+    $('settingsActionStatus').textContent = `Settings load failed: ${e.message}`;
+    status($('sttStatus'), `Settings load failed: ${e.message}`, 'bad');
+    console.warn('config load failed', e);
+    return false;
+  }
+}
+
+let saveInFlight = null;
+let queuedConfig = null;
+const agentControlQueue = [];
+let agentControlVersion = 0;
+
+// Serialize saves and coalesce rapid edits into the latest form snapshot.
+function flushConfigSaves() {
+  if (!saveInFlight) {
+    let completed = false;
+    saveInFlight = (async () => {
+      while (agentControlQueue.length || queuedConfig) {
+        const control = agentControlQueue[0];
+        const config = control || queuedConfig;
+        if (!control) queuedConfig = null;
+        if (!Object.keys(config).some(key => JSON.stringify(config[key]) !== JSON.stringify(state.appConfig[key]))) {
+          clearSavedEdits(config);
+          if (control) agentControlQueue.shift();
+          continue;
+        }
+        const response = await fetch('/api/config', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(config),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(apiErrorMessage(result, `Settings save failed: HTTP ${response.status}`));
+        const saved = result?.saved || result;
+        if (!saved || typeof saved !== 'object' || Array.isArray(saved) || saved.ok === false) {
+          throw new Error('The server returned an invalid settings response.');
+        }
+        const bootstrap = observeSettingsForm();
+        bootstrap.writeRevision++;
+        for (const [key, value] of Object.entries(saved)) bootstrap.confirmed[key] = { value, revision: bootstrap.writeRevision };
+        state.appConfig = { ...state.appConfig, ...saved };
+        clearSavedEdits(config);
+        // The server may move following STT/agent fields with the response
+        // model. Reconcile confirmed values without replacing newer edits or
+        // advancing the last activated provider's baseline.
+        if (Object.entries(saved).some(([key, value]) => Object.hasOwn(bootstrap.observed, key)
+          && !(key === 'agent_enabled' && state.agentControlPending)
+          && !Object.hasOwn(bootstrap.dirty, key) && !sameSetting(value, bootstrap.observed[key]))) {
+          applyConfig(saved, { preserveKeys: Object.keys(bootstrap.dirty), updateSnapshot: false });
+          syncAudioProbeButton();
+          if (state._capabilitiesCache) await setBaseUrlEditability();
+        }
+        bootstrap.observed = collectConfig();
+        if (control) agentControlQueue.shift();
+      }
+      return state.appConfig;
+    })().then(result => {
+      completed = true;
+      return result;
+    }).finally(() => {
+      saveInFlight = null;
+      if (completed && (agentControlQueue.length || queuedConfig)) return flushConfigSaves();
+    });
+  }
+  return saveInFlight;
+}
+
 export function saveConfigNow() {
-  const cfg = collectConfig();
-  return fetch('/api/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(cfg),
-  }).catch((e) => console.warn('config save failed', e));
+  clearTimeout(state.saveConfigTimer);
+  state.saveConfigTimer = null;
+  queuedConfig = { ...observeSettingsForm().dirty };
+  return flushConfigSaves();
+}
+
+// Explicit enable transitions are never coalesced: an off/on burst must
+// persist the off transition that cancels old work before enabling again.
+export function saveAgentEnabled(enabled) {
+  agentControlVersion++;
+  agentControlQueue.push({ agent_enabled: enabled ? 'on' : 'off' });
+  return flushConfigSaves();
 }
 
 export function saveConfigSoon() {
+  observeSettingsForm();
   clearTimeout(state.saveConfigTimer);
-  state.saveConfigTimer = setTimeout(saveConfigNow, 250);
+  state.saveConfigTimer = setTimeout(() => {
+    saveConfigNow().catch(error => {
+      $('settingsActionStatus').textContent = `Settings save failed: ${error.message}`;
+      status($('sttStatus'), `Settings save failed: ${error.message}`, 'bad');
+      console.warn('config save failed', error);
+    });
+  }, 250);
 }
 
 // health — refactored for Commit 2 of the debug-strip audit.
@@ -81,40 +253,99 @@ export function saveConfigSoon() {
 // - pageHealth flips red only after 2-3 consecutive poll failures
 //   (state.healthFailures), so a single 5s blip does not alarm.
 // - hostInfo is owned here (every 5s), not in form change handlers.
-// - settingsLiveStatus is updated from j.llm_error and j.stt_llm_error
-//   so the user can see which downstream service is failing.
+// - settingsLiveStatus reads the runtime provider load blocks.
 const HEALTH_FAIL_GRACE = 3; // consecutive misses before flipping pageDot red
+const HEALTH_SETTING_KEYS = [
+  'llm_provider', 'llm_base_url', 'lm_model', 'llm_api_key_env', 'llm_reasoning_effort',
+  'stt_backend', 'stt_device', 'stt_model', 'stt_llm_provider',
+  'stt_llm_base_url', 'stt_llm_model', 'stt_llm_api_key_env', 'partial_window_ms',
+  'tts_provider', 'tts_base_url', 'tts_port', 'tts_health_url', 'tts_model', 'tts_device',
+  'agent_enabled', 'agent_provider', 'agent_base_url', 'agent_model', 'agent_api_key', 'agent_reasoning_effort',
+];
+
+function healthIdentity() {
+  const form = collectConfig();
+  return JSON.stringify([state.liveSession, state.agentSession,
+    HEALTH_SETTING_KEYS.map(key => [form[key], state.appConfig[key]])]);
+}
 
 export async function health() {
+  const version = ++healthPollVersion;
+  const identity = healthIdentity();
+  const current = () => version === healthPollVersion && identity === healthIdentity();
+  const ackContext = { revision: state.ackStatusRevision, voice: $('voice')?.value,
+    liveSession: state.liveSession, agentSession: state.agentSession };
   let j = null;
   let pageFailed = false;
   try {
-    j = await (await fetch('/api/health')).json();
+    const response = await fetch('/api/health');
+    if (!current()) {
+      try { void response.body?.cancel().catch(() => {}); } catch {}
+      return;
+    }
+    if (!response.ok) throw new Error(`Health check failed: HTTP ${response.status}`);
+    j = await response.json();
+    if (!current()) return;
+    if (!j || typeof j !== 'object' || j.ok !== true) throw new Error('Invalid health response');
+    const limits = j.audio_limits;
+    const limitsError = typeof j.audio_limits_error === 'string' ? j.audio_limits_error.trim() : '';
+    if (limitsError) state.audioLimitsError = limitsError;
+    else if (limits && Number.isFinite(limits.max_duration_seconds)
+      && limits.max_duration_seconds >= 1 && limits.max_duration_seconds <= 1800
+      && Number.isSafeInteger(limits.max_upload_bytes) && limits.max_upload_bytes > 0) {
+      state.audioLimits = {
+        max_duration_seconds: limits.max_duration_seconds,
+        max_upload_bytes: limits.max_upload_bytes,
+      };
+      state.audioLimitsError = '';
+    }
     state.healthFailures = 0;
-  } catch (e) {
+  } catch {
+    if (!current()) return;
+    j = null;
     pageFailed = true;
     state.healthFailures = (state.healthFailures || 0) + 1;
   }
 
   if (!pageFailed) {
-    setDot('pageDot', j.whisper_loaded ? 'good' : 'warn');
+    const ack = $('ackStatus');
+    const ownsAckStatus = ack && state.ackStatusRevision === ackContext.revision && $('voice')?.value === ackContext.voice
+      && state.liveSession === ackContext.liveSession && state.agentSession === ackContext.agentSession;
+    if (ownsAckStatus && j.ack_status?.ok === false) {
+      state.ackStatusRevision++;
+      status(ack, `ACK catalog unavailable (clip counts unknown): ${apiErrorMessage({ detail: j.ack_status.error })}`, 'bad');
+    }
+    else if (ownsAckStatus && j.ack_status?.ok === true && ack.textContent.startsWith('ACK catalog unavailable')) {
+      state.ackStatusRevision++;
+      status(ack, 'Acknowledgement catalog available; cached clips reload on use.', 'warn');
+    }
+    const whistleSelected = sttBackend() === 'whistle';
+    setDot('pageDot', (whistleSelected ? j.whistle?.loaded : j.whisper_loaded) ? 'good' : 'warn');
     const sttSummary = sttBackend() === 'llm'
       ? `multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()} (${sttLlmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`
-      : `built-in Whisper ${sttDevice()}/${sttModel()}`;
-    const responseSummary = `${j.response_llm_provider || llmProvider()} ${j.response_llm_model || lmModel()} (${llmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`;
-    $('pageHealth').textContent = `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
+      : whistleSelected ? 'Whistle CPU' : `built-in Whisper ${sttDevice()}/${sttModel()}`;
+    const responseProvider = j.response_llm_provider || llmProvider();
+    const responseReasoning = responseProvider === 'meta' ? metaReasoningSummary(j.response_llm_reasoning_effort)
+      : llmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off';
+    const responseSummary = `${responseProvider} ${j.response_llm_model || lmModel()} (${responseReasoning})`;
+    $('pageHealth').textContent = whistleSelected
+      ? `Whistle ${j.whistle?.loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · local CPU transcription`
+      : `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || state.partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
 
     // hostInfo (Bug C / #19): server-resolved URLs only.
     const llmBase = j.response_llm_base_url || '';
     const ttsBase = (j.tts && j.tts.base_url) || j.tts_base_url || '';
     $('hostInfo').textContent = `${location.host} → LLM (${llmProviderLabel(j.response_llm_provider || '')}) ${llmBase} → TTS (${ttsProviderLabel((j.tts && j.tts.provider) || j.tts_provider || '')}) ${ttsBase}`;
 
-    // settingsLiveStatus (Bug D / #21): live LLM/STT health from j.{llm_error,stt_llm_error}.
-    const llmOk = !j.llm_error;
-    const sttOk = !j.stt_llm_error;
+    // Live LLM/STT health uses server-resolved provider load blocks.
+    const llmOk = !!(j.response_llm_load?.ok && j.response_llm_load?.loaded);
+    const sttOk = !state.audioLimitsError && (j.stt_backend === 'llm'
+      ? !!(j.multimodal_stt_load?.ok && j.multimodal_stt_load?.loaded)
+      : j.stt_backend === 'whistle' ? !!j.whistle?.available : !!j.whisper_available);
     const parts = [];
-    parts.push(`LLM ${llmOk ? 'up' : 'down'}${llmOk ? '' : ' (' + j.llm_error + ')'}`);
-    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + j.stt_llm_error + ')'}`);
+    parts.push(`LLM ${llmOk ? 'up' : 'down'}${llmOk ? '' : ' (' + (j.response_llm_load?.error || 'model not loaded') + ')'}`);
+    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + (state.audioLimitsError || (j.stt_backend === 'whistle' ? j.whistle?.error : j.multimodal_stt_load?.error) || 'speech runtime unavailable') + ')'}`);
+    if (j.agent_provider === 'meta') parts.push(`Agent configured with ${metaReasoningSummary(j.agent_reasoning_effort)}`);
     const liveEl = $('settingsLiveStatus');
     if (liveEl) liveEl.textContent = parts.join(' · ');
   } else {
@@ -131,7 +362,10 @@ export async function health() {
   if (j && j.tts) {
     const tts = j.tts;
     const ttsProviderName = tts.provider || j.tts_provider || '';
-    if (tts.ok && tts.loaded) {
+    if (tts.status === 'unverified' || tts.probe_supported === false) {
+      setDot('ttsDot', 'warn');
+      $('ttsHealth').textContent = `${ttsProviderLabel(ttsProviderName)} health unverified · ${tts.base_url}`;
+    } else if (tts.ok && tts.loaded) {
       setDot('ttsDot', 'good');
       $('ttsHealth').textContent = `${ttsProviderLabel(ttsProviderName)} ready · ${tts.base_url} · last ${tts.device || 'none'} · CUDA ${tts.cuda_available ? 'yes' : 'no'}`;
     } else if (tts.ok && !tts.loaded) {
@@ -148,7 +382,7 @@ export async function health() {
   // Provider / model readiness pill (drives off server truth).
   const ready = $('providerReady');
   const readyDot = $('providerReadyDot');
-  if (ready && readyDot) {
+  if (ready && readyDot && j) {
     const rll = j && j.response_llm_load;
     const pending = !!state.providerPending;
     if (pending && !(rll && rll.ok && rll.loaded)) {
@@ -191,12 +425,14 @@ export async function health() {
 // audio duration in seconds, the STT latency in seconds, and the
 // resolved model id (last segment only -- long ids truncated).
 const STT_BACKEND_LABELS = {
+  'whistle': 'whistle',
   'multimodal-stt': 'multimodal',
   'faster-whisper': 'whisper',
   'whisper-fallback': 'whisper (fallback)',
   'whisper-llm': 'whisper',
 };
 const STT_BACKEND_DOTS = {
+  'whistle': 'good',
   'multimodal-stt': 'good',
   'faster-whisper': 'good',
   'whisper-fallback': 'warn',
@@ -231,49 +467,19 @@ export function recordSttBackend(payload, errorMsg) {
   setDot('sttBackendDot', STT_BACKEND_DOTS[backend] || 'bad');
 }
 
-// initApp — moved from index.html:743-755 with dynamic imports for the
-// not-yet-extracted modules (`acks.js`, `live.js`, `agent-ui.js`).
-// Note: the setInterval callbacks must be `async` because the dynamic
-// `import()` calls inside them require an async context. setInterval
-// ignores the returned Promise, so this is a safe no-op for the timer.
+// Load configuration before starting periodic health and agent updates.
 export async function initApp() {
   await loadConfig();
-  await loadAgentModelOptions();
-  await loadConfig(); // Re-apply after model options are populated.
-  await (await import('./acks.js')).loadAcks('global');
   health();
   setInterval(health, 5000); // poll debug strip every 5s so it reflects runtime state, not last config-change
   markActivity('init');
   setInterval(async () => (await import('./agent-ui.js')).maybeDeliverTranscriptToAgent('timer'), 3000);
   setInterval(async () => (await import('./agent-ui.js')).pollAgentEvents(), 2000);
   setInterval(async () => (await import('./agent-ui.js')).maybeReleaseDeferredAgentInterrupt(), 500);
+  // Discovery preserves the current selection and must not delay runtime status.
+  void loadAgentModelOptions();
+  void import('./acks.js').then(module => module.loadAcks('global'))
+    .catch(error => console.warn('ack startup failed', error));
 }
 
-export async function listAudioProbes() {
-  const r = await fetch('/api/audio-probe');
-  if (!r.ok) return { entries: {} };
-  return r.json();
-}
-
-export async function clearAudioProbe(provider, baseUrl, model) {
-  // Query params: see `routes/providers.py` Task 4.5.5 — path-param form
-  // with two `:path` converters routes incorrectly for HF-style model ids.
-  const qs = new URLSearchParams({
-    provider: String(provider || ''),
-    base_url: String(baseUrl || ''),
-    model: String(model || ''),
-  });
-  const r = await fetch(`/api/audio-probe?${qs.toString()}`, { method: 'DELETE' });
-  return r.json();
-}
-
-// Cache key normalizer. MUST match the backend's `triple_key` in
-// `korina/services/audio_probe.py`: trim, strip trailing slashes, and
-// collapse `/chat/completions` to the API base URL. If we don't apply
-// the same normalization here, badge lookup silently misses.
-export function normalizeTripleBaseUrl(s) {
-  const base = String(s || '').trim().replace(/\/+$/, '');
-  return base.endsWith('/chat/completions')
-    ? base.slice(0, -'/chat/completions'.length)
-    : base;
-}
+export { listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl } from './audio-probes.js';

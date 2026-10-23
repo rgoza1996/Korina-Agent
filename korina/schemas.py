@@ -7,44 +7,82 @@ without depending on the monolith (which itself imports the services).
 from __future__ import annotations
 
 import time
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from korina.util.presets import MetaReasoningEffort
+
+
+# Bound accepted payloads before they reach model prompts or background queues.
+MAX_TURNS = 64
+MAX_TEXT_LENGTH = 8192
+
+
+def _validate_turn(turn: dict[str, str]) -> dict[str, str]:
+    if set(turn) != {"role", "content"}:
+        raise ValueError("Each turn must contain only role and content")
+    if turn["role"] not in {"user", "assistant", "system", "tool"}:
+        raise ValueError("Unsupported conversation role")
+    if len(turn["content"]) > MAX_TEXT_LENGTH:
+        raise ValueError(f"Turn content exceeds {MAX_TEXT_LENGTH} characters")
+    try:
+        turn["content"].encode('utf-8', errors='strict')
+    except UnicodeError as exc:
+        raise ValueError('Turn content must contain valid Unicode') from exc
+    return turn
+
+
+ConversationTurn = Annotated[dict[str, str], AfterValidator(_validate_turn)]
+Conversation = Annotated[list[ConversationTurn], Field(max_length=MAX_TURNS)]
+ModelName = Annotated[str, Field(max_length=512)]
+Text = Annotated[str, Field(max_length=MAX_TEXT_LENGTH)]
+TokenBudget = Annotated[int, Field(ge=1, le=8192)]
 
 
 class ProviderActivateRequest(BaseModel):
-    provider: str
-    model: Optional[str] = None
+    provider: str = Field(min_length=1, max_length=64)
+    model: Optional[ModelName] = None
 
 
 class ChatRequest(BaseModel):
-    message: str
-    history: list = []
-    system: str | None = None
-    temperature: float = 0.7
-    max_tokens: int = 180
-    model: str | None = None
-    reasoning: str | None = None
+    message: Text
+    history: Conversation = Field(default_factory=list)
+    system: Text | None = None
+    temperature: float = Field(0.7, ge=0, le=2)
+    max_tokens: TokenBudget = 180
+    model: ModelName | None = None
+    reasoning: str | None = Field(None, max_length=64)
+    reasoning_effort: MetaReasoningEffort = ''
 
 
 class AgentStateRequest(BaseModel):
-    transcript: list = []
-    previous_report: str = ""
-    model: str | None = None
-    max_tokens: int = 512
+    transcript: Conversation = Field(default_factory=list)
+    previous_report: Text = ""
+    model: ModelName | None = None
+    max_tokens: TokenBudget = 512
 
 
 class AgentTranscriptRequest(BaseModel):
-    transcript: list = []
-    delivery_mode: str = "prompt"
-    reason: str = ""
-    turn_count: int = 0
+    transcript: Conversation = Field(default_factory=list)
+    delivery_mode: Literal["prompt", "injection"] = "prompt"
+    reason: str = Field("", max_length=512)
+    turn_count: int = Field(0, ge=0)
 
 
 class AgentPermissionAnswer(BaseModel):
-    request_id: str = ""
-    answer: str = ""
-    transcript: list = []
+    request_id: str = Field("", max_length=128)
+    answer: str = Field("", max_length=512)
+    transcript: Conversation = Field(default_factory=list)
+
+
+class AgentModelDiscoveryRequest(BaseModel):
+    """Unsaved settings; omitted direct keys stay scoped to the saved API URL."""
+    model_config = ConfigDict(strict=True, extra='forbid')
+    agent_provider: str = Field('', max_length=64)
+    agent_base_url: str = Field('', max_length=8192)
+    agent_api_key: str = Field('', max_length=8192, repr=False)
+    llm_base_url: str = Field('', max_length=8192)
+    llm_api_key_env: str = Field('', max_length=512)
 
 # Phase 1 (Converse/Agent adapter separation) -- wire protocol between
 # Converse and any agent adapter. Existing AgentStateRequest,
@@ -54,10 +92,10 @@ class AgentPermissionAnswer(BaseModel):
 
 class UserTurn(BaseModel):
     """Inbound: Converse -> adapter (one user utterance)."""
-    text: str
-    session_id: str
-    turn_count: int
-    audio_seconds: float | None = None
+    text: Text
+    session_id: str = Field(max_length=128)
+    turn_count: int = Field(ge=0)
+    audio_seconds: float | None = Field(default=None, ge=0)
     timestamp: float = Field(default_factory=time.time)
 
 
@@ -72,9 +110,9 @@ class AgentEvent(BaseModel):
 
 class PermissionAnswerEvent(BaseModel):
     """Converse -> adapter: user answered a permission request."""
-    request_id: str
-    answer: str
-    transcript: str
+    request_id: str = Field(max_length=128)
+    answer: str = Field(max_length=512)
+    transcript: Text
 
 
 class AgentCapabilities(BaseModel):
@@ -86,3 +124,12 @@ class AgentCapabilities(BaseModel):
     supports_streaming: bool = False
     http_compatible: bool = False
 
+
+class AgentProtocolInfo(BaseModel):
+    """Read-only discovery of the selected adapter and its HTTP bridge."""
+    ok: Literal[True] = True
+    protocol_version: Literal[1] = 1
+    adapter_id: str
+    adapter_capabilities: AgentCapabilities
+    legacy_http_supported: bool
+    http_operations: dict[str, bool]

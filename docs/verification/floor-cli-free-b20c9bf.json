@@ -1,0 +1,38 @@
+{
+  "kind": "local-archived-cli-free-floor",
+  "verified_on": "2026-10-23",
+  "pre_event_preparation": true,
+  "commit": "b20c9bff88f51c3ee1e71adb2235c14fb2118671",
+  "python": "3.10.20",
+  "minimum_constraints": "tests/constraints/minimum.txt",
+  "passed": true,
+  "tests": 1431,
+  "passed_tests": 1423,
+  "skipped": 8,
+  "failures": 0,
+  "errors": 0,
+  "harness_wall_seconds": 141.822,
+  "environment": {
+    "method": "A private executable search path mirrored 1783 available command names while excluding ffmpeg and ffprobe. The normal verification helper's Python/Node path prefixes were included in the preflight.",
+    "ffmpeg_which": null,
+    "ffprobe_which": null,
+    "both_actual_exec_attempts": "FileNotFoundError",
+    "system_path_or_binaries_modified": false,
+    "source_archive_modified": false
+  },
+  "intentional_skips": {
+    "ffmpeg_cli_integration": 7,
+    "optional_whisper_decoder": 1,
+    "cli_cases": [
+      "Long/misleading uploaded filename with WAV and WebM, each across buffered, partial and SSE transcription endpoints (six).",
+      "Tiny compressed upload rejected after decoded expansion (one)."
+    ]
+  },
+  "scope": [
+    "One complete isolated floor run against the exact stated archive; it is additional evidence, not a relabeling of the earlier CLI-present c430012 floor result.",
+    "The actual CLI-present c430012 floor passed 1430 plus one optional decoder skip.",
+    "Python 3.12 CI retains guaranteed FFmpeg installation for the seven CLI integration cases.",
+    "This verifies the CLI-free floor policy used by follow-up workflow 40fb682; Python sources and tests are unchanged between those commits.",
+    "No model weights, authenticated inference or physical audio were exercised."
+  ]
+}

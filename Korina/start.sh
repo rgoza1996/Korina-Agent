@@ -12,11 +12,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KORINA_APP_DIR="${KORINA_APP_DIR:-$SCRIPT_DIR}"
-CONFIG="$KORINA_APP_DIR/config.json"
-PYTHON_BIN="${KORINA_PYTHON:-$HOME/kokoro-env4/bin/python}"
-if [[ ! -x "$PYTHON_BIN" ]]; then
-  PYTHON_BIN="$(command -v python3)"
-fi
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+source "$SCRIPT_DIR/service-common.sh"
 
 NO_WAIT=0
 DRY_RUN=0
@@ -32,9 +29,16 @@ for arg in "$@"; do
   esac
 done
 
+PYTHON_BIN="$(korina_select_python KORINA_PYTHON "${KORINA_PYTHON:-}" "${VIRTUAL_ENV:-$REPO_ROOT/.venv}/bin/python")"
+KORINA_APP_DIR="$(korina_normalize_app_dir "$PYTHON_BIN" "$KORINA_APP_DIR")"
+CONFIG="$KORINA_APP_DIR/config.json"
+
 if [[ ! -f "$CONFIG" ]]; then
-  echo "ERROR: config.json not found at $CONFIG" >&2
-  exit 1
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    CONFIG="$REPO_ROOT/Korina/config/config.example.json"
+  else
+    (cd "$REPO_ROOT" && KORINA_APP_DIR="$KORINA_APP_DIR" "$PYTHON_BIN" -c 'from korina.config import load_config; load_config()')
+  fi
 fi
 
 cfg_json() {
@@ -61,10 +65,21 @@ print('' if v is None else v)
 PY
 }
 
-is_listening() { ss -ltn "sport = :$1" 2>/dev/null | grep -q ":$1"; }
+is_listening() {
+  "$PYTHON_BIN" - "$1" <<'PY'
+import socket
+import sys
+
+try:
+    with socket.create_connection(('127.0.0.1', int(sys.argv[1])), timeout=0.2):
+        pass
+except OSError:
+    raise SystemExit(1)
+PY
+}
 wait_port() {
   local port="$1" label="$2" max_iters="${3:-120}"
-  [[ "$NO_WAIT" -eq 1 ]] && return 0
+  [[ "$NO_WAIT" -eq 1 || "$DRY_RUN" -eq 1 ]] && return 0
   for _ in $(seq 1 "$max_iters"); do
     if is_listening "$port"; then
       echo "  OK: $label listening on :$port"
@@ -82,17 +97,27 @@ start_unit() {
     echo "  [dry-run] systemctl --user start $unit"
     return 0
   fi
-  if ! systemctl --user cat "$unit" >/dev/null 2>&1; then
-    echo "  WARN: $unit is not installed; skipping"
-    return 0
+  if ! systemctl --user start "$unit"; then
+    echo "ERROR: could not start $unit; inspect systemctl --user status $unit" >&2
+    return 1
   fi
-  systemctl --user start "$unit"
+}
+
+require_unit() {
+  local unit="$1"
+  if ! systemctl --user cat "$unit" >/dev/null 2>&1; then
+    echo "ERROR: required user service $unit is unavailable." >&2
+    echo "Run ./Korina/install-services.sh first, or use the foreground commands in README.md." >&2
+    return 1
+  fi
 }
 
 LLM_PROVIDER="$(cfg_get llm_provider)"; LLM_PROVIDER="${LLM_PROVIDER:-llama.cpp}"
 LM_MODEL="$(cfg_get lm_model)"
 TTS_PROVIDER="$(cfg_get tts_provider)"; TTS_PROVIDER="${TTS_PROVIDER:-kokoro}"
-TTS_PORT="$(cfg_get tts_port)"; TTS_PORT="${TTS_PORT:-8880}"
+# The bundled units use their entrypoints' defaults. Shell bind overrides and
+# client endpoint settings do not rewrite an already installed service.
+TTS_PORT=8880
 
 echo "Korina config: $CONFIG"
 cfg_json
@@ -101,10 +126,14 @@ echo "Startup plan:"
 echo "  - Korina app: korina-voice-lab.service (:8001)"
 echo "  - TTS: ${TTS_PROVIDER}"
 echo "  - LLM provider: ${LLM_PROVIDER}"
+echo "  Readiness uses bundled ports 8001/8880; customized unit ports require --no-wait."
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "  [dry-run] would start configured provider via korina.services.provider_manager"
 else
+  # Check every required unit before starting anything or activating a provider.
+  require_unit korina-voice-lab.service
+  if [[ "$TTS_PROVIDER" == "kokoro" ]]; then require_unit kokoro-streaming-server.service; fi
   export KORINA_APP_DIR
   if [[ "$TTS_PROVIDER" == "kokoro" ]]; then
     echo "Starting Kokoro TTS..."
@@ -116,7 +145,7 @@ else
   case "$LLM_PROVIDER" in
     llama.cpp|lmstudio|ollama)
       echo "Activating local LLM provider $LLM_PROVIDER..."
-      (cd "$KORINA_APP_DIR" && "$PYTHON_BIN" - "$LLM_PROVIDER" "$LM_MODEL" <<'PY')
+      (cd "$REPO_ROOT" && "$PYTHON_BIN" - "$LLM_PROVIDER" "$LM_MODEL" <<'PY')
 import json, sys
 from korina.config import load_config
 from korina.services.provider_manager import activate_llm_provider
@@ -137,16 +166,20 @@ PY
 fi
 
 echo
-if [[ "$TTS_PROVIDER" == "kokoro" ]]; then wait_port "$TTS_PORT" "Kokoro TTS" || true; fi
+if [[ "$TTS_PROVIDER" == "kokoro" ]]; then wait_port "$TTS_PORT" "Kokoro TTS"; fi
 case "$LLM_PROVIDER" in
-  llama.cpp) wait_port 8080 "llama.cpp" || true ;;
-  lmstudio) wait_port 1234 "LM Studio" || true ;;
-  ollama) wait_port 11434 "Ollama" || true ;;
+  llama.cpp) wait_port 8080 "llama.cpp" ;;
+  lmstudio) wait_port 1234 "LM Studio" ;;
+  ollama) wait_port 11434 "Ollama" ;;
 esac
-wait_port 8001 "Korina" || true
+wait_port 8001 "Korina"
 
 echo
-echo "Relevant listeners:"
-ss -ltnp 2>/dev/null | grep -E ':(8001|8880|8080|1234|11434)' || echo "  (none)"
-echo
-echo "Korina page: http://$(hostname):8001/"
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  echo "Dry run complete; no services were started."
+elif [[ "$NO_WAIT" -eq 1 ]]; then
+  echo "Start commands completed; readiness was not checked."
+else
+  echo "Required TCP listeners are available; use scripts/check_stack.py for HTTP/model readiness."
+fi
+echo "Bundled Korina page: http://127.0.0.1:8001/ (custom units may use another address)"

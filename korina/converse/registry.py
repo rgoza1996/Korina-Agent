@@ -1,17 +1,17 @@
 """Adapter registry for ConverseChannel implementations.
 
 The registry is the consumer-facing surface for swapping channel
-implementations. The default channel (korina_channel.KorinaConverseChannel)
-is registered at import time; adapters replace it by calling
-register_converse_channel() with a new instance.
+implementations. Startup registers the default KorinaConverseChannel;
+applications register alternatives or replacements with
+register_converse_channel().
 
-Selection persisted by Converse config lives in memory only for now;
-persistent config (config.json) is a Phase 5 Commit 2 concern.
+HTTP selection supplies a persistence callback so saving and switching are
+serialized with other registry changes. Python callers may select in memory.
 """
 from __future__ import annotations
 
 import threading
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 from .protocol import ConverseChannel
 
@@ -28,10 +28,16 @@ def register_converse_channel(channel: ConverseChannel) -> None:
     Replacing the active channel does NOT change which channel is active;
     use set_active_converse_channel() for that.
     """
+    _register_converse_channel(channel, replace=True)
+
+
+def _register_converse_channel(channel: ConverseChannel, *, replace: bool) -> None:
+    """Publish under the shared lock; only explicit registration replaces."""
     if not isinstance(channel, ConverseChannel):
         raise TypeError(f"expected ConverseChannel, got {type(channel).__name__}")
     with _lock:
-        _channels[channel.name] = channel
+        if replace or channel.name not in _channels:
+            _channels[channel.name] = channel
         global _active
         if _active is None:
             _active = channel.name
@@ -68,14 +74,20 @@ def get_active_channel_name() -> Optional[str]:
         return _active
 
 
-def set_active_converse_channel(name: str) -> ConverseChannel:
+def set_active_converse_channel(
+    name: str, *, persist: Callable[[str], object] | None = None,
+) -> ConverseChannel:
     """Switch the active channel. Returns the new active channel.
 
-    Raises KeyError if `name` is not registered.
+    Raises KeyError if `name` is not registered. An optional persistence
+    callback completes under the registry lock before selection is published;
+    its failure leaves the previous selection active.
     """
     with _lock:
         if name not in _channels:
             raise KeyError(f"no ConverseChannel registered for {name!r}")
+        if persist is not None:
+            persist(name)
         globals()["_active"] = name
         return _channels[name]
 

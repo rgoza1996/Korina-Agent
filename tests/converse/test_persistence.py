@@ -5,6 +5,8 @@ channel register it; the "default korina" tests do not, so
 ensure_default_registered() establishes the natural default.
 """
 import copy
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
 
@@ -15,8 +17,8 @@ from korina.converse import (
     ConverseRequest,
     ConverseResponse,
     register_converse_channel,
-    reset_default_registered,
     reset_for_testing,
+    get_active_channel_name,
 )
 
 
@@ -37,11 +39,9 @@ class _TestChannel(ConverseChannel):
 def test_channel():
     """Opt-in: register a non-default channel for tests that need it."""
     reset_for_testing()
-    reset_default_registered()
     register_converse_channel(_TestChannel())
     yield _TestChannel
     reset_for_testing()
-    reset_default_registered()
 
 
 @pytest.fixture(autouse=True)
@@ -49,10 +49,8 @@ def _clean_registry():
     """Autouse but minimal: just reset between tests so test-channel
     registrations don't leak."""
     reset_for_testing()
-    reset_default_registered()
     yield
     reset_for_testing()
-    reset_default_registered()
 
 
 def test_startup_restores_saved_nondefault_channel(monkeypatch, test_channel):
@@ -125,3 +123,58 @@ def test_save_then_restore_round_trip(monkeypatch, test_channel):
     with TestClient(app2) as c2:
         r = c2.get("/api/converse/channel")
         assert r.json()["channel"] == "test-channel"
+
+
+def test_failed_channel_save_keeps_previous_selection(monkeypatch, test_channel):
+    from korina.routes import converse as route
+
+    def fail_save(name):
+        raise OSError("disk is full")
+
+    app = app_factory.create_app()
+    with TestClient(app, raise_server_exceptions=False) as client:
+        assert client.get('/api/converse/channel').json()['channel'] == 'korina'
+        monkeypatch.setattr(route, 'save_converse_channel', fail_save)
+        assert client.post('/api/converse/channel/test-channel').status_code == 500
+        assert client.get('/api/converse/channel').json()['channel'] == 'korina'
+
+
+def test_channel_switches_persist_in_selection_order(monkeypatch, test_channel):
+    from korina.routes import converse as route
+    from korina.converse import ensure_default_registered, set_active_converse_channel
+
+    ensure_default_registered()
+    set_active_converse_channel('korina')
+    first_save_entered = threading.Event()
+    finish_first_save = threading.Event()
+    second_switch_started = threading.Event()
+    second_save_entered = threading.Event()
+    saved = []
+
+    def controlled_save(name):
+        if name == 'test-channel':
+            first_save_entered.set()
+            assert finish_first_save.wait(2)
+        else:
+            second_save_entered.set()
+        saved.append(name)
+
+    def switch_second():
+        second_switch_started.set()
+        return route.switch_active_channel('korina')
+
+    monkeypatch.setattr(route, 'save_converse_channel', controlled_save)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(route.switch_active_channel, 'test-channel')
+        try:
+            assert first_save_entered.wait(2)
+            second = pool.submit(switch_second)
+            assert second_switch_started.wait(2)
+            # A second save must not overtake the in-flight selection's save.
+            assert not second_save_entered.wait(0.05)
+        finally:
+            finish_first_save.set()
+        assert first.result(timeout=2)['ok']
+        assert second.result(timeout=2)['ok']
+    assert saved == ['test-channel', 'korina']
+    assert get_active_channel_name() == saved[-1]

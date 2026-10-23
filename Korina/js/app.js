@@ -1,50 +1,35 @@
-// js/app.js
-//
-// Frontend entrypoint. Loaded by index.html via <script type="module">.
-// Imports every extracted Phase-3 module and re-exports the most-used
-// symbols on window so inline onclick handlers (e.g.
-// <button onclick="startLive()">) continue to work after extraction.
-//
-// Phase 3 / Task 3.2.15: this is the final wire-up step. After this
-// commit lands, the page should be functional again — loadConfig()
-// runs, intervals start, the user can interact with Live Conversation,
-// recordings, TTS, and the Korina Agent driver.
-//
-// Boot order:
-//   1. await loadCapabilities().then(() => setBaseUrlEditability())
-//      (matches the documented Phase 3 plan; initApp() also runs
-//      loadConfig internally so the sequence is consistent.)
-//   2. initApp()  (in api.js — does loadConfig, loadAgentModelOptions,
-//      loadAcks, health, markActivity, and starts the polling
-//      intervals for agent events.)
+// Browser entrypoint: settings, recording controls, event wiring, and startup.
 
-import { state, EventBus } from "./state.js";
+import { state } from "./state.js";
+import { apiErrorMessage } from './api-errors.js';
 import { $, status, setDot, log, setSectionHidden, clamp } from "./dom.js";
-import { prettyModelLabel, ttsProviderLabel, llmProviderLabel } from "./labels.js";
+import { prettyModelLabel, llmProviderLabel } from "./labels.js";
 import {
-  loadConfig, saveConfigNow, saveConfigSoon, health,
+  loadConfig, saveConfigNow, saveConfigSoon, health, initializeSettingsForm,
   activateSelectedProvider, initApp,
+  refreshProviderCapabilities,
   listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl,
 } from "./api.js";
 import {
   collectConfig, applyConfig, markActivity,
   populateChannelTab, saveChannelSelection,
   syncConverseSettingsUI,
-  ttsDevice, ttsProvider, ttsBaseUrl, ttsPort, ttsModel,
+  ttsDevice,
   sttDevice, sttModel, sttBackend,
   llmProvider, llmBaseUrl, lmModel,
-  sttLlmModel, effectiveSttLlmModel, effectiveSttLlmBaseUrl, effectiveSttLlmProvider,
-  finalSttMode, endpointMode, minSpeechMs, partialWindowMsSetting,
+  effectiveSttLlmModel, effectiveSttLlmBaseUrl,
+  finalSttMode, endpointMode, minSpeechMs, partialWindowMsSetting, llmReasoningEnabled,
 } from "./settings-ui.js";
 import {
   loadCapabilities, getResponseLlmProviderCaps, getAgentProviderCaps,
-  setBaseUrlEditability, maybeApplyProviderPreset,
+  maybeApplyProviderPreset,
   loadModelOptions, loadAgentModelOptions,
+  resetSelectedAudioProbe, syncAudioProbeButton,
 } from "./providers-ui.js";
 import { setCapabilityFilterOverride } from "./capability-filter.js";
-import { loadAcks, preloadAckBuffers, playRandomAck } from "./acks.js";
+import { loadAcks, preloadAckBuffers, playRandomAck, cancelAckPlayback, changeAckVoice, refreshAckEnabledStatus } from "./acks.js";
 import { drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad } from "./vad.js";
-import { setupMic, makeRecorder, transcribeBlob, transcribePartialBlob } from "./recorder.js";
+import { setupMic, releaseMic, makeRecorder, transcribeBlob, transcribePartialBlob } from "./recorder.js";
 import {
   startPartialTranscriptionLoop, stopPartialTranscriptionLoop,
   processPartialQueue, waitForPartialQueueIdle,
@@ -53,7 +38,7 @@ import {
   ensureAudio, stopTtsNow, schedulePcm, speakSSE, speakBuffered, speakText,
 } from "./speech.js";
 import {
-  startBargeInCapture, monitorBargeIn, handleBargeRecording,
+  startBargeInCapture, monitorBargeIn, handleBargeRecording, cancelBargeIn,
 } from "./barge-in.js";
 import {
   startLive, stopLive, liveMonitor, handleLiveTurn, startLiveRecorder,
@@ -64,25 +49,25 @@ import {
 import { wireLocalModelsUi, loadLocalModelRoots } from "./local-models.js";
 import {
   deliverTranscriptToAgent, pollAgentEvents, handleAgentEvent,
-  interruptConverse, askAndSpeak, askLM, agentDebug,
+  interruptConverse, askAndSpeak, askLM, agentDebug, cancelChatRequests, clearResponseUsage,
+  setAgentEnabledFromUi, isPermissionAnswerPending,
 } from "./agent-ui.js";
 import { openEndpoints, closeEndpoints, populateEndpoints } from "./endpoints.js";
 
-// Re-export the most common symbols on window so HTML inline event
-// handlers and DevTools debugging keep working.
+// Expose controls for browser debugging; UI events are bound below.
 Object.assign(window, {
-  state, EventBus, $, status, setDot, log, setSectionHidden, clamp,
+  state, $, status, setDot, log, setSectionHidden, clamp,
   prettyModelLabel,
   loadConfig, saveConfigNow, saveConfigSoon, health, activateSelectedProvider, initApp,
   listAudioProbes, clearAudioProbe, normalizeTripleBaseUrl,
   collectConfig, applyConfig, markActivity, syncConverseSettingsUI,
   loadCapabilities, getResponseLlmProviderCaps, getAgentProviderCaps,
-  setBaseUrlEditability, maybeApplyProviderPreset,
+  setBaseUrlEditability: refreshProviderCapabilities, maybeApplyProviderPreset,
   loadModelOptions, loadAgentModelOptions,
   setCapabilityFilterOverride,
   loadAcks, preloadAckBuffers, playRandomAck,
   drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad,
-  setupMic, makeRecorder, transcribeBlob, transcribePartialBlob,
+  setupMic, releaseMic, makeRecorder, transcribeBlob, transcribePartialBlob,
   startPartialTranscriptionLoop, stopPartialTranscriptionLoop,
   processPartialQueue, waitForPartialQueueIdle,
   ensureAudio, stopTtsNow, schedulePcm, speakSSE, speakBuffered, speakText,
@@ -99,11 +84,7 @@ Object.assign(window, {
 });
 
 
-// --- UI event wiring ---
-// Phase 3 extracted the inline script into ES modules. The functions were
-// re-exported on window, but the static HTML no longer has inline onclick
-// attributes. Bind the controls explicitly so clicks work in normal browsers
-// and in headless Playwright tests.
+// Bind each UI control explicitly.
 function bindClick(id, handler) {
   const el = $(id);
   if (!el) return;
@@ -125,76 +106,60 @@ function closeSettings() {
   void _closeSettingsImpl().catch(e => {
     console.error('closeSettings background apply failed:', e);
     try {
-      $('settingsInfo').textContent = 'Settings apply failed: ' + (e.message || e);
+      $('settingsActionStatus').textContent = 'Settings apply failed: ' + (e.message || e);
       status($('sttStatus'), 'Settings apply failed: ' + (e.message || e), 'bad');
     } catch (_) {}
   });
 }
 
+let settingsApplyInFlight = null;
+let settingsApplyQueued = false;
+
 async function _closeSettingsImpl() {
-  // Persist any unsaved field changes first. saveConfigNow() is a no-op
-  // if the form values already match what's on disk; the activation
-  // diff below is what we actually care about.
-  try {
-    await saveConfigNow();
-  } catch (e) {
-    console.warn('saveConfigNow failed during modal close:', e);
-  }
-
-  // Compare provider-affecting form fields against the last-loaded
-  // config snapshot. If anything that changes which server / model is
-  // serving requests has changed, run /api/llm/provider/activate so the
-  // running backend reflects the new choice.
-  const snap = state.appConfigSnapshot || {};
-  const llmChanged =
-    llmProvider() !== (snap.llm_provider || '') ||
-    lmModel() !== (snap.lm_model || '') ||
-    llmBaseUrl() !== (snap.llm_base_url || '');
-  const sttChanged =
-    effectiveSttLlmProvider() !== (snap.stt_llm_provider || '') ||
-    effectiveSttLlmBaseUrl() !== (snap.stt_llm_base_url || '') ||
-    sttLlmModel() !== (snap.stt_llm_model || '');
-
-  if (llmChanged || sttChanged) {
-    try {
-      const provider = sttChanged && !llmChanged ? effectiveSttLlmProvider() : llmProvider();
-      const model = sttChanged && !llmChanged ? effectiveSttLlmModel() : lmModel();
-      status($('sttStatus'), `Applying settings: activating ${provider}…`, 'warn');
-      const j = await activateSelectedProvider(provider, model);
-      $('settingsInfo').textContent = `Activated ${j.activation.provider}. Started ${j.activation.started.join(', ') || 'nothing'}; stopped ${j.activation.stopped.join(', ') || 'nothing'}.`;
-      // Refresh the snapshot so subsequent closes don't re-activate
-      // the same change.
-      state.appConfigSnapshot = {
-        llm_provider: llmProvider(),
-        lm_model: lmModel(),
-        llm_base_url: llmBaseUrl(),
-        stt_llm_provider: effectiveSttLlmProvider(),
-        stt_llm_base_url: effectiveSttLlmBaseUrl(),
-        stt_llm_model: sttLlmModel(),
-        tts_provider: ttsProvider(),
-        tts_base_url: String($('ttsBaseUrl')?.value || '').trim(),
-        tts_port: ttsPort(),
-        tts_model: ttsModel(),
+  settingsApplyQueued = true;
+  if (settingsApplyInFlight) return settingsApplyInFlight;
+  settingsApplyInFlight = (async () => {
+    do {
+      settingsApplyQueued = false;
+      await saveConfigNow(); // A failed save must prevent provider side effects.
+      if (!initializeSettingsForm().loaded) {
+        $('settingsActionStatus').textContent = 'Saved settings have not loaded. Open Settings to retry before provider activation.';
+        await health();
+        continue;
+      }
+      const response = {
+        llm_provider: llmProvider(), lm_model: lmModel(), llm_base_url: llmBaseUrl(),
+        llm_reasoning: llmReasoningEnabled(),
       };
-    } catch (e) {
-      $('settingsInfo').textContent = 'Provider activation failed: ' + e.message;
-      status($('sttStatus'), 'Provider activation failed: ' + e.message, 'bad');
-      console.warn('activateSelectedProvider failed during modal close:', e);
-    }
-  }
-
-  // Refresh the debug strip so the pills reflect the new state.
-  // Wrapped in its own try so a health() failure cannot escape the
-  // inner function and prevent the outer closeSettings from hiding
-  // the modal.
-  try { await health(); } catch (e) { console.warn('health refresh failed:', e); }
+      const snap = state.appConfigSnapshot || {};
+      const changed = Object.keys(response).some(key => String(response[key] || 'off') !== String(snap[key] || 'off'));
+      if (changed) {
+        try {
+          if (!await refreshProviderCapabilities()) throw new Error('Provider capabilities are unavailable. Reopen Settings to retry.');
+          status($('sttStatus'), `Applying settings: activating ${response.llm_provider}…`, 'warn');
+          const result = await activateSelectedProvider(response.llm_provider, response.lm_model);
+          const activation = result.activation;
+          const retained = (activation.retained || []).map(item => `${llmProviderLabel(item.provider)} for ${(item.roles || []).join(', ')}`).join('; ');
+          const warnings = (activation.warnings || []).join(' ');
+          $('settingsActionStatus').textContent = `Activated ${activation.provider}. Started ${(activation.started || []).join(', ') || 'nothing'}; stopped ${(activation.stopped || []).join(', ') || 'nothing'}.${retained ? ` Kept ${retained}.` : ''}${warnings ? ` ${warnings}` : ''}`;
+          state.appConfigSnapshot = { ...snap, ...response };
+        } catch (e) {
+          throw new Error('Provider activation failed: ' + e.message);
+        }
+      }
+      // STT-only changes are saved without repurposing the response LLM endpoint.
+      await health();
+    } while (settingsApplyQueued);
+  })().finally(() => { settingsApplyInFlight = null; });
+  return settingsApplyInFlight;
 }
 
 async function openSettings() {
   $('settingsModal')?.classList.add('open');
   syncConverseSettingsUI();
-  await setBaseUrlEditability();
-  loadAgentModelOptions();
+  if (!initializeSettingsForm().loaded) void loadConfig();
+  if (!await refreshProviderCapabilities()) return;
+  loadAgentModelOptions(false);
 }
 
 function saveSettings() {
@@ -203,34 +168,64 @@ function saveSettings() {
   closeSettings();
 }
 
+let manualRecordingGeneration = 0;
+let manualTranscriptionController = null;
+
+function cancelManualRecording() {
+  manualRecordingGeneration++;
+  manualTranscriptionController?.abort();
+  manualTranscriptionController = null;
+  if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') state.mediaRecorder.stop();
+  releaseMic();
+  $('recBtn').disabled = false;
+  $('stopRecBtn').disabled = true;
+}
+
 async function startRecording() {
+  if (state.live || $('recBtn').disabled) return;
+  const generation = ++manualRecordingGeneration;
+  const isCurrent = () => generation === manualRecordingGeneration && !state.live;
+  $('recBtn').disabled = true;
+  $('stopRecBtn').disabled = false;
   try {
-    await setupMic();
-    makeRecorder(async () => {
+    if (!await setupMic() || !isCurrent()) return;
+    makeRecorder(async (metadata = {}) => {
+      if (!isCurrent()) return;
+      const controller = new AbortController();
+      manualTranscriptionController = controller;
       try {
-        if (state.raf) cancelAnimationFrame(state.raf);
-        if (state.stream) {
-          state.stream.getTracks().forEach(t => t.stop());
-          state.stream = null;
+        releaseMic();
+        if (metadata.discarded || metadata.error) {
+          status($('sttStatus'), metadata.error || 'The recording exceeded its limit. Start a shorter recording.', 'bad');
+          return;
         }
-        status($('sttStatus'), 'Uploading to faster-whisper streaming STT…', 'warn');
+        status($('sttStatus'), 'Uploading recording for transcription…', 'warn');
         const blob = new Blob(state.recChunks, { type: state.recChunks[0]?.type || 'audio/webm' });
-        const j = await transcribeBlob(blob);
+        const j = await transcribeBlob(blob, { signal: controller.signal, isCurrent });
+        if (!isCurrent()) return;
         $('transcript').value = j.text || '';
         const seconds = Number.isFinite(j.seconds) ? j.seconds.toFixed(2) : '0.00';
-        status($('sttStatus'), `Transcribed in ${seconds}s · ${j.model || 'STT model'}`, 'good');
-        $('transcriptInfo').textContent = 'Manual recording transcribed.';
+        const limitMessage = metadata.limitReached ? ' Recording limit reached; start another recording to continue.' : '';
+        status($('sttStatus'), `Transcribed in ${seconds}s · ${j.model || 'STT model'}.${limitMessage}`, 'good');
+        $('transcriptInfo').textContent = `Manual recording transcribed.${limitMessage}`;
       } catch (e) {
-        status($('sttStatus'), 'Transcribe error: ' + e.message, 'bad');
+        if (isCurrent() && e.name !== 'AbortError') status($('sttStatus'), 'Transcribe error: ' + e.message, 'bad');
       } finally {
-        $('recBtn').disabled = false;
-        $('stopRecBtn').disabled = true;
+        if (manualTranscriptionController === controller) manualTranscriptionController = null;
+        if (isCurrent()) {
+          $('recBtn').disabled = false;
+          $('stopRecBtn').disabled = true;
+        }
       }
-    });
+    }, 500, { isCurrent });
     $('recBtn').disabled = true;
     $('stopRecBtn').disabled = false;
     status($('sttStatus'), 'Recording…', 'warn');
   } catch (e) {
+    if (!isCurrent()) return;
+    releaseMic();
+    $('recBtn').disabled = false;
+    $('stopRecBtn').disabled = true;
     status($('sttStatus'), 'Mic error: ' + e.message, 'bad');
   }
 }
@@ -238,6 +233,9 @@ async function startRecording() {
 function stopRecording() {
   if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
     state.mediaRecorder.stop();
+  } else {
+    cancelManualRecording();
+    status($('sttStatus'), 'Recording cancelled.');
   }
 }
 
@@ -246,25 +244,21 @@ function toggleLive() {
     stopLive();
     return;
   }
+  cancelManualRecording();
   startLive().catch(e => {
-    stopLive();
     status($('sttStatus'), 'Live mode error: ' + e.message, 'bad');
   });
 }
 
 function stopPlayback() {
+  cancelAckPlayback();
   stopTtsNow();
   if (state.bargeLoopId) cancelAnimationFrame(state.bargeLoopId);
   state.bargeLoopId = null;
   if (state.bargeRecorder && state.bargeRecorder.state !== 'inactive') state.bargeRecorder.stop();
-  if (state.ackSource) {
-    try { state.ackSource.stop(); } catch {}
-    state.ackSource = null;
-  }
   if (state.audioCtx) {
     try { state.audioCtx.close(); } catch {}
     state.audioCtx = null;
-    state.ackBuffers = [];
     state.ackBuffersByTag = {};
   }
   $('audio')?.pause();
@@ -272,11 +266,24 @@ function stopPlayback() {
 }
 
 async function clearSession() {
+  clearResponseUsage();
+  state.agentResetBlocked = true;
+  cancelChatRequests();
+  const resumeLive = state.live;
+  if (resumeLive) stopLive();
+  cancelBargeIn();
+  cancelAckPlayback();
+  cancelManualRecording();
+  stopPartialTranscriptionLoop(true);
+  const clearButton = $('clearSessionBtn');
+  clearButton.disabled = true;
+  clearButton.textContent = 'Clearing session…';
   try { stopTtsNow(); } catch {}
   state.history = [];
-  state.agentStateReport = '';
-  state.agentLastTranscriptHash = '';
   state.pendingAgentStateReport = '';
+  state.pendingAgentReportVersion++;
+  state.agentSession++;
+  const session = state.agentSession;
   state.pendingImportantAgentMessage = '';
   state.awaitingAgentPermission = null;
   state.agentEventCursor = 0;
@@ -290,7 +297,6 @@ async function clearSession() {
   state.deferredAgentInterrupt = null;
   state.agentInterruptInProgress = false;
   state.latestPartialText = '';
-  state.latestPartialAt = 0;
   state.partialQueue = [];
   $('log').innerHTML = '';
   $('agentDebug').textContent = 'Session cleared. Agent prompts, injection deliveries, and outputs will appear here.';
@@ -298,12 +304,31 @@ async function clearSession() {
   $('text').value = '';
   $('transcriptInfo').textContent = 'Session cleared. Korina writes the transcript here. This box is read-only; queued live chunks append while you speak.';
   $('chunkInfo').textContent = '';
-  status($('sttStatus'), 'Session cleared. Live mode can continue with fresh context.', 'good');
+  status($('sttStatus'), 'Clearing session. Agent deliveries are paused until reset completes.', 'warn');
+  if (resumeLive) {
+    void startLive().catch(error => {
+      if (session === state.agentSession) status($('sttStatus'), 'Microphone restart failed: ' + error.message, 'bad');
+    });
+  }
   try {
-    await fetch('/api/agent/reset', { method: 'POST' });
+    const response = await fetch('/api/agent/reset', { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok || result?.ok !== true) throw new Error(result?.detail || `HTTP ${response.status}`);
+    if (session !== state.agentSession) return;
+    state.agentResetBlocked = false;
+    clearButton.textContent = 'Clear Session';
+    if ($('settingsActionStatus').textContent.startsWith('Agent reset failed:')) $('settingsActionStatus').textContent = '';
     agentDebug('Agent backend reset', { ok: true });
-  } catch (e) {
-    agentDebug('Agent backend reset failed', String(e));
+    status($('sttStatus'), 'Session cleared. Live mode can continue with fresh context.', 'good');
+  } catch (error) {
+    if (session !== state.agentSession) return;
+    const message = `Agent reset failed: ${error.message}. Retry Clear Session to resume agent delivery. Conversation can continue.`;
+    clearButton.textContent = 'Retry Clear Session';
+    $('settingsActionStatus').textContent = message;
+    status($('sttStatus'), message, 'bad');
+    agentDebug('Agent backend reset failed', error.message || String(error));
+  } finally {
+    if (session === state.agentSession) clearButton.disabled = false;
   }
   markActivity('session-clear');
 }
@@ -312,7 +337,11 @@ function wireSettingsInputs() {
   const speed = $('speed');
   if (speed) speed.oninput = () => { $('speedDisplay').textContent = parseFloat(speed.value).toFixed(1) + '×'; saveConfigSoon(); };
   const ackEnabled = $('ackEnabled');
-  if (ackEnabled) ackEnabled.onchange = () => saveConfigSoon();
+  if (ackEnabled) ackEnabled.onchange = () => {
+    if (ackEnabled.value !== 'on') cancelAckPlayback();
+    else refreshAckEnabledStatus();
+    saveConfigSoon();
+  };
   const silenceMs = $('silenceMs');
   if (silenceMs) silenceMs.oninput = () => { state.endSilenceMs = parseInt(silenceMs.value, 10); $('silenceDisplay').textContent = state.endSilenceMs + 'ms'; saveConfigSoon(); };
   const endpoint = $('endpointMode');
@@ -324,75 +353,55 @@ function wireSettingsInputs() {
     saveConfigSoon();
   };
   const sttDeviceEl = $('sttDevice');
-  if (sttDeviceEl) sttDeviceEl.onchange = () => { status($('sttStatus'), `STT device set to ${sttDevice()}. Next transcription will use it. First use may load a second model.`, 'warn'); health(); saveConfigSoon(); };
+  if (sttDeviceEl) sttDeviceEl.onchange = () => { status($('sttStatus'), `STT device set to ${sttDevice()}. The selected model loads after active transcription finishes; retry if busy.`, 'warn'); health(); saveConfigSoon(); };
   const sttModelEl = $('sttModel');
   if (sttModelEl) sttModelEl.onchange = () => { status($('sttStatus'), `Whisper model set to ${sttModel()}. First use downloads/loads that model.`, 'warn'); health(); saveConfigSoon(); };
   const sttBackendEl = $('sttBackend');
   if (sttBackendEl) sttBackendEl.onchange = () => {
     const msg = sttBackend() === 'llm'
       ? `Multimodal STT selected. Audio transcription now uses ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()}. Blank STT fields inherit from LLM Response.`
-      : 'Built-in Whisper selected.';
+      : sttBackend() === 'whistle' ? 'Local Whistle CPU selected.' : 'Built-in Whisper selected.';
     syncConverseSettingsUI();
     status($('sttStatus'), msg, 'warn');
-    $('settingsInfo').textContent = msg;
+    $('modelOptionsStatus').textContent = msg;
     health();
     saveConfigSoon();
   };
   const llmProviderEl = $('llmProvider');
   if (llmProviderEl) llmProviderEl.onchange = async () => {
+    syncAudioProbeButton();
+    if (!await refreshProviderCapabilities()) return;
     maybeApplyProviderPreset('llmProvider', 'llmBaseUrl');
-    await setBaseUrlEditability();
     syncConverseSettingsUI();
-    status($('sttStatus'), `Switching response provider to ${llmProvider()}…`, 'warn');
-    await saveConfigNow();
-    try {
-      const j = await activateSelectedProvider(llmProvider(), lmModel());
-      $('settingsInfo').textContent = `Activated ${j.activation.provider}. Started ${j.activation.started.join(', ') || 'nothing'}; stopped ${j.activation.stopped.join(', ') || 'nothing'}.`;
-    } catch (e) {
-      $('settingsInfo').textContent = 'Provider activation failed: ' + e.message;
-      status($('sttStatus'), 'Provider activation failed: ' + e.message, 'bad');
-    }
-    await loadModelOptions(true);
-    await loadAgentModelOptions();
-    health();
+    status($('sttStatus'), 'Response provider will be activated when settings close.', 'warn');
     saveConfigSoon();
+    await loadModelOptions(true);
   };
   const lmModelEl = $('lmModel');
-  if (lmModelEl) lmModelEl.onchange = async () => {
-    if (!sttLlmModel()) syncConverseSettingsUI();
-    status($('sttStatus'), `LLM response model set to ${prettyModelLabel(lmModel())}.`, 'warn');
-    await saveConfigNow();
-    if (llmProvider() === 'llama.cpp') {
-      try {
-        const j = await activateSelectedProvider('llama.cpp', lmModel());
-        $('settingsInfo').textContent = `Reloaded llama.cpp with ${prettyModelLabel(j.activation.model)}.`;
-        await loadModelOptions(true);
-      } catch (e) {
-        $('settingsInfo').textContent = 'llama.cpp reload failed: ' + e.message;
-        status($('sttStatus'), 'llama.cpp reload failed: ' + e.message, 'bad');
-      }
-    }
+  if (lmModelEl) lmModelEl.onchange = () => {
+    syncConverseSettingsUI();
+    syncAudioProbeButton();
+    status($('sttStatus'), `Response model set to ${prettyModelLabel(lmModel())}; apply by closing settings.`, 'warn');
     saveConfigSoon();
   };
+  for (const id of ['llmReasoningEnabled', 'sttLlmReasoningEnabled']) {
+    const control = $(id);
+    if (control) control.onchange = () => { syncConverseSettingsUI(); saveConfigSoon(); };
+  }
   const sttLlmModelEl = $('sttLlmModel');
-  if (sttLlmModelEl) sttLlmModelEl.onchange = () => { status($('sttStatus'), `Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
+  if (sttLlmModelEl) sttLlmModelEl.onchange = () => { syncAudioProbeButton(); status($('sttStatus'), `Multimodal STT model set to ${effectiveSttLlmModel()}.`, 'warn'); health(); saveConfigSoon(); };
   const sttLlmProviderEl = $('sttLlmProvider');
-  if (sttLlmProviderEl) sttLlmProviderEl.onchange = async () => { maybeApplyProviderPreset('sttLlmProvider', 'sttLlmBaseUrl', { clearWhenBlank: true }); await setBaseUrlEditability(); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
+  if (sttLlmProviderEl) sttLlmProviderEl.onchange = async () => { syncAudioProbeButton(); if (!await refreshProviderCapabilities()) return; maybeApplyProviderPreset('sttLlmProvider', 'sttLlmBaseUrl', { clearWhenBlank: true }); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
   const sttLlmBaseUrlEl = $('sttLlmBaseUrl');
-  if (sttLlmBaseUrlEl) sttLlmBaseUrlEl.onchange = async () => { await setBaseUrlEditability(); syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
+  if (sttLlmBaseUrlEl) sttLlmBaseUrlEl.onchange = async () => { syncAudioProbeButton(); if (!await refreshProviderCapabilities()) return; syncConverseSettingsUI(); await loadModelOptions(true); health(); saveConfigSoon(); };
   const sttLlmApiKeyEnvEl = $('sttLlmApiKeyEnv');
-  if (sttLlmApiKeyEnvEl) sttLlmApiKeyEnvEl.onchange = () => { syncConverseSettingsUI(); loadModelOptions(); saveConfigSoon(); };
+  if (sttLlmApiKeyEnvEl) sttLlmApiKeyEnvEl.onchange = () => { syncAudioProbeButton(); syncConverseSettingsUI(); loadModelOptions(); saveConfigSoon(); };
   const ttsDeviceEl = $('ttsDevice');
   if (ttsDeviceEl) ttsDeviceEl.onchange = () => { status($('ttsStatus'), `TTS device set to ${ttsDevice()}. Next speech will use it. First use may load a second pipeline.`, 'warn'); health(); saveConfigSoon(); };
   [
-    'ttsProvider','ttsPort','ttsBaseUrl','ttsModel','llmBaseUrl','llmApiKeyEnv',
-    'sttCloudBaseUrl','sttCloudModel','sttApiKeyEnv','agentEnabled','agentProvider',
-    'agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens',
-    'agentYoloMode','agentProjectTrust','agentInjectionMode','agentFollowUpMode',
-    'agentThinkingLevel','agentAutoCompact','agentCompactionReserveTokens',
-    'agentCompactionKeepRecentTokens','agentHideThinking','agentTransport',
-    'agentRetryEnabled','agentMaxRetries','agentRetryBaseDelayMs','agentHttpIdleTimeoutMs',
-    'agentEnableSkillCommands','agentBlockImages','agentFirstDeliveryMode',
+    'ttsProvider','ttsPort','ttsBaseUrl','ttsHealthUrl','ttsModel','llmBaseUrl','llmApiKeyEnv','llmMaxTokens','llmReasoningEffort',
+    'agentBaseUrl','agentApiKey','agentModel','agentMaxTurns','agentMaxTokens','agentReasoningEffort',
+    'agentFirstDeliveryMode',
     'agentFirstDeliverySeconds','agentPeriodicDeliveryTurns','agentPeriodicDeliverySeconds',
     'agentBusyDeliveryMode','agentIdleDeliveryMode','agentInterruptsEnabled',
     'agentInterruptMinPriority','agentHardInterruptMinPriority','agentInterruptCooldownPaddingMs',
@@ -403,24 +412,24 @@ function wireSettingsInputs() {
       // hostInfo is now owned by api.js:health() and updated every 5s
       // from server-resolved URLs (Bug C / #19).
       syncConverseSettingsUI();
+      syncAudioProbeButton();
       health();
       saveConfigSoon();
     };
   });
-  const voice = $('voice');
-  if (voice) voice.onchange = async () => {
-    state.ackFiles = [];
-    state.ackBuffers = [];
-    state.ackBuffersByTag = {};
-    status($('sttStatus'), `Voice changed to ${voice.value}. Clearing old ack cache and queueing fresh acks for this voice…`, 'warn');
-    try {
-      const r = await fetch('/api/acks/rebuild', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ voice: voice.value, clear: true }) });
-      const j = await r.json();
-      $('transcriptInfo').textContent = `Ack rebuild for ${j.voice}: removed ${j.removed}, missing/queued ${j.queued_or_missing}.`;
-    } catch (e) { console.warn('ack rebuild failed', e); }
+  if ($('agentProvider')) $('agentProvider').onchange = async () => {
+    if (!await refreshProviderCapabilities()) return;
+    maybeApplyProviderPreset('agentProvider', 'agentBaseUrl');
+    syncConverseSettingsUI();
+    health();
     saveConfigSoon();
+    await loadAgentModelOptions(true);
+  };
+  if ($('agentEnabled')) $('agentEnabled').onchange = () => { void setAgentEnabledFromUi(); };
+  const voice = $('voice');
+  if (voice) voice.onchange = () => {
+    void changeAckVoice(saveConfigNow);
     markActivity('voice-change');
-    setTimeout(() => loadAcks('global'), 1500);
   };
   const finalSttModeEl = $('finalSttMode');
   if (finalSttModeEl) finalSttModeEl.onchange = () => { status($('sttStatus'), `Finalization mode: ${finalSttMode() === 'chunks' ? 'live chunks only' : 'full utterance final pass'}.`, 'warn'); saveConfigSoon(); };
@@ -428,6 +437,25 @@ function wireSettingsInputs() {
   if (minSpeechMsEl) minSpeechMsEl.oninput = () => { $('minSpeechMsDisplay').textContent = (minSpeechMs() / 1000).toFixed(1) + 's'; saveConfigSoon(); };
   const partialWindowMsEl = $('partialWindowMs');
   if (partialWindowMsEl) partialWindowMsEl.oninput = () => { state.partialWindowMs = partialWindowMsSetting(); $('partialWindowMsDisplay').textContent = (state.partialWindowMs / 1000).toFixed(1) + 's'; saveConfigSoon(); };
+}
+
+let typedAskOwner = null;
+
+function askTyped() {
+  // A submitted permission answer owns its confirmation. Repeated clicks must
+  // not retire that owner before it records the server's acceptance.
+  if (isPermissionAnswerPending()) return typedAskOwner?.task;
+  typedAskOwner?.controller.abort();
+  const owner = { controller: new AbortController(), session: state.agentSession };
+  typedAskOwner = owner;
+  owner.task = askAndSpeak($('text').value.trim(), '', { signal: owner.controller.signal })
+    .catch(error => {
+      if (typedAskOwner === owner && owner.session === state.agentSession && !owner.controller.signal.aborted) {
+        status($('sttStatus'), 'LM/TTS error: ' + error.message, 'bad');
+      }
+    })
+    .finally(() => { if (typedAskOwner === owner) typedAskOwner = null; });
+  return owner.task;
 }
 
 function wireUiHandlers() {
@@ -440,13 +468,14 @@ function wireUiHandlers() {
   bindClick('endpointsBtn', openEndpoints);
   bindClick('closeEndpointsBtn', closeEndpoints);
   bindClick('refreshEndpointsBtn', () => populateEndpoints().catch(e => console.warn('populateEndpoints failed:', e)));
-  bindClick('refreshAgentModelsBtn', () => loadAgentModelOptions());
+  bindClick('refreshAgentModelsBtn', async () => { if (await refreshProviderCapabilities()) await loadAgentModelOptions(); });
+  bindClick('clearProbeBtn', resetSelectedAudioProbe);
   bindClick('clearSessionBtn', () => clearSession());
   bindClick('recBtn', () => startRecording());
   bindClick('stopRecBtn', stopRecording);
   bindClick('liveBtn', toggleLive);
   bindClick('playBtn', () => speakText($('text').value, false).catch(() => {}));
-  bindClick('askBtn', () => askAndSpeak($('text').value.trim()).catch(e => status($('sttStatus'), 'LM/TTS error: ' + e.message, 'bad')));
+  bindClick('askBtn', askTyped);
   bindClick('stopBtn', stopPlayback);
 
   const modal = $('settingsModal');
@@ -484,6 +513,16 @@ function wireUiHandlers() {
     document.querySelectorAll('.tab[data-mode]').forEach(x => x.classList.toggle('active', x === tab));
     saveConfigSoon();
   }));
+  for (const [id, load] of [['lmModel', loadModelOptions], ['sttLlmModel', loadModelOptions],
+    ['agentModel', () => loadAgentModelOptions(false)]]) {
+    const picker = $(id);
+    if (!picker) continue;
+    picker.addEventListener('focus', () => { void load(); });
+    picker.addEventListener('pointerdown', () => { void load(); });
+    picker.addEventListener('keydown', event => {
+      if (['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(event.key)) void load();
+    });
+  }
   wireSettingsInputs();
 }
 
@@ -494,24 +533,18 @@ if (_sttOverride) {
     setCapabilityFilterOverride(_sttOverride.checked);
     // Reload the model list so the dropdown reflects the change immediately.
     (async () => {
-      try { await loadModelOptions(true); } catch (e) { /* best effort */ }
+      try { await loadModelOptions(true); } catch { /* best effort */ }
     })();
   });
 }
 
-// Wire clearProbeBtn (Phase 4.5.6 — clear audio probe cache and retry).
-const clearBtn = $('clearProbeBtn');
-if (clearBtn) {
-  clearBtn.addEventListener('click', async () => {
-    const { provider, baseUrl, model } = clearBtn.dataset;
-    await clearAudioProbe(provider, baseUrl, model);
-    clearBtn.style.display = 'none';
-    try { await loadModelOptions(true); } catch (_) {}
-  });
-}
-
 // --- Boot ---
-await loadCapabilities().then(() => setBaseUrlEditability());
+initializeSettingsForm();
 wireUiHandlers();
 wireLocalModelsUi();
-initApp();
+void refreshProviderCapabilities();
+void initApp().catch(error => {
+  const message = 'Application startup failed: ' + apiErrorMessage(error);
+  $('settingsActionStatus').textContent = message;
+  status($('sttStatus'), message, 'bad');
+});

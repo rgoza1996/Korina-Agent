@@ -1,0 +1,117 @@
+{
+  "kind": "authenticated-meta-response-usage-observation",
+  "date_utc": "2026-10-23",
+  "source_sha": "06026b11e40d6260c559d314e2a33ae80a9da66a",
+  "pre_event_preparation": true,
+  "automated_checkpoint": "06026b1.json",
+  "source_sha256": {
+    "korina/routes/chat.py": "ce88db7ef8bac6f16a58c5c641e1fe2d962bb7b5366055c731b221716398f111",
+    "korina/services/response_llm.py": "aa8182eb592244af1e156010776929bd61f6915d02339cbd7aaea1c3092a642e",
+    "korina/runtime/completion.py": "200c91357a036c65756b6912c7f557bdb418e8ee5ba79dc2034d085fd25c4618",
+    "Korina/index.html": "89642d469527f6f55c70d27dd0d3f400574f9b7ae71b6bc6e6bbc3c911b2c77a",
+    "Korina/js/app.js": "4470fceee02be5bfcaddcf7c25faac1291bebeddbbda5547b80d7e12d0cefd7e",
+    "Korina/js/agent-ui.js": "9fb4ebdccd976e609f33df0be54ce4725280d4862850583b4394f87cf1b099dc"
+  },
+  "model": "muse-spark-1.3-contributor",
+  "api_base": "https://api.meta.ai/v1",
+  "input": {
+    "method": "Native Chromium calling the actual browser askLM function with supplied synthetic history; no TTS, microphone or voice inference in this observation.",
+    "prior_history": [
+      {
+        "role": "user",
+        "content": "My project is called Cedar. Our rehearsal is Friday at ten in the morning."
+      },
+      {
+        "role": "assistant",
+        "content": "I will use Cedar and Friday at ten for this conversation."
+      }
+    ],
+    "message": "What is my project called and when is our practice?"
+  },
+  "response": {
+    "reply": "Your project is called Cedar.\nOur rehearsal is Friday at ten in the morning.",
+    "usage": {
+      "prompt_tokens": 230,
+      "completion_tokens": 153,
+      "reasoning_tokens": 127,
+      "cached_tokens": 0
+    },
+    "request_settings": {
+      "provider": "meta",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reasoning_effort": "minimal",
+      "reasoning": null
+    },
+    "seconds": 2.030761957168579,
+    "model": "muse-spark-1.3-contributor"
+  },
+  "provider_reported_usage": {
+    "completion_tokens": 153,
+    "prompt_tokens": 230,
+    "total_tokens": 383,
+    "completion_tokens_details": {
+      "reasoning_tokens": 127
+    },
+    "prompt_tokens_details": {
+      "cached_tokens": 0
+    }
+  },
+  "panel": {
+    "responseUsageStatus": "Provider-reported usage received.",
+    "responseUsageSettings": "Provider: meta \u00b7 Model: muse-spark-1.3-contributor \u00b7 Output budget: 2048 \u00b7 Reasoning effort: minimal",
+    "responsePromptTokens": "230",
+    "responseCompletionTokens": "153",
+    "responseReasoningTokens": "127",
+    "responseCachedTokens": "0"
+  },
+  "checks": {
+    "successfulReply": true,
+    "serverSnapshot": true,
+    "panelMatches": true,
+    "settingsLabel": true,
+    "historyUntouched": true,
+    "separateFromLog": true,
+    "noPageErrors": true,
+    "clearResets": true
+  },
+  "paid_generation": {
+    "task_call_number": 26,
+    "status": "returned",
+    "provider_wall_seconds": 2.02,
+    "estimated_usd": "0.0000536",
+    "reasoning_effort": "minimal",
+    "max_tokens": 2048
+  },
+  "task_spending_through_this_observation": {
+    "generation_calls": 26,
+    "estimated_usd": "0.003545870",
+    "authorized_limit_usd": "3.00",
+    "includes": "Both earlier stopped voice/harness attempts remain included. No paid OpenRouter generations.",
+    "rates_usd_per_million_tokens": {
+      "uncached_input": "0.10",
+      "cached_input": "0.002",
+      "output": "0.20"
+    },
+    "rates_source": "https://dev.meta.ai/docs/pricing-rate-limits",
+    "basis": "Returned provider usage and published Contributor rates; not an invoice or account spending cap."
+  },
+  "cleanup": {
+    "backend_received_sigterm": true,
+    "application_shutdown_complete_logged": true,
+    "disposable_port_closed": true
+  },
+  "scope": [
+    "One paid Contributor generation through actual archived response/config/HTTP code and native browser metadata rendering.",
+    "Panel counts exactly match the allowlisted response and captured provider usage; reported cached zero remains zero.",
+    "Settings label uses the original server request snapshot; this observation did not change settings while generation was pending.",
+    "Clear resets the panel; no page errors. askLM does not append history by itself; the supplied context remained outside UI history/log.",
+    "All content synthetic; Contributor content may train Meta models. Credentials stayed outside Git and browser state."
+  ],
+  "not_verified": [
+    "Physical microphone, audibility, echo, human interruption, TTS or another complete voice run.",
+    "Durable memory, tool execution, cache hit, cache retention or latency savings for this request.",
+    "Cumulative usage/spending calculation by the product UI; the task spending ledger is separate private instrumentation.",
+    "GPU, successful hosted CI, final event artifacts, submission or merge."
+  ]
+}

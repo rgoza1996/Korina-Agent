@@ -1,5 +1,15 @@
 # Third Party Notices
 
+## Cactus Whistle / Needle
+
+The optional Whistle transcription backend uses `cactus-needle` and separately downloaded Cactus Whistle weights and a Needle 3 engine. No weights or native runtime are vendored in Korina.
+
+Project: https://github.com/cactus-compute/needle
+
+Model: https://huggingface.co/Cactus-Compute/whistle
+
+License: Apache-2.0; retain the upstream license with separately distributed engine/model artifacts.
+
 ## Pi Agent Harness / Pi Coding Agent
 
 Korina Agent's state-report feature is architecturally inspired by Pi Agent Harness / Pi Coding Agent concepts: compact state tracking, agent-loop separation, and injecting state into a conversational front-end from an agentic state layer.

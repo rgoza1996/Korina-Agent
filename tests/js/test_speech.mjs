@@ -1,0 +1,597 @@
+import test, { beforeEach, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { state } from '../../Korina/js/state.js';
+import { interruptedSpeechContext, schedulePcm, speakBuffered, speakText, stopTtsNow, waitForScheduledAudio } from '../../Korina/js/speech.js';
+import { MAX_BUFFERED_AUDIO_BYTES } from '../../Korina/js/response-body.js';
+
+class AudioElement extends EventTarget {
+  src = '';
+  paused = true;
+  duration = 2;
+  currentTime = 0;
+  pauseCalls = 0;
+  loadCalls = 0;
+  playCalls = 0;
+  play() {
+    this.playCalls++;
+    this.paused = false;
+    this.dispatchEvent(new Event('playing'));
+    return Promise.resolve();
+  }
+  pause() { this.pauseCalls++; this.paused = true; }
+  removeAttribute(name) { if (name === 'src') this.src = ''; }
+  load() { this.loadCalls++; }
+  finish() { this.paused = true; this.dispatchEvent(new Event('ended')); }
+}
+
+const elements = new Map();
+const created = [];
+const revoked = [];
+const createObjectURL = URL.createObjectURL;
+const revokeObjectURL = URL.revokeObjectURL;
+const element = id => {
+  if (!elements.has(id)) elements.set(id, { value: '', textContent: '', className: '', style: {}, disabled: false });
+  return elements.get(id);
+};
+const tick = () => new Promise(setImmediate);
+const response = () => new Response(new Blob(['audio fixture'], { type: 'audio/wav' }));
+
+beforeEach(() => {
+  elements.clear(); created.length = 0; revoked.length = 0;
+  elements.set('audio', new AudioElement());
+  globalThis.document = { getElementById: element };
+  element('ttsBaseUrl').value = 'http://speech.test';
+  element('voice').value = 'af_heart';
+  element('speed').value = '1';
+  URL.createObjectURL = blob => { const url = `blob:test-${created.length}`; created.push({ blob, url }); return url; };
+  URL.revokeObjectURL = url => revoked.push(url);
+  globalThis.fetch = async () => response();
+  Object.assign(state, {
+    mode: 'buf', live: false, audioCtx: { state: 'running', currentTime: 10 },
+    controller: null, activeSources: [], handlingBarge: false, bargeLoopId: null, bargeRecorder: null,
+  });
+});
+afterEach(() => {
+  stopTtsNow();
+  URL.createObjectURL = createObjectURL;
+  URL.revokeObjectURL = revokeObjectURL;
+});
+
+for (const mode of ['buf', 'sse']) {
+  test(`${mode} synthesis still downloading reports all text unspoken and Stop retires its clock`, async () => {
+    state.mode = mode;
+    globalThis.fetch = async (url, { signal }) => new Response(new ReadableStream({
+      start(controller) {
+        signal.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
+      },
+    }));
+    const pending = speakText('The entire reply is still unspoken.');
+    await tick();
+    state.audioCtx.currentTime = 15;
+    assert.equal(state.currentTtsStartedAt, null);
+    assert.match(interruptedSpeechContext(), /about 0%.*Already spoken approximately: ""\. Not yet spoken approximately: "The entire reply is still unspoken\."/);
+    assert.equal(state.activeSources.length, 0);
+    assert.equal(created.length, 0);
+    stopTtsNow();
+    await pending;
+    assert.equal(state.controller, null);
+  });
+}
+
+for (const ackUntil of [0, 20]) {
+  test(`first PCM uses its scheduled playback clock and later chunks retain it with ACK end ${ackUntil}`, async () => {
+    state.mode = 'sse';
+    state.ackPlayingUntil = ackUntil;
+    const starts = [];
+    state.gain = {};
+    Object.assign(state.audioCtx, {
+      createBuffer: () => ({ copyToChannel() {} }),
+      createBufferSource: () => ({ connect() {}, start: when => starts.push(when), stop() {} }),
+    });
+    let body;
+    globalThis.fetch = async (url, { signal }) => new Response(new ReadableStream({ start(controller) {
+      body = controller;
+      signal.addEventListener('abort', () => controller.error(new DOMException('Aborted', 'AbortError')), { once: true });
+    } }));
+    const pending = speakText('This reply is being streamed in two chunks.');
+    await tick();
+    state.audioCtx.currentTime = 15;
+    const chunk = new TextEncoder().encode(`data: ${JSON.stringify({ audio: Buffer.alloc(2 * 3000 * 2).toString('base64'), sample_rate: 3000 })}\n\n`);
+    body.enqueue(chunk);
+    await tick();
+    const firstStart = Math.max(15, ackUntil);
+    assert.deepEqual(starts, [firstStart]);
+    assert.equal(state.currentTtsStartedAt, firstStart);
+    assert.equal(state.currentTtsEstimatedEnd, firstStart + 2);
+    assert.match(interruptedSpeechContext(), /about 0%/);
+    if (ackUntil) {
+      state.audioCtx.currentTime = firstStart - .5;
+      assert.match(interruptedSpeechContext(), /about 0%/);
+    }
+    state.audioCtx.currentTime = firstStart + 1;
+    assert.match(interruptedSpeechContext(), /about 50%/);
+    body.enqueue(chunk);
+    await tick();
+    assert.deepEqual(starts, [firstStart, firstStart + 2]);
+    assert.equal(state.currentTtsStartedAt, firstStart);
+    assert.equal(state.currentTtsEstimatedEnd, firstStart + 4);
+    assert.match(interruptedSpeechContext(), /about 25%/);
+    state.audioCtx.state = 'suspended';
+    const suspended = interruptedSpeechContext();
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(interruptedSpeechContext(), suspended);
+    state.audioCtx.state = 'running';
+    state.audioCtx.currentTime = firstStart + 2;
+    assert.match(interruptedSpeechContext(), /about 50%/);
+    stopTtsNow();
+    await pending;
+  });
+}
+
+test('buffered interruption context follows native playback time through pause and replacement', async () => {
+  const old = speakText('The old buffered reply.');
+  await tick();
+  element('audio').currentTime = 1;
+  assert.match(interruptedSpeechContext(), /about 50%/);
+  element('audio').pause();
+  state.audioCtx.currentTime = 30;
+  assert.match(interruptedSpeechContext(), /about 50%/);
+  stopTtsNow();
+  await old;
+
+  let release;
+  globalThis.fetch = () => new Promise(resolve => { release = resolve; });
+  const current = speakText('The new reply is still unspoken.');
+  state.audioCtx.currentTime = 40;
+  assert.equal(state.currentTtsStartedAt, null);
+  assert.match(interruptedSpeechContext(), /about 0%.*Not yet spoken approximately: "The new reply is still unspoken\."/);
+  element('audio').currentTime = 0;
+  release(response());
+  await tick();
+  element('audio').currentTime = .5;
+  assert.match(interruptedSpeechContext(), /about 25%/);
+  element('audio').finish();
+  await current;
+});
+
+test('buffered speech keeps its lifecycle active until native playback ends and releases its URL', async () => {
+  let complete = false;
+  const pending = speakText('A buffered reply.', true).then(() => { complete = true; });
+  await tick();
+  assert.equal(complete, false);
+  assert.equal(state.ttsSpeaking, true);
+  assert.equal(element('stopBtn').disabled, false);
+  assert.equal(element('playBtn').disabled, true);
+  assert.equal(element('audio').paused, false);
+  assert.equal(state.currentTtsEstimatedEnd, 12);
+  assert.match(element('ttsStatus').textContent, /Playing buffered/);
+
+  element('audio').finish();
+  await pending;
+  assert.equal(state.ttsSpeaking, false);
+  assert.equal(element('stopBtn').disabled, true);
+  assert.equal(element('playBtn').disabled, false);
+  assert.equal(element('audio').src, '');
+  assert.equal(element('audio').loadCalls, 1);
+  assert.deepEqual(revoked, ['blob:test-0']);
+  assert.match(element('ttsStatus').textContent, /playback complete/);
+});
+
+test('a rejected buffered play request reports failure and cleans up instead of reporting success', async () => {
+  element('audio').play = async () => { throw new Error('Autoplay permission denied'); };
+  await assert.rejects(speakText('A rejected reply.', true), /Autoplay permission denied/);
+  assert.equal(element('ttsStatus').className, 'status bad');
+  assert.doesNotMatch(element('ttsStatus').textContent, /Done/);
+  assert.equal(element('audio').src, '');
+  assert.deepEqual(revoked, ['blob:test-0']);
+  assert.equal(state.ttsSpeaking, false);
+});
+
+test('a native audio decode error rejects the buffered turn and releases its resources', async () => {
+  const pending = speakText('An invalid audio reply.', true);
+  await tick();
+  element('audio').error = { message: 'Audio could not be decoded' };
+  element('audio').dispatchEvent(new Event('error'));
+  await assert.rejects(pending, /Audio could not be decoded/);
+  assert.equal(element('ttsStatus').className, 'status bad');
+  assert.equal(element('stopBtn').disabled, true);
+  assert.deepEqual(revoked, ['blob:test-0']);
+});
+
+test('Stop pauses buffered playback, resolves its waiting turn, and revokes its URL once', async () => {
+  const pending = speakText('Stop this reply.', true);
+  await tick();
+  stopTtsNow();
+  await pending;
+  assert.equal(element('audio').paused, true);
+  assert.equal(element('audio').src, '');
+  assert.equal(state.ttsSpeaking, false);
+  assert.equal(element('stopBtn').disabled, true);
+  assert.equal(element('ttsStatus').textContent, 'Interrupted');
+  stopTtsNow();
+  assert.deepEqual(revoked, ['blob:test-0']);
+});
+
+test('a buffered response arriving after Stop cannot begin playback', async () => {
+  let finish;
+  globalThis.fetch = () => new Promise(resolve => { finish = resolve; });
+  const pending = speakText('This request will be cancelled.', true);
+  stopTtsNow();
+  finish(response());
+  await pending;
+  assert.equal(element('audio').playCalls, 0);
+  assert.equal(created.length, 0);
+  assert.equal(element('ttsStatus').textContent, 'Interrupted');
+});
+
+test('Stop settles a buffered turn while native fetch is still pending', async () => {
+  globalThis.fetch = (url, { signal }) => new Promise((resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new DOMException('Request aborted', 'AbortError')), { once: true });
+  });
+  const pending = speakText('This fetch has not responded.', true);
+  stopTtsNow();
+  await pending;
+  assert.equal(created.length, 0);
+  assert.equal(state.ttsSpeaking, false);
+  assert.equal(element('stopBtn').disabled, true);
+});
+
+for (const phase of ['fetch', 'playback']) {
+  test(`direct buffered calls reject AbortError promptly when stopped during ${phase}`, async () => {
+    if (phase === 'fetch') globalThis.fetch = (url, { signal }) => new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('Request aborted', 'AbortError')), { once: true });
+    });
+    const pending = speakBuffered('A directly invoked buffered reply.');
+    await tick();
+    stopTtsNow();
+    await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(element('audio').paused, true);
+    assert.equal(created.length, revoked.length);
+  });
+}
+
+for (const [name, body, error] of [
+  ['empty HTTP 200', '', /no audio samples/],
+  ['empty PCM despite a positive metadata sample count', 'data: {"audio":"","samples":999,"sample_rate":24000}\n\n', /no audio samples/],
+  ['a missing audio field', 'data: {"samples":999,"sample_rate":24000}\n\n', /missing PCM audio/],
+]) {
+  test(`SSE speech reports failure for ${name}`, async () => {
+    state.mode = 'sse';
+    globalThis.fetch = async () => {
+      let read = false;
+      return { ok: true, body: { getReader: () => ({ read: async () => {
+        if (read || !body) return { done: true };
+        read = true;
+        return { done: false, value: new TextEncoder().encode(body) };
+      } }) } };
+    };
+    await assert.rejects(speakText('No audio was synthesized.', true), error);
+    assert.equal(element('ttsStatus').className, 'status bad');
+    assert.doesNotMatch(element('ttsStatus').textContent, /Done/);
+  });
+}
+
+test('SSE progress counts scheduled PCM frames rather than trusting provider metadata', async () => {
+  state.mode = 'sse';
+  pcmAudioContext();
+  const body = 'data: {"audio":"AQACAA==","samples":0,"sample_rate":24000}\n\n';
+  globalThis.fetch = async () => {
+    let read = false;
+    return { ok: true, body: { getReader: () => ({ read: async () => {
+      if (read) return { done: true };
+      read = true;
+      return { done: false, value: new TextEncoder().encode(body) };
+    } }) } };
+  };
+  await speakText('A valid PCM chunk.', false);
+  assert.match(element('ttsStatus').textContent, /Done · 1 chunks/);
+  assert.match(element('chunkInfo').textContent, /2 samples/);
+});
+
+test('finishing a stopped old reply cannot clear the new buffered playback lifecycle', async () => {
+  const old = speakText('The old reply.', true);
+  await tick();
+  stopTtsNow();
+  const current = speakText('The replacement reply.', true);
+  await tick();
+  await old;
+  assert.equal(state.ttsSpeaking, true);
+  assert.equal(element('audio').paused, false);
+  assert.equal(element('stopBtn').disabled, false);
+  assert.notEqual(state.controller, null);
+  assert.match(element('ttsStatus').textContent, /Playing buffered/);
+  assert.deepEqual(revoked, ['blob:test-0']);
+  element('audio').finish();
+  await current;
+  assert.deepEqual(revoked, ['blob:test-0', 'blob:test-1']);
+});
+
+function pcmAudioContext() {
+  const sources = [];
+  const startedAt = performance.now();
+  const startTime = state.audioCtx.currentTime;
+  Object.defineProperty(state.audioCtx, 'currentTime', { configurable: true,
+    get: () => startTime + (performance.now() - startedAt) / 1000 });
+  state.gain = {};
+  Object.assign(state.audioCtx, {
+    createBuffer: () => ({ copyToChannel() {} }),
+    createBufferSource: () => {
+      const source = { stopped: 0, connect() {}, start() {}, stop() { this.stopped++; } };
+      sources.push(source);
+      return source;
+    },
+  });
+  return sources;
+}
+
+const pcmEvent = 'data: {"audio":"AQACAA==","sample_rate":24000}\n\n';
+const encoded = value => new TextEncoder().encode(value);
+
+for (const failure of ['invalid JSON', 'missing PCM', 'network error']) {
+  test(`an SSE ${failure} after valid PCM stops scheduled audio before restoring controls`, async () => {
+    state.mode = 'sse';
+    const sources = pcmAudioContext();
+    let reads = 0, cancelled = 0;
+    globalThis.fetch = async () => ({ ok: true, body: { getReader: () => ({
+      read: async () => {
+        if (reads++ === 0) return { done: false, value: encoded(pcmEvent) };
+        if (failure === 'network error') throw new Error('Stream connection failed');
+        return { done: false, value: encoded(failure === 'invalid JSON' ? 'data: {bad\n\n' : 'data: {"error":"synthesis failed"}\n\n') };
+      },
+      cancel: async () => { cancelled++; },
+    }) } });
+    await assert.rejects(speakText('A partially synthesized reply.', true));
+    assert.equal(sources.length, 1);
+    assert(sources[0].stopped > 0);
+    assert.equal(state.activeSources.length, 0);
+    assert.equal(state.controller, null);
+    assert.equal(state.ttsSpeaking, false);
+    assert.equal(element('stopBtn').disabled, true);
+    assert.equal(element('playBtn').disabled, false);
+    assert.equal(element('ttsStatus').className, 'status bad');
+    assert.equal(cancelled, 1);
+  });
+}
+
+for (const completion of ['error', 'late PCM']) {
+  test(`an old SSE ${completion} cannot stop or overwrite a replacement buffered reply`, async () => {
+    state.mode = 'sse';
+    const sources = pcmAudioContext();
+    let finishOldRead, reads = 0;
+    globalThis.fetch = async () => ({ ok: true, body: { getReader: () => ({
+      read: () => {
+        if (reads++ === 0) return Promise.resolve({ done: false, value: encoded(pcmEvent) });
+        return new Promise((resolve, reject) => { finishOldRead = completion === 'error' ? () => reject(new Error('Old stream failed')) : () => resolve({ done: false, value: encoded(pcmEvent) }); });
+      },
+      cancel: async () => {},
+    }) } });
+    const old = speakText('The old streamed reply.', true);
+    const oldResult = old.catch(error => error);
+    await tick();
+    assert.equal(sources.length, 1);
+    state.mode = 'buf';
+    globalThis.fetch = async () => response();
+    const current = speakText('The current buffered reply.', true);
+    await tick();
+    const controller = state.controller;
+    const currentStartedAt = state.currentTtsStartedAt;
+    finishOldRead();
+    await oldResult;
+    assert.equal(sources.length, 1, 'a late old chunk cannot schedule another source');
+    assert.equal(state.controller, controller);
+    assert.equal(state.currentTtsStartedAt, currentStartedAt);
+    assert.match(interruptedSpeechContext(), /about 0%.*Not yet spoken approximately: "The current buffered reply\."/);
+    assert.equal(controller.signal.aborted, false);
+    assert.equal(state.ttsSpeaking, true);
+    assert.equal(element('audio').paused, false);
+    assert.equal(element('stopBtn').disabled, false);
+    assert.match(element('ttsStatus').textContent, /Playing buffered/);
+    assert.deepEqual(revoked, []);
+    element('audio').finish();
+    await current;
+  });
+}
+
+test('stream EOF keeps controls active through scheduled PCM playback and Stop cancels the wait', async () => {
+  state.mode = 'sse';
+  const sources = pcmAudioContext();
+  const body = `data: ${JSON.stringify({ audio: btoa('\x00\x00'.repeat(24000)), sample_rate: 24000 })}\n\n`;
+  let reads = 0;
+  globalThis.fetch = async () => ({ ok: true, body: { getReader: () => ({
+    read: async () => reads++ ? { done: true } : { done: false, value: encoded(body) },
+    cancel: async () => {},
+  }) } });
+  let complete = false;
+  const pending = speakText('A queued streamed reply.', false).then(() => { complete = true; });
+  await tick();
+  assert.equal(complete, false);
+  assert.equal(state.ttsSpeaking, true);
+  assert.equal(element('stopBtn').disabled, false);
+  stopTtsNow();
+  await pending;
+  assert.equal(complete, true);
+  assert.equal(state.activeSources.length, 0);
+  assert(sources[0].stopped > 0);
+  assert.equal(element('stopBtn').disabled, true);
+  assert.equal(element('ttsStatus').textContent, 'Interrupted');
+});
+
+test('scheduled audio waits for actual context time across suspension and resumes normally', async () => {
+  state.audioCtx.state = 'suspended';
+  state.nextPlayTime = 10.001;
+  let complete = false;
+  const pending = waitForScheduledAudio().then(() => { complete = true; });
+  await new Promise(resolve => setTimeout(resolve, 200));
+  assert.equal(complete, false, 'elapsed wall time cannot complete suspended PCM');
+  state.audioCtx.state = 'running';
+  state.audioCtx.currentTime = 10.002;
+  await pending;
+  assert.equal(complete, true);
+});
+
+test('Stop aborts a suspended scheduled-audio wait without resuming the context', async () => {
+  state.audioCtx.state = 'suspended';
+  state.nextPlayTime = 12;
+  const controller = new AbortController();
+  const pending = waitForScheduledAudio(controller.signal);
+  const result = assert.rejects(pending, { name: 'AbortError' });
+  controller.abort();
+  await result;
+  assert.equal(state.audioCtx.currentTime, 10);
+  assert.equal(state.audioCtx.state, 'suspended');
+});
+
+test('closing the context while queued audio waits rejects instead of reporting completion', async () => {
+  state.nextPlayTime = 12;
+  const pending = waitForScheduledAudio();
+  const result = assert.rejects(pending, /Audio context closed before speech playback completed/);
+  state.audioCtx.state = 'closed';
+  await result;
+});
+
+for (const tail of ['data: {"audio":"truncated', 'data: {"audio":"AQACAA=="}\n']) {
+  test(`a truncated final SSE frame cannot report success after earlier PCM: ${JSON.stringify(tail)}`, async () => {
+    state.mode = 'sse';
+    const sources = pcmAudioContext();
+    let reads = 0, cancelled = 0;
+    globalThis.fetch = async () => ({ ok: true, body: { getReader: () => ({
+      read: async () => reads++ ? { done: true } : { done: false, value: encoded(pcmEvent + tail) },
+      cancel: async () => { cancelled++; },
+    }) } });
+    await assert.rejects(speakText('The last audio frame is incomplete.', true), /incomplete event/);
+    assert.equal(sources.length, 1);
+    assert(sources[0].stopped > 0);
+    assert.equal(state.activeSources.length, 0);
+    assert.equal(element('ttsStatus').className, 'status bad');
+    assert.doesNotMatch(element('ttsStatus').textContent, /Done/);
+    assert.equal(cancelled, 1);
+  });
+}
+
+test('SSE speech handles CRLF, multiline JSON and byte-split non-ASCII metadata', async () => {
+  state.mode = 'sse';
+  const sources = pcmAudioContext();
+  const body = encoded('data: {"gs":"café 🦊",\r\ndata: "audio":"AQACAA==","sample_rate":24000}\r\n\r\n');
+  let index = 0;
+  globalThis.fetch = async () => ({ ok: true, body: { getReader: () => ({
+    read: async () => index < body.length ? { done: false, value: body.slice(index, ++index) } : { done: true },
+  }) } });
+  await speakText('A complete reply.', true);
+  assert.equal(sources.length, 1);
+  assert.match(element('ttsStatus').textContent, /Done · 1 chunks/);
+});
+
+for (const [name, event, expected] of [
+  ['a scalar event', 'data: null\n\n', /invalid JSON event/],
+  ['an invalid sample rate', 'data: {"audio":"AQACAA==","sample_rate":"24000"}\n\n', /invalid sample rate/],
+  ['an incomplete PCM sample', 'data: {"audio":"AQ==","sample_rate":24000}\n\n', /incomplete 16-bit PCM/],
+  ['invalid base64', 'data: {"audio":"!!!","sample_rate":24000}\n\n', /invalid base64 PCM/],
+]) {
+  test(`SSE speech rejects ${name} before scheduling audio`, async () => {
+    state.mode = 'sse';
+    const sources = pcmAudioContext();
+    let reads = 0;
+    globalThis.fetch = async () => ({ ok: true, body: { getReader: () => ({
+      read: async () => reads++ ? { done: true } : { done: false, value: encoded(event) },
+      cancel: async () => {},
+    }) } });
+    await assert.rejects(speakText('A malformed reply.', true), expected);
+    assert.equal(sources.length, 0);
+    assert.equal(element('ttsStatus').className, 'status bad');
+  });
+}
+
+test('an oversized buffered reply is rejected before creating a playback URL', async () => {
+  let cancelled = 0;
+  const body = new ReadableStream({ cancel() { cancelled++; } });
+  globalThis.fetch = async () => new Response(body, { headers: { 'Content-Length': String(MAX_BUFFERED_AUDIO_BYTES + 1) } });
+  await assert.rejects(speakText('An oversized reply.', true), /download size limit/);
+  assert.equal(created.length, 0);
+  assert.equal(cancelled, 1);
+  assert.equal(state.ttsSpeaking, false);
+  assert.equal(element('stopBtn').disabled, true);
+});
+
+for (const duration of [601, Infinity, NaN]) {
+  test(`buffered playback rejects invalid native duration ${duration} and releases its URL`, async () => {
+    element('audio').duration = duration;
+    await assert.rejects(speakText('The duration is invalid.', true), /at most ten minutes of finite audio/);
+    assert.equal(element('audio').paused, true);
+    assert.equal(element('audio').src, '');
+    assert.deepEqual(revoked, ['blob:test-0']);
+    assert.equal(element('ttsStatus').className, 'status bad');
+    assert.equal(element('stopBtn').disabled, true);
+  });
+}
+
+test('loaded metadata rejects overlong buffered audio before native playback starts', async () => {
+  element('audio').play = () => new Promise(() => {});
+  const speaking = speakText('An overlong reply.', true);
+  await tick();
+  element('audio').duration = 601;
+  element('audio').dispatchEvent(new Event('loadedmetadata'));
+  await assert.rejects(speaking, /at most ten minutes of finite audio/);
+  assert.equal(element('audio').paused, true);
+  assert.deepEqual(revoked, ['blob:test-0']);
+});
+
+test('Stop cancels a pending buffered body read without waiting for its source to finish', async () => {
+  const body = new ReadableStream({ cancel() { return new Promise(() => {}); } });
+  globalThis.fetch = async () => new Response(body);
+  const speaking = speakText('A reply still downloading.', true);
+  await tick();
+  stopTtsNow();
+  await speaking;
+  assert.equal(body.locked, false);
+  assert.equal(created.length, 0);
+  assert.equal(element('ttsStatus').textContent, 'Interrupted');
+});
+
+for (const rate of [8000, 16000, 24000, 44100, 48000]) {
+  test(`normal compatible PCM at ${rate}Hz still schedules`, async () => {
+    const sources = pcmAudioContext();
+    assert.equal(await schedulePcm('AQACAA==', rate), 2);
+    assert.equal(sources.length, 1);
+  });
+}
+
+for (const rate of [1, 2999, 384001, Infinity, 24000.5]) {
+  test(`out-of-range PCM rate ${rate} is rejected before allocation`, async () => {
+    const sources = pcmAudioContext();
+    await assert.rejects(schedulePcm('AQACAA==', rate), /invalid sample rate/);
+    assert.equal(sources.length, 0);
+  });
+}
+
+test('cumulative PCM over ten minutes stops earlier sources before allocating the offending chunk', async () => {
+  state.mode = 'sse';
+  const sources = pcmAudioContext();
+  let allocations = 0;
+  state.audioCtx.createBuffer = () => { allocations++; return { copyToChannel() {} }; };
+  const event = seconds => `data: ${JSON.stringify({ audio: Buffer.alloc(seconds * 3000 * 2).toString('base64'), sample_rate: 3000 })}\n\n`;
+  const body = event(300) + event(301);
+  let reads = 0, cancelled = 0;
+  globalThis.fetch = async () => ({ ok: true, body: { getReader: () => ({
+    read: async () => reads++ ? { done: true } : { value: encoded(body), done: false },
+    cancel: () => { cancelled++; },
+  }) } });
+  await assert.rejects(speakText('An overlong streamed reply.', true), /ten minute audio limit/);
+  assert.equal(allocations, 1);
+  assert.equal(sources.length, 1);
+  assert(sources[0].stopped > 0);
+  assert.equal(state.activeSources.length, 0);
+  assert.equal(cancelled, 1);
+  assert.equal(element('ttsStatus').className, 'status bad');
+});
+
+test('the exact ten minute PCM boundary remains valid and Stop resets its budget', async () => {
+  let sources = pcmAudioContext();
+  const audio = Buffer.alloc(600 * 3000 * 2).toString('base64');
+  assert.equal(await schedulePcm(audio, 3000), 600 * 3000);
+  assert.equal(sources.length, 1);
+  await assert.rejects(schedulePcm('AQACAA==', 3000), /ten minute audio limit/);
+  stopTtsNow();
+  sources = pcmAudioContext();
+  assert.equal(await schedulePcm('AQACAA==', 3000), 2);
+  assert.equal(sources.length, 1);
+});

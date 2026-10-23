@@ -7,25 +7,22 @@ read/write helpers that wrap korina.config.
 
 Design rationale: see Phase 4 plan §4.6. The probe is the first real
 audio STT request; on audio-not-supported failure we cache and fall
-back to whisper forever (per triple) until the user explicitly clears.
+back to Whisper per triple until Reset or a successful explicit probe.
 
-Phase 5 silent-empty handling (2026-06-27):
-  A model that returns HTTP 200 with empty content and a non-'stop'
-  finish_reason (typically 'length' after the model spent its budget
-  on reasoning without producing audio-derived text) is structurally
-  unable to process audio. We classify this as a cacheable failure
-  ('silent_200_empty_content') so subsequent requests skip the
-  multimodal round-trip entirely and go straight to Whisper.
-
-  finish_reason='' (default) preserves pre-fix behaviour, so existing
-  callers and tests that don't track finish_reason still treat silent
-  empty as transient.
+Completion finish reasons describe why generation stopped, not whether the
+model accepts audio. HTTP 200 responses never establish audio incompatibility;
+the STT caller may still fall back for the current turn when text is empty.
+Historical ambiguous entries are retained; Reset or a successful explicit
+probe can clear them.
 """
 
 from __future__ import annotations
 
 import re
-from typing import Optional, Tuple
+from collections.abc import Callable
+from typing import Tuple
+
+from korina.runtime.request_owner import check_current
 
 
 # Patterns that indicate "this model/inference engine cannot accept
@@ -55,13 +52,8 @@ def classify_failure(
 
     status_code: HTTP status from the multimodal STT endpoint.
     body: response body as a string.
-    finish_reason: OpenAI chat-completion finish_reason ('' when unknown).
-        When the server returns HTTP 200 with empty content and a
-        finish_reason that is neither '' nor 'stop' (typically 'length'
-        after spending the budget on reasoning without producing audio
-        text), the request is structurally broken for audio and we cache
-        it as 'silent_200_empty_content'. An empty finish_reason (legacy
-        callers, active probe pre-fix) preserves old behaviour.
+    finish_reason: retained for caller compatibility. Generation stop causes
+        are not evidence of audio incompatibility and do not affect this verdict.
     """
     if not isinstance(body, str):
         body = str(body or "")
@@ -75,38 +67,6 @@ def classify_failure(
         for pat in _AUDIO_UNSUPPORTED_PATTERNS:
             if pat.search(body):
                 return (True, f"body_match:{pat.pattern}")
-
-    # 200 + empty content + non-stop finish_reason → silent structural
-    # failure. See module docstring for rationale. Only triggered when
-    # the caller actually has finish_reason data; an empty string means
-    # "I don't know" (legacy / active probe) and we fall through to the
-    # old transient classification.
-    #
-    # We parse the body as the OpenAI chat-completion shape (the caller
-    # in stt.py synthesises one) and check `choices[0].message.content`
-    # is empty. Falling back to a raw-body emptiness check keeps the
-    # pure-classify API usable without JSON.
-    if status_code == 200 and finish_reason and finish_reason != "stop":
-        content_empty = False
-        if not body.strip():
-            content_empty = True
-        else:
-            try:
-                import json as _json
-                parsed = _json.loads(body)
-                if isinstance(parsed, dict):
-                    choices = parsed.get('choices') or []
-                    if choices and isinstance(choices[0], dict):
-                        msg = choices[0].get('message') or {}
-                        content = msg.get('content')
-                        if content is None or (isinstance(content, str) and not content.strip()):
-                            content_empty = True
-            except (ValueError, TypeError):
-                # Body wasn't JSON; if it's a literal empty sentinel, count it
-                if body.strip() in ('""', "''", "null", "empty_text"):
-                    content_empty = True
-        if content_empty:
-            return (True, "silent_200_empty_content")
 
     return (False, "transient_or_content_failure")
 
@@ -122,6 +82,7 @@ def maybe_fallback_to_whisper(
     stt_status_code: int, stt_response_body: str,
     whisper_fallback_fn,
     finish_reason: str = "",
+    *, is_current: Callable[[], bool] | None = None,
 ) -> tuple[bool, dict]:
     """Decide whether to fall back to whisper for this STT request.
 
@@ -136,21 +97,27 @@ def maybe_fallback_to_whisper(
          classify_failure: if True, persist to cache + fall back.
       3. If False, return (False, {'error': ...}) for the caller to handle.
 
-    finish_reason: see classify_failure. Forwarded so the same silent-empty
-    detection works at this layer.
+    finish_reason: retained and forwarded for compatibility; it does not
+    establish audio incompatibility. Retired owners cannot publish a cache
+    result or enter Whisper after waiting for the configuration transaction.
     """
     from korina.config import (
         config_audio_unsupported,
         set_audio_unsupported,
     )
 
+    check_current(is_current)
     triple = triple_key(provider, base_url, model)
     cache = config_audio_unsupported()
+    check_current(is_current)
     cached = cache.get(triple)
     if cached:
         # Cache hit -- skip retry entirely.
+        check_current(is_current)
+        payload = whisper_fallback_fn()
+        check_current(is_current)
         return (True, {
-            **whisper_fallback_fn(),
+            **payload,
             "fallback_reason": cached.get("reason", "cached_audio_unsupported"),
             "audio_unsupported_since": cached.get("since", ""),
             "triple": triple,
@@ -160,13 +127,18 @@ def maybe_fallback_to_whisper(
         stt_status_code, stt_response_body, finish_reason=finish_reason,
     )
     if unsupported:
-        set_audio_unsupported(provider, base_url, model, reason, stt_response_body)
+        check_current(is_current)
+        set_audio_unsupported(provider, base_url, model, reason, stt_response_body, is_current=is_current)
+        check_current(is_current)
+        payload = whisper_fallback_fn()
+        check_current(is_current)
         return (True, {
-            **whisper_fallback_fn(),
+            **payload,
             "fallback_reason": reason,
             "triple": triple,
         })
 
+    check_current(is_current)
     return (False, {
         "error": "stt_failed",
         "status_code": stt_status_code,

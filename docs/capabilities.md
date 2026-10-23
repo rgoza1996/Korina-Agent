@@ -1,175 +1,121 @@
-# Provider & Model Capability Contract
+# Provider and model contracts
 
-Single source of truth for which provider the user has selected, what
-base URL is in play, which models the dropdown should show, and which
-fields the UI may edit. This contract is the canonical answer to
-"where does provider X's base URL come from?" — if you find yourself
-asking that, read this first.
+The backend registry in `korina/util/presets.py` describes provider defaults, editable fields, local process management, and model sources. The browser reads that registry through `GET /api/capabilities`; it caches a successful result for the page session and can refresh explicitly.
 
-## Endpoints
+## Provider registry
 
-- `GET /api/capabilities` — the registry. See `korina/schemas_capabilities.py`
-  for the wire format. Two sections:
-  - `providers` — valid for the response-LLM path. Today: `llama.cpp`,
-    `lmstudio`, `ollama`, `openai-compatible`.
-  - `agent_providers` — valid for the agent path. Today:
-    `openai-compatible`, `anthropic`.
+The response `providers` map contains `llama.cpp`, `lmstudio`, `ollama`, `openai-compatible`, and `meta`. The `agent_providers` map contains `openai-compatible`, `meta`, and `anthropic`. Each entry declares `label`, `default_base_url`, `editable_base_url`, `manageable`, `model_sources`, `is_local`, `agent_only`, and `response_llm_only`. `default_api_key_env` supplies an optional registry-scoped credential default; an empty value supplies none.
 
-  Each entry has 8 fields: `label`, `default_base_url`, `editable_base_url`,
-  `manageable`, `model_sources`, `is_local`, `agent_only`, `response_llm_only`.
+| Response provider | Default API base | Editable URL | Managed locally | Model sources |
+| --- | --- | --- | --- | --- |
+| `llama.cpp` | `http://127.0.0.1:8080/v1` | No | Yes | Endpoint and local GGUFs |
+| `lmstudio` | `http://127.0.0.1:1234/v1` | No | Yes | Endpoint and catalog |
+| `ollama` | `http://127.0.0.1:11434/v1` | No | Yes | Endpoint |
+| `openai-compatible` | User supplied | Yes | No server started | Endpoint |
+| `meta` — Meta Model API | `https://api.meta.ai/v1` | No | No server started | Authenticated endpoint |
 
-- `POST /api/llm/provider/activate` — switches the local inference
-  server when the response-LLM provider is `manageable: true`. The
-  request body is `{provider, model}`; the response includes
-  `activation.started` and `activation.stopped` lists.
+Generic OpenAI-compatible and Anthropic-compatible agent endpoints use editable URLs. The named Meta Model API agent profile uses the same fixed canonical base as the response profile. All three use externally supplied services; selecting an agent endpoint does not activate a local response-provider process.
 
-## Registry table (today)
+The Meta profile uses `/chat/completions` and authenticated `/models` discovery. Select an ID returned for the team's account; Korina does not hardcode a Meta model ID or establish account access from a documentation example. The Meta response path omits the local/generic `reasoning` field. Response and built-in agent requests omit `reasoning_effort` by default; an explicit Meta effort setting can add it independently for each role. The focused rehearsal keeps local Whisper STT and Kokoro TTS; a Meta model listing does not prove audio capabilities.
 
-Response-LLM providers (`providers`):
+## Meta reasoning effort
 
-| id                  | default_base_url            | editable | manageable | is_local | model_sources                  |
-|---------------------|-----------------------------|----------|------------|----------|--------------------------------|
-| `llama.cpp`         | `http://127.0.0.1:8080/v1`  | false    | true       | true     | `endpoint_loaded`, `local_gguf`|
-| `lmstudio`          | `http://127.0.0.1:1234/v1`  | false    | true       | true     | `endpoint_loaded`, `catalog`   |
-| `ollama`            | `http://127.0.0.1:11434/v1` | false    | true       | true     | `endpoint_loaded`              |
-| `openai-compatible` | (empty)                     | true     | false      | false    | `endpoint_loaded`              |
+**Meta response reasoning effort** persists `llm_reasoning_effort`; **Meta agent reasoning effort** persists `agent_reasoning_effort`. Both default to blank/model default and accept blank, `minimal`, `low`, `medium`, `high` or `xhigh`. Invalid new values return HTTP 422 before saving; old unrecognized values safely omit the provider parameter. Korina does not expose `none` (unsupported by Muse Spark) or model-specific `max` (unavailable on the rehearsed Contributor model). [Meta reasoning contract](https://dev.meta.ai/docs/reasoning).
 
-Agent providers (`agent_providers`):
+An omitted `ChatRequest.reasoning_effort` uses the saved response effort; an explicit blank uses the model default for that request. The browser sends its current Meta response selection explicitly, including blank, so a delayed autosave cannot apply an older effort. Built-in agent work uses its own saved effort from the configuration snapshot captured for that report. Response effort does not become agent effort, and `agent_thinking_level` remains a separate prompt setting.
 
-| id                  | default_base_url | editable | agent_only | is_local |
-|---------------------|------------------|----------|------------|----------|
-| `openai-compatible` | (empty)          | true     | false      | false    |
-| `anthropic`         | (empty)          | true     | true       | false    |
+Only the explicit `meta` provider sends this parameter. Generic/local response reasoning, multimodal STT and Anthropic behavior keep their existing contracts. Saving effort changes no provider lifecycle identity or agent reset. Health reports the saved effective effort for each Meta role; these labels do not prove that inference succeeded. Reasoning still shares the output budget with visible text. Select and rehearse the effort deliberately; no automatic tuning or retry is added.
 
-The three response-LLM-only providers (`llama.cpp`, `lmstudio`, `ollama`)
-are filtered out of the agent section via `response_llm_only: true`.
-`anthropic` is filtered out of the response-LLM section via
-`agent_only: true`. The split happens in `capabilities_for_section()`
-in `korina/util/presets.py`.
+## Response token budget
 
-## Invariants
+The **Response token budget** control persists `llm_max_tokens`, an integer from **1 to 8192**, default **180**. An explicitly supplied `ChatRequest.max_tokens` overrides the saved budget for that request; omitting it uses the saved setting. The browser sends its selected response budget explicitly. Agent reports retain their separate `agent_max_tokens` setting, default **512**; changing the response budget does not change the agent budget.
 
-1. **The backend owns provider rules.** No JS file may hardcode
-   `"llama.cpp" → http://127.0.0.1:8080/v1` or
-   `"openai-compatible" → base URL is editable`. Both are derived from
-   `/api/capabilities`. The legacy `PROVIDER_BASE_URL_PRESETS`
-   constant in `Korina/index.html` was deleted in Phase 2.2.2.
+Meta reasoning may consume this output budget before any visible answer, including when effort is explicit. If a provider returns no visible text with `finish_reason: "length"`, `/api/chat` returns HTTP 500 with an actionable instruction to increase Response token budget in Settings or choose another response model. Korina does not silently increase the budget or retry. A nonempty truncated answer remains compatible with the existing response contract.
 
-2. **A provider is editable iff `editable_base_url: true`.** The UI
-   disables the base-URL input otherwise. Today that means:
-   - `llama.cpp`, `lmstudio`, `ollama`: base URL is locked.
-   - `openai-compatible`, `anthropic`: base URL is editable.
+The built-in Meta/OpenAI-compatible agent reports the same empty-budget condition through its existing error status/events and preserves its previous report. Its **State report max tokens** control is independent; deliberate adjustment does not reset memory or silently retry. Intentional empty reports ending with `stop` remain suppressed normally.
 
-3. **`manageable` providers get a server lifecycle.** When the user
-   picks a `manageable: true` response-LLM provider, the UI must POST
-   `/api/llm/provider/activate` *after* saving the new config and
-   *before* refetching `/api/models`. The activation response includes
-   `{started, stopped}` so the UI can show what changed.
+## Response usage observations
 
-4. **Agent-only providers never appear in `providers`.** Today only
-   `anthropic` is agent-only. If a future agent-only provider is added
-   (e.g. `gemini-agent`), it goes in `agent_providers` only with
-   `agent_only: true`.
+Successful `POST /api/chat` replies retain `reply`, `seconds` and `model`, and add `request_settings` plus optional `usage`. The top-level model and settings describe the original outbound request, even if settings change while inference is pending. `request_settings` contains `provider`, `model`, `max_tokens`, `reasoning_effort` and `reasoning`: Meta uses an explicit effort or blank/model default with null local reasoning; other providers preserve their submitted reasoning string with null Meta effort. Credentials and endpoints are not included.
 
-5. **`/api/capabilities` is fetch-once per page session unless forced.** The frontend caches the
-   response via `loadCapabilities()` in `Korina/js/providers-ui.js`. There is no
-   `/api/capabilities/refresh` endpoint; if the backend registry changes, the
-   user reloads the page or code calls `loadCapabilities(true)` as part of an
-   explicit provider/model refresh.
+`usage` is null or contains nullable `prompt_tokens`, `completion_tokens`, `reasoning_tokens` and `cached_tokens`. Counts are exact nonnegative integers within JavaScript’s safe range. Missing counts stay null. Malformed known fields or contradictory breakdowns discard the optional observation while preserving a valid reply. Cached input is part of input; reasoning is part of output. Unknown provider fields are not forwarded. The existing direct Python `response_llm_chat()` function still returns only text.
 
-6. **Capability keys are always snake_case in JSON.** `editable_base_url`
-   in the wire format, `editableBaseUrl` only in the JS object (no
-   current JS object — we read fields directly from the JSON).
+The browser’s **Last response usage** panel accepts observations only for the latest dispatched chat that still belongs to the current session. Clear retires that owner before aborting requests. Stopping pending Live chat cancels its observation; stopping completed audio preserves it. Provider counts stay outside speech, conversation history and agent context. Older backends and invalid optional metadata show unavailable counts without rejecting a valid answer. This is one response’s provider report, without cumulative usage, prices, cache-retention or latency-saving claims; no observation is persisted across reloads.
 
-7. **Capabilities warm before app init.** `Korina/js/app.js` calls
-   `await loadCapabilities().then(() => setBaseUrlEditability())` before
-   `initApp()`. `initApp()` still performs normal config/model loading in
-   `Korina/js/api.js`; the discipline is to keep capability warm-up explicit
-   so provider/base-URL UI state is correct before the rest of the page wiring runs.
+## Saving and activation
 
-## Adding a new provider
+`POST /api/config` validates and atomically saves settings. It does not activate providers. Independent STT and agent endpoints stay independent; settings saves cannot replace the server-owned audio-probe cache.
 
-1. Add an entry to `PROVIDER_CAPABILITIES` in `korina/util/presets.py`.
-   Pick the right section flag:
-   - Response-LLM only: set `response_llm_only: true`.
-   - Agent only: set `agent_only: true`.
-   - Both: leave both flags `false`.
-2. If the provider is local (`is_local: true`), set `manageable: true`
-   AND add a corresponding branch to `start_*/stop_*` in
-   `korina/services/provider_manager.py`.
-3. If the provider needs a non-default auth header, extend
-   `auth_headers_from_env` in `korina/runtime/http.py`. (Most don't.)
-4. Run `python3 tests/regression_smoke.py`. The capabilities check
-   (`test_capabilities_endpoint`) hard-codes the expected provider set;
-   update its assertion if you add or remove a provider.
-5. Commit on `beta`; do not touch `alpha` or `master` until release.
+Nonempty JSON request bodies require one explicit JSON Content-Type (`application/json`, optionally with a charset, or an `application/*+json` type). Missing, ambiguous or non-JSON types return HTTP 415 before endpoint work on every supported dependency version. The bundled speech service shares this policy. Multipart transcription and existing bodyless actions retain their own contracts; oversized bodies still return HTTP 413.
 
-## Provider switch user flow (response-LLM)
+During provider activation or refresh, changed effective response/STT/agent settings return HTTP 409 before any save or reset. This closes the gap between checking role ownership and restarting a service. Unrelated settings and identical full-form role values remain saveable. The browser keeps a failed explicit agent transition queued ahead of later saves until retried; its error leaves agent delivery paused.
 
-1. User picks a new provider in `#llmProvider`.
-2. UI:
-   - Calls `maybeApplyProviderPreset('llmProvider', 'llmBaseUrl')`
-     to set the base URL to the registry default.
-   - Calls `await setBaseUrlEditability()` to lock/unlock the base URL
-     (this also re-evaluates `sttLlmBaseUrl` and `agentBaseUrl`
-     because the same function owns all three editability decisions).
-   - Calls `syncConverseSettingsUI()` to refresh status pills.
-   - `await saveConfigNow()` to persist.
-   - `await activateSelectedProvider(llmProvider(), lmModel())` to
-     start/stop the local server (only matters if `manageable: true`).
-   - `await loadModelOptions(true)` to refresh the model dropdown.
-   - `await loadAgentModelOptions()` to refresh the agent dropdown.
-   - `health()` to refresh the status text.
-3. The user-visible text: "Activated llama.cpp. Started llama-server;
-   stopped nothing." (or similar; matches today's behavior).
+`POST /api/llm/provider/activate` accepts `{provider, model}`. Unsupported response providers are rejected before saving. It saves the response selection before activation; failures explicitly report that the selection remains saved without automatic rollback. A conflict with another active role returns HTTP 409. Other startup failures return HTTP 500.
 
-## Provider switch user flow (agent)
+Activation returns performed `started`/`stopped` actions, `retained` services with role/reason metadata, and any unconfirmed `stop_requested` actions or warnings. It preserves managed servers used by the selected generic response endpoint, active audio-model STT, or enabled agent. Retention follows actual loopback endpoints and listening process ownership, including generic provider labels. It does not start extra role models. Preflight validates models/executables before teardown and blocks protected single-model/port conflicts. Local process management remains Linux-specific. Generic and Meta activation start no server; unused managed services may be stopped.
 
-1. User picks a new agent provider in `#agentProvider`.
-2. UI:
-   - `maybeApplyProviderPreset('agentProvider', 'agentBaseUrl')`
-     uses `getAgentProviderCaps(provider)` (the `agent_providers`
-     section, not `providers`) to look up the default.
-   - `await setBaseUrlEditability()` (now also updates `agentBaseUrl`).
-   - `saveConfigSoon()`.
-3. There is no `activate_agent_provider` endpoint. The agent runs on
-   demand in `generate_agent_state_report`; the user only needs to
-   set the base URL and model. (Current behavior; Phase 2 preserves it.)
+For llama.cpp, GGUF suffix checks are case-insensitive while real path spelling is preserved. Projector selection accepts zero or one real `mmproj` GGUF file beside the resolved model, ignoring directories and broken symlinks. Multiple candidates return an actionable HTTP 400 before normal activation/refresh changes selection, cache, unit or services; put each model and its matching projector in a separate folder. The unit writer rechecks before overwriting. Files can change after preflight, so this is not an atomic filesystem transaction, and a single sidecar does not establish model compatibility. Ordinary display discovery retains its bounded metadata scan.
 
-## Bug class this contract prevents
+The browser initializes a form baseline before wiring edits, sends only observed field changes, and keeps pending edits plus successful-save revisions across a delayed initial settings read. Untouched HTML defaults are never posted as guessed saved settings. A failed initial read can retry from Settings; provider activation waits for a known loaded baseline. Partial configuration application preserves omitted reasoning/model fields and activation snapshot keys.
 
-The pre-Phase-2 bug the contract fixes: `setBaseUrlEditability()` in
-`Korina/index.html` had a hardcoded `llmProvider() === 'openai-compatible'`
-check that controlled only `#llmBaseUrl` and `#sttLlmBaseUrl`. The
-`#agentBaseUrl` field (added with the agent section in Phase 0) was
-**never wired to any editability logic** — so the user could edit
-the agent base URL freely, including for `manageable: true` local
-providers, even though those don't make sense to edit. The
-`/api/capabilities` contract forces every base-URL editability
-decision through one code path, so adding a new provider can't
-silently re-introduce this class of bug.
+Successful saves reconcile server-derived STT/agent values into untouched controls. For example, if the server moves following role models with a changed response model, the next transcription uses that confirmed model. Newer edits stay pending, independent endpoints keep their returned values, and a save does not advance the last activated-provider baseline or activate a provider.
 
-## Verification
+The settings modal closes immediately, then serializes its save/apply work. A failed save prevents activation. Changing only STT settings does not activate or repurpose the response provider. Reopening settings and making new edits cannot let an older activation response overwrite the new form.
 
-- Backend: `GET /api/capabilities` returns 200 with both sections
-  populated. Covered by `tests/api/test_config_capabilities_models.py` and
-  the live `tests/regression_smoke.py` contract check.
-- Frontend wiring: `Korina/js/app.js` imports and runs capability warm-up,
-  `Korina/js/providers-ui.js` owns `loadCapabilities()` and base-URL
-  editability, and `Korina/js/capability-filter.js` consumes model capability
-  metadata for dropdown filtering. Covered by `tests/frontend/test_static_frontend.py`.
-- Per-provider fields: `editable_base_url`, `manageable`, `is_local`,
-  `agent_only`, and `response_llm_only` are typed and section-filtered by
-  the backend registry. API and unit coverage lives under `tests/api/` and
-  `tests/unit/test_provider_manager.py`.
+Llama refresh shares activation admission and preflight, then merges only refresh-owned fields against current settings. It preserves unrelated settings/probe writes and rejects a provider/model selection that changed while discovery was running. Refresh refuses to restart a running llama service used by active STT or Agent, including a shared same-model or custom-port process. Failed prerequisites leave settings/cache/unit unchanged; a failure after the atomic merge explicitly reports what was saved. Refresh starts no unrelated provider.
 
-## Out of scope for Phase 2
+## Model discovery
 
-- Fully automatic/probe-backed model capability metadata. Phase 4 added the
-  first registry/probe layer, but persistent probe-backed metadata remains a
-  follow-up.
-- Live reload endpoint for `/api/capabilities`; current refresh is frontend-side
-  via page reload or explicit `loadCapabilities(true)`.
-- `/api/capabilities` filtering by user (all providers are returned
-  to all users; the current auth model is localhost-only, so this is
-  a non-issue today).
+`GET /api/models` lists endpoint models and discovered local/catalog choices, with role-specific status and estimated capability metadata. Query parameters can select response/STT candidate URLs, provider types, and API-key environment-variable names before saving. Omitted auth can inherit saved credentials only for the matching saved API base; an explicit blank disables that inheritance.
+
+Supplying a nonblank `llm_api_key_env` or `stt_llm_api_key_env` query override also requires `X-Korina-Intent: model-discovery`. The bundled picker sends this header. It requires a CORS preflight from another browser origin, so an untrusted page cannot use a simple GET to forward a named server credential to its chosen candidate. Configured trusted origins may send it. This is a browser request-intent boundary, not API authentication; nonbrowser clients using explicit credential overrides must send the header too. Omitted or explicitly blank overrides keep their existing behavior.
+
+`GET /api/agent/models` discovers models for saved agent settings. `POST /api/agent/models` accepts bounded candidate fields in JSON: `agent_provider`, `agent_base_url`, `agent_api_key`, `llm_base_url`, and `llm_api_key_env`. Candidate discovery resolves one in-memory configuration snapshot without saving settings or activating processes. Omitted fields retain saved values, except a saved direct agent key is not forwarded to a changed actual API URL unless the request explicitly supplies it. Normal same-response-base credential fallback still applies. Keys stay out of query strings and diagnostic responses; validation errors omit raw input. Both methods use the same model-list envelope.
+
+Discovery normalizes valid UTF-8 IDs, trims/deduplicates them, and rejects IDs longer than 512 Unicode characters. Each role/source returns at most 512 IDs within 256 KiB of JSON-escaped UTF-8 identifiers. Shared metadata covers only the returned union, capped at 1024 IDs / 512 KiB. `catalog_info` reports skipped IDs, truncation, and local errors. Configured IDs found in a source are pinned through truncation. The browser retains an omitted current/saved choice as an annotated option, including known incompatibility warnings; discovery never silently selects or saves a replacement. Blank STT selection retains explicit inheritance.
+
+Local discovery visits at most 10,000 directory entries per source and bounds manifest/LM Studio CLI input to 2 MiB; CLI listing has a 30-second deadline. A request-scoped metadata scan shares another 10,000-entry budget and caches each parent, avoiding repeated sidecar scans. Exhaustion/errors are labeled incomplete estimates. Provider activation validates an explicit selected model independently of display traversal limits, including a legitimate LM Studio ID or existing absolute GGUF path beyond the displayed catalog.
+
+Browser discovery caps declared and streamed bodies at 8 MiB before strict UTF-8 and JSON parsing. It also bounds returned IDs and metadata when connected to an older server. Oversized or malformed responses preserve prior options/cache and remain retryable.
+
+The browser accepts picker/cache writes only from the latest request for the current settings query. Failed or partial discovery stays retryable. Late results cannot restore an old model selection or replace current options. Local refresh probes use the accepted STT/local model pool and its explicit credential scope.
+
+`GET /api/models/roots` returns path/existence/directory diagnostics. `POST` replaces the configured list by default; `{roots:[...], append:true}` atomically appends, as used by Add Directory. `DELETE ?path=...` atomically removes against the latest list and always returns the same root metadata shape. New lists allow at most 128 directories, with paths of at most 4096 characters; invalid or unavailable new paths are rejected before saving. Historical omitted/default-empty lists still use environment roots. An explicit new empty list or deleting the final root records a server-owned override, keeping the configured list empty across reloads. Clients cannot unset that marker directly. The independent LM Studio hub catalog remains discoverable. Older invalid roots remain visible with diagnostics and are skipped during catalog scans without rewriting the saved file.
+
+## Credentials and API paths
+
+Response credentials come from the environment variable named by `llm_api_key_env`. With that setting blank, the named Meta profile defaults to `MODEL_API_KEY` only for its canonical API base. A generic/custom profile does not gain that default merely by using a Meta hostname. Explicit configured environment-variable names take precedence.
+
+STT can name its own `stt_llm_api_key_env`; blank STT credentials inherit the response key only when the actual normalized API base matches. Agent credentials use an explicit `agent_api_key` first, then matching-response-base environment credentials or the selected named profile's own default. An independent Meta agent can therefore use its canonical `MODEL_API_KEY` default; credentials for other independent endpoints must be configured explicitly when needed. An unset default environment variable produces no Authorization header. The local `agent_api_key` setting remains a development convenience stored in runtime configuration.
+
+OpenAI-compatible chat uses `/chat/completions`; Anthropic-compatible agents use `/messages`. Agent chat, model discovery, health, and credential inheritance derive from one provider-aware API base. A full endpoint with the correct provider suffix is supported. A suffix belonging to another provider does not authorize borrowing response credentials or probing an unrelated base.
+
+Shared provider transport caps successful JSON at 2 MiB and error details at 16 KiB. Connected I/O and redirects share deadlines; cross-origin redirects discard credentials/cookies. Providers must honor identity response encoding. OS DNS resolver shutdown remains platform-dependent.
+
+## Estimated audio capability
+
+Model metadata, names, and local projection sidecars estimate audio support; they do not prove that a model can transcribe speech. The multimodal picker filters estimated text-only models unless the session’s All models override is enabled. Unusable choices remain visibly marked in red.
+
+`POST /api/llm/probe-models` performs an explicit bounded audio request. Confirmed unsupported results enter the bounded persistent probe cache; transient failures are reported without becoming permanent unsupported claims. Local refresh triggers these probes deliberately; ordinary picker loading does not infer model quality from a model name or run a background probe loop. Batches admit at most 64 unique nonblank IDs and have a 60-second admission/network budget, with each HTTP request capped at 15 seconds or the remaining budget. Completed results are retained; `skipped_models` and `timed_out` identify remaining IDs without marking them unsupported. The local refresh UI prioritizes the selected STT model within its 64-model batch and visibly reports omitted catalog choices and probes skipped for time.
+
+An empty HTTP 200 completion does not establish audio incompatibility, regardless of its generation stop reason. Output-budget exhaustion, filtering and tool-call outcomes stay transient: live transcription can use Whisper for that turn, and a later turn can call the configured provider again. No automatic retry or budget increase is added. Existing HTTP 415 and matching 400/422 audio-rejection rules still populate the cache. Historical ambiguous entries remain until Reset or a successful explicit probe clears them.
+
+Probe batches share chat/STT request ownership. Disconnect or cancellation closes connected provider I/O and prevents another candidate, fallback, or cache write from starting for that request. Cache mutations check ownership inside the settings lock, including writes from ordinary STT fallback; a retired request cannot publish after waiting for another settings transaction. Earlier completed writes remain valid. Temporary probe WAVs are removed even when generation or writing fails. Active native computation and remote model computation are not forcibly stopped.
+
+`GET /api/audio-probe` reads that cache. Browser reads have a five-second deadline covering headers and body, a 16 MiB body limit, and validation of at most 512 entries. Failed or malformed reads preserve confirmed warnings and show a retryable error; a confirmed empty response clears them. Query changes and forced refresh retire older reads, including a quick return to a previous query.
+
+`DELETE /api/audio-probe` clears a selected provider/base/model entry. After the server confirms the exact entry and removal result, Reset clears only that captured local entry and becomes available immediately; optional model discovery continues in the background. Probe-cache presence is separate from response-provider activation and from successful end-to-end speech rehearsal.
+
+## Transcription and partial feedback
+
+With full-utterance final transcription selected, queued rolling partial feedback waits while VAD is timing endpoint silence. Speech resumption admits the held windows again; finalization and Stop retire them using the existing request epoch. Already admitted feedback may finish normally, and chunks mode continues draining its complete windows. This avoids starting avoidable partial work near a full final pass; it does not establish a measured latency saving.
+
+Whisper also rechecks ownership after waiting for its model/cache or native-inference lock, before starting a new factory or lazy iterator step. Retired waiters release their model lease without admitting new native work. A step already running drains before iterator close and lease release; cancellation does not interrupt that native operation.
+
+## Health and verification
+
+`/api/health` reports server-resolved URLs and model load blocks. Matching actual models URL/model/credentials reuse one probe within a request, while each role retains its configured display URL. `/api/ready` combines frontend, audio limits, selected STT, response model, TTS, and enabled agent checks. A reachable lazy Kokoro service is available before warm-up; a custom service without a configured health contract remains unverified. TTS health must contain recognized readiness signals with real boolean flags and valid text fields. Malformed data degrades TTS readiness while Korina liveness stays HTTP 200. Loaded-model diagnostics use the same identifier/count/byte bounds as discovery and pin the matched selected model; `models_info` reports omitted/invalid IDs. Two explicit GGUF paths do not match merely because their basenames agree.
+
+Changes to the registry or provider behavior need API contract, URL/auth, discovery ownership, process ownership, and browser checks. Run the commands in [testing](testing.md), then rehearse actual services using the [hackathon guide](hackathon.md). [Observed verification](verification.md) distinguishes local software/model evidence from physical hardware and hosted CI.
+
+Meta profile checks use mocked provider responses. They do not establish an authenticated live Meta call, useful presentation output, or prompt-cache hits. The hackathon target remains one context-dependent voice interaction with a fact retained in the current session; record the actual kickoff SHA and later event additions in the [preparation ledger](hackathon.md). Current history/report state is not durable memory.

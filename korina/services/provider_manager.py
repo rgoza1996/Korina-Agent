@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
+import re
 import os
 import shutil
-import socket
+import stat
 import subprocess
+import threading
 import time
-import urllib.error
-import urllib.request
+import ipaddress
+from dataclasses import asdict, dataclass, field
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 from korina.config import (
     config_llm_reasoning,
+    config_llm_base_url,
+    config_stt_llm_base_url,
+    config_stt_llm_model,
+    agent_base_url,
     load_config,
 )
 
@@ -27,87 +36,147 @@ from korina.util.paths import (
     LMS_CLI_BIN,
 )
 
-from korina.util.presets import provider_preset_base_url
+from korina.util.presets import capabilities_for_section, provider_preset_base_url
+from korina.runtime.json_http import HTTPStatusError, request_bytes, request_json
+from korina.services import provider_processes
 
 from pathlib import Path
 
 from typing import Optional
 
 
+logger = logging.getLogger(__name__)
+# Activation and refresh both supervise the same optional local processes.
+provider_activation_lock = threading.Lock()
+
+
+class ProviderRoleConflict(RuntimeError):
+    """A provider change would interrupt another active role's service."""
+
+
+class InvalidLocalModelPath(ValueError):
+    """A candidate local path cannot be inspected before provider admission."""
+
+
+@dataclass
+class LifecycleActions:
+    started: list[str] = field(default_factory=list)
+    stopped: list[str] = field(default_factory=list)
+    stop_requested: list[str] = field(default_factory=list)
+    reused: list[str] = field(default_factory=list)
+    loaded_models: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def merge(self, other: LifecycleActions | None) -> None:
+        if other is not None:
+            for name in self.__dataclass_fields__:
+                values = getattr(self, name)
+                values.extend(value for value in getattr(other, name) if value not in values)
+
+
+def _terminated(label: str, result: provider_processes.TerminationResult) -> LifecycleActions:
+    actions = LifecycleActions()
+    remaining = provider_processes.wait_for_exit(result.signalled)
+    if result.signalled:
+        if remaining or result.failed:
+            actions.stop_requested.append(label)
+            actions.warnings.append(f'{label}: termination requested; process exit was not confirmed')
+        else:
+            actions.stopped.append(label)
+    if result.failed:
+        actions.warnings.append(f'{label}: permission denied while stopping a provider process')
+    return actions
+
+
+def _unit_stopped(label: str, unit: str) -> LifecycleActions:
+    result = _systemctl('stop', unit)
+    if result.returncode == 0:
+        return LifecycleActions(stopped=[label])
+    return LifecycleActions(warnings=[f'{label}: stop command failed (exit {result.returncode}); stop was not confirmed'])
+
+
+def _systemctl(*args: str, required: bool = False) -> subprocess.CompletedProcess:
+    """Optional teardown also works on hosts without systemd."""
+    command = ['systemctl', '--user', *args]
+    try:
+        return subprocess.run(command, check=required, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=30)
+    except FileNotFoundError:
+        if required:
+            raise RuntimeError('Managed llama.cpp requires systemd; run an external endpoint on this host')
+        return subprocess.CompletedProcess(command, 127)
+
+
 def gui_env() -> dict:
+    """Use the launching user's session without inventing a display server."""
     env = os.environ.copy()
-    env.setdefault('DISPLAY', ':0')
-    env.setdefault('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus')
-    env.setdefault('XDG_RUNTIME_DIR', '/run/user/1000')
-    if not env.get('XAUTHORITY'):
-        candidates = sorted(Path('/run/user/1000').glob('.mutter-Xwaylandauth.*'))
-        if candidates:
-            env['XAUTHORITY'] = str(candidates[-1])
-        elif Path('/home/roggoz/.Xauthority').exists():
-            env['XAUTHORITY'] = '/home/roggoz/.Xauthority'
+    if hasattr(os, 'getuid'):
+        runtime = Path(env.get('XDG_RUNTIME_DIR') or f'/run/user/{os.getuid()}')
+        if runtime.is_dir():
+            env['XDG_RUNTIME_DIR'] = str(runtime)
+            if not env.get('DBUS_SESSION_BUS_ADDRESS') and (runtime / 'bus').exists():
+                env['DBUS_SESSION_BUS_ADDRESS'] = f'unix:path={runtime}/bus'
+            if not env.get('XAUTHORITY'):
+                candidates = sorted(runtime.glob('.mutter-Xwaylandauth.*'))
+                if candidates:
+                    env['XAUTHORITY'] = str(candidates[-1])
+    authority = Path.home() / '.Xauthority'
+    if not env.get('XAUTHORITY') and authority.is_file():
+        env['XAUTHORITY'] = str(authority)
     return env
 
-def stop_lmstudio() -> None:
-    subprocess.run(['pkill', '-f', '/opt/LM-Studio/lm-studio'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def start_lmstudio() -> None:
-    if not LMSTUDIO_BIN.exists():
-        raise RuntimeError('LM Studio binary not found at /opt/LM-Studio/lm-studio')
-    already = subprocess.run(['pgrep', '-f', '/opt/LM-Studio/lm-studio'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if already.returncode == 0:
-        return
-    subprocess.Popen([str(LMSTUDIO_BIN)], env=gui_env(), cwd='/opt/LM-Studio', stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+def stop_lmstudio() -> LifecycleActions:
+    return _terminated('lmstudio', provider_processes.terminate_executable(LMSTUDIO_BIN))
 
-def stop_ollama() -> None:
-    subprocess.run(['systemctl', '--user', 'stop', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['pkill', '-f', 'ollama serve'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-def _kill_stray_llama_servers() -> None:
-    """Kill any `llama-server` process currently bound to LM Studio's port (:1234).
-
-    Korina's systemd `llama-server.service` is handled separately by
-    `stop_llama_server()`. The remaining case is the `llama-server` that LM
-    Studio launches on demand from its GUI (`lms load` with a GUI bound to
-    :1234) and that keeps running after the GUI is closed. Without this kill,
-    picking `lmstudio` in Korina returns success but `:1234` is still owned
-    by the stray binary, so Korina's chat endpoint gets the wrong model id
-    back from `/v1/models`.
-    """
-    subprocess.run(
-        ['pkill', '-f', 'llama-server.*--port 1234'],
-        check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+def start_lmstudio() -> bool:
+    if not LMSTUDIO_BIN.is_file():
+        raise RuntimeError(f'LM Studio binary not found at {LMSTUDIO_BIN}; set KORINA_LMSTUDIO_BIN')
+    if provider_processes.has_executable(LMSTUDIO_BIN):
+        return False
+    subprocess.Popen(
+        [str(LMSTUDIO_BIN)], env=gui_env(), cwd=str(LMSTUDIO_BIN.resolve().parent),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
     )
+    return True
+
+
+def stop_ollama(*, stop_service: bool = True) -> LifecycleActions:
+    """Stop supervised Ollama; wrappers may handle eligible user units first."""
+    actions = _unit_stopped('ollama.service', 'ollama.service') if stop_service else LifecycleActions()
+    binary = shutil.which('ollama')
+    if binary:
+        actions.merge(_terminated('ollama', provider_processes.terminate_executable(Path(binary), command='serve')))
+    return actions
+
+
+def _kill_stray_llama_servers(protected_ports: set[int] | None = None) -> LifecycleActions:
+    """Stop only this user's llama-server actually listening on LM Studio's port."""
+    protected_ports = protected_ports or set()
+    result = provider_processes.terminate_matching(lambda pid, executable, args: (
+        executable.name == 'llama-server'
+        and provider_processes.listens_on(pid, 1234)
+        and not any(provider_processes.listens_on(pid, port) for port in protected_ports)
+    ))
+    return _terminated('stray-llama-server', result)
 
 
 def _lms_run(*args: str, check: bool = True) -> subprocess.CompletedProcess:
     """Run an `lms` CLI subcommand and return the CompletedProcess."""
     cmd = [str(LMS_CLI_BIN), *args]
-    return subprocess.run(cmd, check=check, capture_output=True, text=True)
+    result = subprocess.run(cmd, check=check, capture_output=True, text=True, timeout=60)
+    if not check and result.returncode:
+        logger.warning('lms %s failed: %s', ' '.join(args), (result.stderr or result.stdout or '').strip())
+    return result
 
-
-
-def _wait_for_port_free(port: int, timeout_seconds: float = 30.0) -> None:
-    """Block until ``port`` on 127.0.0.1 is no longer accepting connections.
-
-    Used between ``lms server stop`` and the next bind attempt. Polls the
-    kernel via ``socket.connect_ex`` so we do not depend on the just-killed
-    process having fully released the socket yet (TIME_WAIT/CLOSE_WAIT).
-    """
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(0.25)
-            if s.connect_ex(('127.0.0.1', port)) != 0:
-                return  # port is free
-        time.sleep(0.25)
-    raise RuntimeError(f'Port {port} did not free within {timeout_seconds:.0f}s')
 
 
 def _is_lmstudio_server_already_up(port: int = 1234) -> bool:
     """True if LM Studio HTTP server is already serving :port."""
     try:
-        with urllib.request.urlopen(f'http://127.0.0.1:{port}/v1/models', timeout=1) as resp:
-            return resp.status == 200
+        request_bytes(f'http://127.0.0.1:{port}/v1/models', timeout=1)
+        return True
     except Exception:
         return False
 
@@ -154,7 +223,7 @@ def _is_lmstudio_model_loaded(model: str) -> bool:
     return False
 
 
-def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> None:
+def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> LifecycleActions:
     """Bring up LM Studio's OpenAI-compatible server on :1234 with ``model_id`` loaded.
 
     LM Studio's GUI auto-starts its HTTP server as soon as the process is up.
@@ -162,7 +231,7 @@ def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> None:
     GUI's auto-restart and produces transient ``EADDRINUSE`` errors. The
     minimal correct sequence is:
 
-      1. Free :1234 of any competing llama-server first.
+      1. Activation resolves competing listeners before entering this helper.
       2. Spawn the GUI if it is not already running. Its embedded HTTP server
          starts automatically as part of GUI startup.
       3. Poll ``http://127.0.0.1:1234/v1/models`` until 200 - this is the
@@ -177,10 +246,14 @@ def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> None:
             f'lms CLI not found at {LMS_CLI_BIN}. Set KORINA_LMS_CLI_BIN or '
             f'install LM Studio with the CLI bundle.'
         )
-    stop_llama_server()
-    _kill_stray_llama_servers()
+    actions = LifecycleActions()
     if not _is_lmstudio_server_already_up():
-        start_lmstudio()
+        if start_lmstudio():
+            actions.started.append('lm-studio-server')
+        else:
+            actions.reused.append('lm-studio-server')
+    else:
+        actions.reused.append('lm-studio-server')
     wait_for_lmstudio_server_ready()
     if model:
         # Skip the load entirely if the model is already in memory. `lms
@@ -192,41 +265,127 @@ def start_lmstudio_server(model_id: str, config: Optional[dict] = None) -> None:
                 stderr = (load_proc.stderr or load_proc.stdout or '').strip()
                 if 'already loaded' not in stderr.lower() and 'no change' not in stderr.lower():
                     raise RuntimeError(f'lms load {model!r} failed: {stderr}')
+            if load_proc.returncode == 0:
+                actions.loaded_models.append(model)
+    return actions
 
 
-def stop_lmstudio_server() -> None:
-    """Tear down LM Studio's headless server and any stray llama-server on :1234."""
+def stop_lmstudio_server() -> LifecycleActions:
+    """Stop LM Studio's server; activation separately owns competing listeners."""
+    actions = LifecycleActions()
     if LMS_CLI_BIN.exists():
         try:
-            _lms_run('server', 'stop', check=False)
-        except Exception:
-            pass
-    _kill_stray_llama_servers()
+            result = _lms_run('server', 'stop', check=False)
+            if result.returncode == 0:
+                actions.stopped.append('lmstudio')
+            else:
+                actions.warnings.append(f'lmstudio: stop command failed (exit {result.returncode}); stop was not confirmed')
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning('Could not stop LM Studio server: %s', exc)
+            actions.warnings.append(f'lmstudio: stop was not confirmed ({type(exc).__name__})')
+    return actions
+
+
+def _wait_for_models(url: str, label: str, timeout_seconds: float) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = 'no successful response'
+    while time.monotonic() < deadline:
+        try:
+            remaining = max(0.01, deadline - time.monotonic())
+            request_bytes(url, timeout=min(2, remaining))
+            return
+        except (OSError, ValueError, HTTPStatusError) as exc:
+            last_error = str(exc)
+        time.sleep(min(0.5, max(0, deadline - time.monotonic())))
+    raise RuntimeError(f'{label} did not become ready within {timeout_seconds:.0f}s: {last_error}')
 
 
 def wait_for_lmstudio_server_ready(timeout_seconds: float = 90.0) -> None:
-    """Poll http://127.0.0.1:1234/v1/models until HTTP 200."""
-    deadline = time.time() + timeout_seconds
-    last_error = ''
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen('http://127.0.0.1:1234/v1/models', timeout=2) as resp:
-                if resp.status == 200:
-                    return
-        except Exception as e:
-            last_error = str(e)
-        time.sleep(0.5)
-    raise RuntimeError(
-        f'LM Studio server did not become ready within {timeout_seconds:.0f}s: {last_error}'
-    )
+    _wait_for_models('http://127.0.0.1:1234/v1/models', 'LM Studio server', timeout_seconds)
 
 
-def start_ollama() -> None:
+def start_ollama() -> LifecycleActions:
     if shutil.which('ollama') is None:
-        raise RuntimeError('Ollama is not installed on roggoz')
-    run = subprocess.run(['systemctl', '--user', 'start', 'ollama.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        raise RuntimeError('Ollama is not installed or is not on PATH')
+    run = _systemctl('start', 'ollama.service')
+    process = None
     if run.returncode != 0:
-        subprocess.Popen(['ollama', 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        process = subprocess.Popen(['ollama', 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        _wait_for_models('http://127.0.0.1:11434/v1/models', 'Ollama server', 90)
+        if process is not None and process.poll() is not None:
+            raise RuntimeError(f'ollama serve exited during startup (exit {process.returncode})')
+    except BaseException:
+        if process is not None:
+            _cleanup_failed_start(process)
+        raise
+    return LifecycleActions(started=['ollama'])
+
+
+def _cleanup_failed_start(process: subprocess.Popen) -> None:
+    """Reap only the child this attempt created, preserving the startup error."""
+    try:
+        if process.poll() is not None:
+            return
+        try:
+            process.terminate()
+        except ProcessLookupError:
+            pass  # It exited between poll and terminate; still reap it below.
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=2)
+    except Exception:
+        logger.warning('Could not confirm cleanup of the Ollama child from failed startup', exc_info=True)
+
+
+def _systemd_argument(value: str) -> str:
+    """Quote one systemd argument; protect specifier/environment expansion."""
+    if any(ord(char) < 32 for char in value):
+        raise ValueError('systemd arguments cannot contain control characters')
+    escaped = value.replace('\\', '\\\\').replace('"', '\\"').replace('%', '%%').replace('$', '$$')
+    return f'"{escaped}"' if re.search(r'[\s"\\%$]', value) else value
+
+
+def _atomic_write_unit(path: Path, content: str) -> None:
+    """Publish a complete unit, following existing links and preserving mode."""
+    target = path.resolve()
+    try:
+        mode = stat.S_IMODE(target.stat().st_mode)
+    except FileNotFoundError:
+        mode = None
+    temporary = target.with_name(f'.korina-unit-{uuid4().hex}.tmp')
+    # Exclusive creation both owns this name and applies the caller's umask.
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    descriptor_owned = True
+    stream = None
+    try:
+        stream = os.fdopen(descriptor, 'w', encoding='utf-8')
+        descriptor_owned = False
+        stream.write(content)
+        stream.flush()
+        stream.close()
+        if mode is not None:
+            temporary.chmod(mode)
+        temporary.replace(target)
+    finally:
+        # Cleanup must not replace a write/flush/close/publish exception.
+        try:
+            if stream is not None and not stream.closed:
+                stream.close()
+            if descriptor_owned:
+                os.close(descriptor)
+        except Exception:
+            logger.warning('Could not close temporary provider unit', exc_info=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            logger.warning('Could not remove temporary provider unit %s', temporary, exc_info=True)
+
 
 def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> None:
     config = dict(config or load_config())
@@ -235,6 +394,7 @@ def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> N
         raise RuntimeError(f'llama.cpp model not found: {model}')
     if not LLAMA_SERVER_BIN.exists():
         raise RuntimeError(f'llama-server binary not found: {LLAMA_SERVER_BIN}')
+    model = model.resolve()
     mmproj = find_mmproj_for_model(str(model))
     unit = [
         '[Unit]',
@@ -245,41 +405,40 @@ def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> N
         'Type=simple',
         'Restart=always',
         'RestartSec=5',
-        'Environment=VK_ICD_FILE=/usr/share/vulkan/icd.d/radeon_icd.json',
     ]
-    exec_parts = [str(LLAMA_SERVER_BIN), '-m', str(model)]
+    exec_parts = [str(LLAMA_SERVER_BIN.resolve()), '-m', str(model)]
     if mmproj:
         exec_parts += ['--mmproj', mmproj]
-    exec_parts += ['--reasoning', config_llm_reasoning(config), '--host', '0.0.0.0', '--port', '8080', '--media-path', LLAMA_SERVER_MEDIA_PATH, '-ngl', '99', '-t', '4']
-    unit.append('ExecStart=' + ' '.join(exec_parts))
-    unit.append(f'WorkingDirectory={LLAMA_SERVER_BIN.parent}')
+    exec_parts += ['--reasoning', config_llm_reasoning(config), '--host', os.environ.get('KORINA_LLM_HOST', '127.0.0.1'), '--port', '8080', '-ngl', '99', '-t', '4']
+    if LLAMA_SERVER_MEDIA_PATH:
+        exec_parts += ['--media-path', LLAMA_SERVER_MEDIA_PATH]
+    unit.append('ExecStart=' + ' '.join(_systemd_argument(part) for part in exec_parts))
+    unit.append('WorkingDirectory=' + str(LLAMA_SERVER_BIN.resolve().parent).replace('%', '%%'))
     unit += ['', '[Install]', 'WantedBy=default.target', '']
     service_path = LLAMA_SERVER_USER_UNIT
+    if service_path.suffix != '.service':
+        raise ValueError('KORINA_LLAMA_SERVER_USER_UNIT must name a .service file')
     service_path.parent.mkdir(parents=True, exist_ok=True)
-    service_path.write_text('\n'.join(unit))
+    _atomic_write_unit(service_path, '\n'.join(unit))
 
 def wait_for_llama_server_ready(timeout_seconds: float = 90.0) -> None:
-    deadline = time.time() + timeout_seconds
-    last_error = ''
-    while time.time() < deadline:
-        try:
-            with urllib.request.urlopen('http://127.0.0.1:8080/v1/models', timeout=2) as resp:
-                if resp.status == 200:
-                    return
-        except Exception as e:
-            last_error = str(e)
-        time.sleep(0.5)
-    raise RuntimeError(f'llama-server did not become ready within {timeout_seconds:.0f}s: {last_error}')
+    _wait_for_models('http://127.0.0.1:8080/v1/models', 'llama-server', timeout_seconds)
 
-def start_llama_server(model_path: str, config: Optional[dict] = None) -> None:
+
+def start_llama_server(model_path: str, config: Optional[dict] = None) -> LifecycleActions:
     write_llama_server_unit(model_path, config=config)
-    subprocess.run(['systemctl', '--user', 'daemon-reload'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['systemctl', '--user', 'enable', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(['systemctl', '--user', 'restart', 'llama-server.service'], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    unit_path = LLAMA_SERVER_USER_UNIT.resolve()
+    default_dir = Path(os.environ.get('XDG_CONFIG_HOME') or Path.home() / '.config') / 'systemd/user'
+    if unit_path.parent != default_dir.resolve():
+        _systemctl('link', str(unit_path), required=True)
+    _systemctl('daemon-reload', required=True)
+    _systemctl('enable', unit_path.name)
+    _systemctl('restart', unit_path.name, required=True)
     wait_for_llama_server_ready()
+    return LifecycleActions(started=[unit_path.name])
 
-def stop_llama_server() -> None:
-    subprocess.run(['systemctl', '--user', 'stop', 'llama-server.service'], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def stop_llama_server() -> LifecycleActions:
+    return _unit_stopped(LLAMA_SERVER_USER_UNIT.name, LLAMA_SERVER_USER_UNIT.name)
 
 def _resolve_llama_cpp_model_id(value: str) -> str:
     """Resolve a configured llama.cpp model to an absolute GGUF path on disk.
@@ -311,39 +470,249 @@ def _resolve_llama_cpp_model_id(value: str) -> str:
             return g
     return v
 
+
+def _local_model_file(value: str) -> Path | None:
+    """Inspect only the candidate path, with a bounded public diagnostic.
+
+    This does not catch executable, service, discovery, or startup failures.
+    Resolve here too so path admission finishes before settings are saved.
+    """
+    try:
+        if '\x00' in value:
+            raise ValueError('path contains NUL')
+        path = Path(value)
+        return path.resolve() if path.is_file() else None
+    except (OSError, ValueError) as exc:
+        raise InvalidLocalModelPath('Invalid or unreadable local model path') from exc
+
+
+@dataclass(frozen=True)
+class _LocalRole:
+    name: str
+    port: int
+    model: str
+
+
+_MANAGED_PORTS = {'llama.cpp': 8080, 'lmstudio': 1234, 'ollama': 11434}
+
+
+def _local_role(name: str, url: str, model: str) -> _LocalRole | None:
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or '').rstrip('.').lower()
+        if parsed.scheme not in {'http', 'https'}:
+            return None
+        if host != 'localhost':
+            address = ipaddress.ip_address(host)
+            mapped = getattr(address, 'ipv4_mapped', None)
+            if not address.is_loopback and not (mapped and mapped.is_loopback):
+                return None
+        return _LocalRole(name, parsed.port or (443 if parsed.scheme == 'https' else 80), model)
+    except ValueError:
+        return None
+
+
+def _process_provider(executable: Path, args: list[str]) -> str | None:
+    def matches(expected: Path) -> bool:
+        return executable == expected.resolve() or bool(args and Path(args[0]).resolve() == expected.resolve())
+
+    if matches(LLAMA_SERVER_BIN) or executable.name == 'llama-server':
+        return 'llama.cpp'
+    if matches(LMSTUDIO_BIN):
+        return 'lmstudio'
+    ollama = shutil.which('ollama')
+    if (ollama and matches(Path(ollama))) or executable.name == 'ollama':
+        return 'ollama'
+    return None
+
+
+def _retained_services(provider: str, config: dict) -> tuple[dict[str, list[_LocalRole]], list[_LocalRole]]:
+    candidates = []
+    if provider == 'openai-compatible':
+        candidates.append(('response_llm', config_llm_base_url(config), str(config.get('lm_model') or '')))
+    if config.get('stt_backend') == 'llm':
+        candidates.append(('stt', config_stt_llm_base_url(config), config_stt_llm_model(config)))
+    if config.get('agent_enabled') == 'on':
+        candidates.append(('agent', agent_base_url(config), str(config.get('agent_model') or config.get('lm_model') or '')))
+    roles = [role for name, url, model in candidates if (role := _local_role(name, url, model)) is not None]
+    retained: dict[str, list[_LocalRole]] = {}
+
+    def retain(service: str, role: _LocalRole) -> None:
+        uses = retained.setdefault(service, [])
+        if role not in uses:
+            uses.append(role)
+
+    # Default managed listeners remain protected even while temporarily down.
+    for role in roles:
+        for service, port in _MANAGED_PORTS.items():
+            if role.port == port:
+                retain(service, role)
+    # Also recognize a configured managed executable serving a custom port.
+    for pid, executable, args in provider_processes.user_processes():
+        found_service = _process_provider(executable, args)
+        if found_service:
+            for role in roles:
+                if provider_processes.listens_on(pid, role.port):
+                    retain(found_service, role)
+    return retained, roles
+
+
+def _require_executable(path: Path, label: str) -> None:
+    if not path.is_file() or not os.access(path, os.X_OK):
+        raise RuntimeError(f'{label} executable not found or not executable: {path}')
+
+
+def _llama_selection(model: Optional[str], config: dict) -> str:
+    """Resolve the effective selection and reject an ambiguous projector early."""
+    selected = _resolve_llama_cpp_model_id(str(model or config.get('lm_model') or '').strip())
+    if not selected:
+        discovered = discover_local_gguf_models()
+        selected = discovered[0] if discovered else ''
+    selected_path = _local_model_file(selected) if selected else None
+    if selected_path is not None:
+        find_mmproj_for_model(str(selected_path))
+    return selected
+
+
+def _activation_model(provider: str, model: Optional[str], config: dict) -> str:
+    if provider not in capabilities_for_section('response_llm'):
+        raise ValueError(f'Unsupported response provider: {provider}')
+    selected = str(model or config.get('lm_model') or '').strip()
+    if provider == 'llama.cpp':
+        selected = _llama_selection(model, config)
+        selected_path = _local_model_file(selected) if selected else None
+        if selected_path is None:
+            raise RuntimeError(f'Requested llama.cpp model not found: {model or config.get("lm_model") or "no local GGUF models"}')
+        selected = str(selected_path)
+        _require_executable(LLAMA_SERVER_BIN, 'llama-server')
+        if shutil.which('systemctl') is None:
+            raise RuntimeError('Managed llama.cpp requires systemd; run an external endpoint on this host')
+        if LLAMA_SERVER_USER_UNIT.suffix != '.service':
+            raise ValueError('KORINA_LLAMA_SERVER_USER_UNIT must name a .service file')
+    elif provider == 'lmstudio':
+        _require_executable(LMS_CLI_BIN, 'lms CLI')
+        if selected:
+            supported, reason = provider_supports_model(provider, selected)
+            if not supported:
+                raise RuntimeError(f'Cannot activate LM Studio model: {reason}')
+        competing = any(
+            _process_provider(executable, args) not in (None, 'lmstudio')
+            and provider_processes.listens_on(pid, 1234)
+            for pid, executable, args in provider_processes.user_processes()
+        )
+        if competing or not _is_lmstudio_server_already_up():
+            _require_executable(LMSTUDIO_BIN, 'LM Studio')
+    elif provider == 'ollama' and shutil.which('ollama') is None:
+        raise RuntimeError('Ollama is not installed or is not on PATH')
+    return selected
+
+
+def _check_role_conflicts(provider: str, selected: str, retained: dict[str, list[_LocalRole]], roles: list[_LocalRole]) -> None:
+    if provider == 'llama.cpp':
+        for role in retained.get(provider, []):
+            other_model = _resolve_llama_cpp_model_id(role.model) if role.model else ''
+            if other_model and Path(other_model).is_file():
+                other_model = str(Path(other_model).resolve())
+            if other_model and other_model != selected:
+                raise ProviderRoleConflict(
+                    f'Cannot replace the single llama.cpp model while {role.name} uses another model; '
+                    'choose the same model or a separate endpoint'
+                )
+    target_port = _MANAGED_PORTS.get(provider)
+    for pid, executable, args in provider_processes.user_processes():
+        if target_port and provider_processes.listens_on(pid, target_port):
+            other = _process_provider(executable, args)
+            protected = [role for role in roles if provider_processes.listens_on(pid, role.port)]
+            if protected and other and other != provider:
+                names = ', '.join(sorted({role.name for role in protected}))
+                raise ProviderRoleConflict(f'Port {target_port} is served by {other} and required by {names}; keep its endpoint or use another service')
+
+
+def _llama_serves_model(selected: str) -> bool:
+    try:
+        body = request_json('http://127.0.0.1:8080/v1/models', timeout=1)
+        items = body.get('data') if isinstance(body, dict) else None
+        if not isinstance(items, list):
+            return False
+        for item in items:
+            identifier = item.get('id') if isinstance(item, dict) else None
+            if isinstance(identifier, str) and (identifier == selected or (
+                not Path(identifier).is_absolute() and Path(identifier).name == Path(selected).name
+            )):
+                return True
+    except (OSError, ValueError, HTTPStatusError):
+        pass
+    return False
+
+
+def _protected_llama_running(roles: list[_LocalRole]) -> bool:
+    return any(
+        _process_provider(executable, args) == 'llama.cpp'
+        and any(provider_processes.listens_on(pid, role.port) for role in roles)
+        for pid, executable, args in provider_processes.user_processes()
+    )
+
+
+def prepare_provider(
+    provider: str, config: dict, model: Optional[str] = None, *, restart: bool = False,
+) -> tuple[str, dict[str, list[_LocalRole]], list[_LocalRole]]:
+    """Validate prerequisites and role ownership before writing or stopping services."""
+    selected = _activation_model(provider, model, config)
+    retained, roles = _retained_services(provider, config)
+    _check_role_conflicts(provider, selected, retained, roles)
+    if restart and provider == 'llama.cpp' and _protected_llama_running(roles):
+        raise ProviderRoleConflict(
+            'Cannot restart a running llama.cpp service used by active STT or Agent; '
+            'stop that role or choose a separate endpoint before refreshing'
+        )
+    return selected, retained, roles
+
+
 def activate_llm_provider(provider: str, config: Optional[dict] = None, model: Optional[str] = None) -> dict:
     config = dict(config or load_config())
     provider = str(provider or config.get('llm_provider') or '').strip().lower()
+    selected, retained, roles = prepare_provider(provider, config, model)
+    reuse_llama = provider == 'llama.cpp' and provider in retained and _llama_serves_model(selected)
+    if provider == 'llama.cpp' and provider in retained and not reuse_llama and _protected_llama_running(roles):
+        raise ProviderRoleConflict(
+            'A running llama.cpp process serves another active role; its selected model could not be '
+            'confirmed reusable on port 8080. Keep that service or use a separate response endpoint'
+        )
+    protected_ports = {role.port for role in roles}
+    actions = LifecycleActions()
+    teardown = {
+        'llama.cpp': stop_llama_server,
+        'lmstudio': stop_lmstudio if provider == 'ollama' else stop_lmstudio_server,
+        'ollama': stop_ollama,
+    }
+    for service, stop in teardown.items():
+        if service != provider and service not in retained:
+            actions.merge(stop())
+    # Competing :1234 listeners are a separate action, never a hidden side
+    # effect of starting/stopping another provider. Do not touch a PID that
+    # also serves a protected role on any port.
+    if provider != 'ollama' and 1234 not in protected_ports:
+        actions.merge(_kill_stray_llama_servers(protected_ports))
     if provider == 'llama.cpp':
-        raw_selected = str(model or config.get('lm_model') or '').strip()
-        selected = _resolve_llama_cpp_model_id(raw_selected)
-        if not selected or not Path(selected).exists():
-            discovered = discover_local_gguf_models()
-            if discovered:
-                selected = discovered[0]
-            else:
-                raise RuntimeError('No local GGUF models found for llama.cpp')
-        stop_lmstudio_server()
-        stop_ollama()
-        start_llama_server(selected, config=config)
-        preset = provider_preset_base_url(provider)
-        return {'provider': provider, 'model': selected, 'base_url': preset or 'http://127.0.0.1:8080/v1', 'stopped': ['lmstudio', 'ollama', 'stray-llama-server'], 'started': ['llama-server.service']}
-    if provider == 'lmstudio':
-        stop_ollama()
-        start_lmstudio_server(model or '', config=config)
-        preset = provider_preset_base_url(provider)
-        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:1234/v1', 'stopped': ['llama-server.service', 'ollama', 'stray-llama-server'], 'started': ['lm-studio-server']}
-    if provider == 'ollama':
-        stop_llama_server()
-        stop_lmstudio()
-        start_ollama()
-        preset = provider_preset_base_url(provider)
-        return {'provider': provider, 'model': str(model or config.get('lm_model') or ''), 'base_url': preset or 'http://127.0.0.1:11434/v1', 'stopped': ['llama-server.service', 'lmstudio'], 'started': ['ollama']}
-    stop_llama_server()
-    stop_lmstudio_server()
-    stop_ollama()
-    saved_base = str(config.get('llm_base_url') or '').strip()
-    return {'provider': provider or 'openai-compatible', 'model': str(model or config.get('lm_model') or ''), 'base_url': saved_base, 'stopped': ['llama-server.service', 'lmstudio', 'ollama', 'stray-llama-server'], 'started': []}
+        if reuse_llama:
+            actions.reused.append(LLAMA_SERVER_USER_UNIT.name)
+        else:
+            actions.merge(start_llama_server(selected, config=config))
+    elif provider == 'lmstudio':
+        actions.merge(start_lmstudio_server(selected, config=config))
+    elif provider == 'ollama':
+        actions.merge(start_ollama())
+    preset = provider_preset_base_url(provider)
+    return {
+        'provider': provider, 'model': selected,
+        'base_url': preset or str(config.get('llm_base_url') or '').strip(),
+        **asdict(actions),
+        'retained': [
+            {'provider': service, 'roles': sorted({role.name for role in uses}),
+             'reason': 'active loopback endpoint on port ' + ', '.join(str(port) for port in sorted({role.port for role in uses}))}
+            for service, uses in retained.items()
+        ],
+    }
 
 
 
@@ -361,19 +730,17 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
       - lmstudio + GGUF path: NOT supported
       - ollama: always allow (model list is server-side, only
         verifiable after server start)
-      - openai-compatible: always allow (user-provided endpoint)
+      - openai-compatible / meta: allow (remote endpoint checked by discovery)
       - anthropic: always allow (user-provided endpoint)
     """
-    from pathlib import Path
     from korina.services.model_catalog import (
         discover_lmstudio_catalog_models,
-        discover_local_gguf_models,
     )
 
     pid = str(provider or "").strip()
     mid = str(model or "").strip()
 
-    if pid in ("openai-compatible", "anthropic"):
+    if pid in ("openai-compatible", "anthropic", "meta"):
         return (True, "user_provided_endpoint")
 
     if pid == "ollama":
@@ -384,14 +751,18 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
     if pid == "llama.cpp":
         if not mid:
             return (False, "llama.cpp requires a model id (local GGUF path)")
-        if not mid.endswith(".gguf"):
+        if not mid.lower().endswith(".gguf"):
             return (False, f"llama.cpp does not support endpoint-loaded ids; got '{mid}'")
-        if not Path(mid).exists():
+        try:
+            model_file = _local_model_file(mid)
+        except InvalidLocalModelPath as exc:
+            return (False, str(exc))
+        if model_file is None:
             return (False, f"llama.cpp model file not found: {mid}")
         # NOTE: do NOT call `discover_local_gguf_models()` here. That walks
         # `LOCAL_MODEL_ROOTS` + `LMSTUDIO_HUB_ROOT` via `rglob('*.gguf')`
         # on every activate request -- a non-trivial filesystem scan on
-        # hosts with many GGUFs. The user-provided path existing on disk
+        # hosts with many GGUFs. The user-provided file existing on disk
         # is sufficient evidence of legitimacy; the llama-server will
         # reject it with a clear error if it's actually broken.
         return (True, "local_gguf")
@@ -400,7 +771,9 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
         if not mid:
             return (False, "lmstudio requires a model id (catalog id)")
         try:
-            catalog = discover_lmstudio_catalog_models()
+            # Discovery is a bounded display catalog. Preserve a legitimate
+            # explicit selection even when it sorts beyond the displayed IDs.
+            catalog = discover_lmstudio_catalog_models(pinned=[mid])
         except Exception:
             catalog = []
         if mid in catalog:

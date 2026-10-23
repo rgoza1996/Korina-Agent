@@ -1,99 +1,156 @@
-// js/partial-queue.js
-//
-// Frontend partial-window STT queue — bounded WebM window recorder,
-// FIFO transcription queue, lifecycle start/idle-wait/stop helpers —
-// extracted verbatim from the original inline <script> in
-// Korina/index.html (lines 1067–1136 at commit bdda3cc).
-//
-// Bare top-level globals (partialTimer, partialSeq, partialWindowIndex,
-// latestPartialText, latestPartialAt, partialRecorder, partialChunks,
-// partialQueueProcessing, partialInFlight, partialQueue, partialController)
-// have been migrated to the consolidated `state` object
-// (see state.js). `live`, `liveBusy`, `stream`, `liveSpeechStart` are
-// also state.X reads. `transcribePartialBlob` is from recorder.js (3.2.10,
-// same batch) — referenced as a bare call so it resolves at call time
-// once recorder.js lands in beta alongside this module.
-//
-// Consumers import the named exports below.
+// Queue complete, independently decodable partial windows within one capture epoch.
 
 import { state } from "./state.js";
 import { $ } from "./dom.js";
+import { transcribePartialBlob } from "./recorder.js";
+import { finalSttMode } from "./settings-ui.js";
 
-// --- Start partial transcription loop (verbatim from index.html:1067–1073) ---
+export const MAX_PARTIAL_QUEUE_WINDOWS = 4;
+export const MAX_PARTIAL_WINDOW_BYTES = 2 * 1024 * 1024;
+let activeWorker = null;
+
+function requireFullTranscript(reason) {
+  if (state.partialNeedsFullPass) return;
+  state.partialNeedsFullPass = true;
+  state.partialFallbackReason = reason;
+  stopPartialTranscriptionLoop(true);
+  $('transcriptInfo').textContent = `${reason} The complete recording will be transcribed at the end of this turn.`;
+}
+
 export function startPartialTranscriptionLoop() {
-  stopPartialTranscriptionLoop(false);
-  state.partialSeq++;
+  stopPartialTranscriptionLoop(true);
   state.partialWindowIndex = 0;
-  state.latestPartialText = ''; state.latestPartialAt = 0;
+  state.latestPartialText = '';
+  state.partialNeedsFullPass = false;
+  state.partialFallbackReason = '';
+  state.partialCaptureActive = true;
   startPartialWindowRecorder();
 }
 
-// --- Bounded partial WebM window recorder (verbatim from index.html:1074–1101) ---
 export function startPartialWindowRecorder() {
-  if (!state.live || state.liveBusy || !state.stream) return;
+  if (!state.live || state.liveBusy || !state.stream || !state.partialCaptureActive) return;
+  if (state.partialRecorder && state.partialRecorder.state !== 'inactive') return;
+  let finishStop;
+  let recorder;
+  let timer;
+  let done;
   try {
-    if (state.partialRecorder && state.partialRecorder.state !== 'inactive') return;
-    state.partialChunks = [];
+    const chunks = [];
+    let bytes = 0;
     const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm';
     const windowId = ++state.partialWindowIndex;
     const seq = state.partialSeq;
-    state.partialRecorder = new MediaRecorder(state.stream, { mimeType: mime });
-    state.partialRecorder.ondataavailable = e => { if (e.data.size) state.partialChunks.push(e.data); };
-    state.partialRecorder.onstop = () => {
-      const chunks = state.partialChunks;
-      state.partialChunks = [];
-      // Restart first so capture continues while faster-whisper drains the queue.
-      if (state.live && !state.liveBusy && seq === state.partialSeq) setTimeout(startPartialWindowRecorder, 0);
-      if (!state.live || seq !== state.partialSeq || !state.liveSpeechStart || chunks.length < 2) return;
-      const blob = new Blob(chunks, { type: chunks[0]?.type || mime });
-      if (blob.size < 2500) return;
-      state.partialQueue.push({ blob, seq, windowId });
-      $('transcriptInfo').textContent = `Queued partial window ${windowId}; queue depth ${state.partialQueue.length}.`;
-      processPartialQueue();
+    const startedAt = performance.now();
+    recorder = new MediaRecorder(state.stream, { mimeType: mime });
+    done = new Promise(resolve => { finishStop = resolve; });
+    state.partialRecorder = recorder;
+    state.partialRecorderDone = done;
+    recorder.ondataavailable = event => {
+      if (!event.data.size || seq !== state.partialSeq) return;
+      bytes += event.data.size;
+      if (bytes > MAX_PARTIAL_WINDOW_BYTES) {
+        requireFullTranscript('A partial audio window exceeded its size limit.');
+        return;
+      }
+      chunks.push(event.data);
     };
-    state.partialRecorder.start(500);
-    state.partialTimer = setTimeout(() => {
-      if (state.partialRecorder && state.partialRecorder.state !== 'inactive') state.partialRecorder.stop();
-    }, state.partialWindowMs);
-  } catch (e) { console.warn('partial recorder failed', e); }
+    recorder.onstop = () => {
+      clearTimeout(timer);
+      if (state.partialTimer === timer) state.partialTimer = null;
+      if (state.partialRecorder === recorder) state.partialRecorder = null;
+      try {
+        if (!state.live || seq !== state.partialSeq || !state.liveSpeechStart || state.liveLastVoice < startedAt) return;
+        const blob = new Blob(chunks, { type: chunks[0]?.type || mime });
+        if (blob.size < 2500) {
+          requireFullTranscript('A speech window was too short for partial transcription.');
+          return;
+        }
+        if (state.partialQueue.length >= MAX_PARTIAL_QUEUE_WINDOWS) {
+          requireFullTranscript('Partial transcription fell behind the microphone.');
+          return;
+        }
+        state.partialQueue.push({ blob, seq, windowId });
+        $('transcriptInfo').textContent = `Queued partial window ${windowId}; queue depth ${state.partialQueue.length}.`;
+        processPartialQueue();
+      } finally {
+        if (state.partialRecorderDone === done) state.partialRecorderDone = null;
+        finishStop();
+        if (state.live && !state.liveBusy && state.partialCaptureActive && seq === state.partialSeq) {
+          setTimeout(() => { if (seq === state.partialSeq) startPartialWindowRecorder(); }, 0);
+        }
+      }
+    };
+    recorder.onerror = () => {
+      if (seq === state.partialSeq) requireFullTranscript('Partial audio recording failed.');
+      finishStop();
+    };
+    recorder.start(500);
+    timer = setTimeout(() => { if (recorder.state !== 'inactive') recorder.stop(); }, state.partialWindowMs);
+    state.partialTimer = timer;
+  } catch (error) {
+    if (state.partialRecorder === recorder) state.partialRecorder = null;
+    if (state.partialRecorderDone === done) state.partialRecorderDone = null;
+    finishStop?.();
+    requireFullTranscript(`Partial recording is unavailable: ${error.message}`);
+  }
 }
 
-// --- Drain the partial transcription queue (verbatim from index.html:1102–1118) ---
 export async function processPartialQueue() {
-  if (state.partialQueueProcessing) return;
+  if (activeWorker || state.partialNeedsFullPass || !state.partialQueue.length) return;
+  const worker = { seq: state.partialSeq };
+  activeWorker = worker;
   state.partialQueueProcessing = true;
-  state.partialInFlight = true;
+  const current = () => activeWorker === worker && worker.seq === state.partialSeq;
   try {
-    while (state.partialQueue.length) {
+    while (current() && state.partialQueue.length) {
+      // Full-final mode will replace partial feedback at the endpoint. Hold
+      // queued work during its silence timer rather than start another native
+      // step that cannot be interrupted when the full recording is submitted.
+      // An already-started chunks finalization must finish draining even if
+      // the user changes the next turn's mode while a request is in flight.
+      if (!state.liveBusy && finalSttMode() === 'full' && state.liveSilenceStart) break;
       const item = state.partialQueue.shift();
-      if (item.seq !== state.partialSeq) continue;
+      if (item.seq !== worker.seq) continue;
       $('transcriptInfo').textContent = `Transcribing queued window ${item.windowId}; ${state.partialQueue.length} waiting.`;
-      try { await transcribePartialBlob(item.blob, item.seq, { startChunk: item.windowId, endChunk: item.windowId }); }
-      catch (e) { if (e.name !== 'AbortError') console.warn('partial STT failed', e); }
+      try {
+        await transcribePartialBlob(item.blob, item.seq, { startChunk: item.windowId, endChunk: item.windowId }, { isCurrent: current });
+      } catch (error) {
+        if (current()) requireFullTranscript(`A partial transcription failed: ${error.message}`);
+      }
     }
   } finally {
-    state.partialInFlight = false;
-    state.partialQueueProcessing = false;
+    // A cancelled old worker must not drain or clear a newer capture's state.
+    if (activeWorker === worker) {
+      activeWorker = null;
+      state.partialQueueProcessing = false;
+    }
   }
 }
 
-// --- Wait until the partial queue drains (verbatim from index.html:1119–1123) ---
-export async function waitForPartialQueueIdle() {
-  while (state.partialQueueProcessing || state.partialQueue.length) {
-    await new Promise(r => setTimeout(r, 150));
+export async function waitForPartialQueueIdle(seq = state.partialSeq) {
+  while (seq === state.partialSeq && (state.partialQueueProcessing || state.partialQueue.length)) {
+    await new Promise(resolve => setTimeout(resolve, 25));
   }
 }
 
-// --- Stop partial transcription loop (verbatim from index.html:1124–1136) ---
+// A graceful stop awaits the recorder's final dataavailable/onstop events before
+// chunks mode drains the queue. An abort invalidates all work from this epoch.
 export function stopPartialTranscriptionLoop(abort = true) {
+  state.partialCaptureActive = false;
   if (state.partialTimer) clearTimeout(state.partialTimer);
   state.partialTimer = null;
-  if (abort) state.partialSeq++;
-  if (state.partialRecorder && state.partialRecorder.state !== 'inactive') { try { state.partialRecorder.stop(); } catch { } }
+  if (abort) {
+    state.partialSeq++;
+    state.partialQueue = [];
+    activeWorker = null;
+    state.partialQueueProcessing = false;
+    const controller = state.partialController;
+    state.partialController = null;
+    controller?.abort();
+  }
+  const recorder = state.partialRecorder;
+  const done = state.partialRecorderDone || Promise.resolve();
+  if (recorder && recorder.state !== 'inactive') { try { recorder.stop(); } catch {} }
   state.partialRecorder = null;
-  state.partialChunks = [];
-  if (abort) { state.partialQueue = []; }
-  if (abort && state.partialController) { try { state.partialController.abort(); } catch { } }
-  state.partialController = null;
-  if (abort) { state.partialInFlight = false; state.partialQueueProcessing = false; }
+  return done;
 }

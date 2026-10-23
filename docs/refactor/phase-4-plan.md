@@ -1,3 +1,5 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Phase 4 — Capability registry for model selection
 
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task. Each task = one commit on `beta`. **This is the first phase that changes user-visible behavior** (some currently-pickable combinations become filtered), so commits are individually auditable and the regression suite grows with the change.
@@ -154,7 +156,7 @@ def _lookup_registry_capability(model_id: str) -> dict[str, Any] | None:
     return None
 ```
 
-> **Important:** the registry entries use **substring keys** (e.g. `"gemma-4-e2b"`), not exact ids, so a path like `/home/roggoz/Disks/SN750/models/lmstudio-community/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf` matches the `"gemma-4-e2b"` key.
+> **Important:** the registry entries use **substring keys** (e.g. `"gemma-4-e2b"`), not exact ids, so a path like `/home/demo/Disks/SN750/models/lmstudio-community/gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf` matches the `"gemma-4-e2b"` key.
 
 **Step:** Commit:
 ```bash
@@ -340,7 +342,7 @@ git commit -m "feat: model capability detection with heuristic + registry (4.1.2
 First, check whether `config.example.json` already has this field (it shouldn't — blueprint §4.1 says "Add a way to opt out per model" so it's a Phase 4 addition).
 
 ```bash
-grep -n "multimodal_stt_model_allowlist" /home/roggoz/Korina-Agent/Korina/config/config.example.json
+grep -n "multimodal_stt_model_allowlist" /path/to/Korina-Agent/Korina/config/config.example.json
 ```
 
 If not present, add to `Korina/config/config.example.json` (next to the other STT/LLM fields, around line 60):
@@ -378,7 +380,7 @@ git commit -m "feat: multimodal_stt_model_allowlist config field (4.1.3)"
 
 **Files:** Modify `tests/regression_smoke.py`
 
-Add a new test function after the existing capability tests (~line 480 in the current source). Run from source checkout (`cd /home/roggoz/Korina-Agent`), not runtime — the script's `git ls-files` check requires it.
+Add a new test function after the existing capability tests (~line 480 in the current source). Run from source checkout (`cd /path/to/Korina-Agent`), not runtime — the script's `git ls-files` check requires it.
 
 ```python
 def test_model_capability_heuristic():
@@ -391,7 +393,7 @@ def test_model_capability_heuristic():
 
     # 1. gemma-4-E2B (live default) MUST be multimodal.
     cap = mc.get_model_capability(
-        "/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        "/home/demo/Disks/SN750/models/lmstudio-community/"
         "gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q8_0.gguf"
     )
     assert cap["supports_audio_input"] is True, (
@@ -402,7 +404,7 @@ def test_model_capability_heuristic():
 
     # 2. Qwen3-VL must have mmproj but supports_audio_input=False (vision only).
     cap = mc.get_model_capability(
-        "/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        "/home/demo/Disks/SN750/models/lmstudio-community/"
         "Qwen3-VL-4B-Instruct-GGUF/Qwen3-VL-4B-Instruct-Q4_K_M.gguf"
     )
     assert cap["supports_audio_input"] is False, (
@@ -411,7 +413,7 @@ def test_model_capability_heuristic():
 
     # 3. Plain Qwen3.5 text model MUST NOT be multimodal.
     cap = mc.get_model_capability(
-        "/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        "/home/demo/Disks/SN750/models/lmstudio-community/"
         "Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf"
     )
     assert cap["supports_audio_input"] is False, cap
@@ -419,7 +421,7 @@ def test_model_capability_heuristic():
 
     # 4. nomic-embed MUST be blacklisted even though it has mmproj.
     cap = mc.get_model_capability(
-        "/home/roggoz/Disks/SN750/models/nomic-ai/"
+        "/home/demo/Disks/SN750/models/nomic-ai/"
         "nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.f32.gguf"
     )
     assert cap["supports_audio_input"] is False, cap
@@ -427,9 +429,9 @@ def test_model_capability_heuristic():
 
     # 5. Allowlist override: text-only model in allowlist becomes multimodal.
     cap = mc.get_model_capability(
-        "/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        "/home/demo/Disks/SN750/models/lmstudio-community/"
         "Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf",
-        allowlist=("/home/roggoz/Disks/SN750/models/lmstudio-community/"
+        allowlist=("/home/demo/Disks/SN750/models/lmstudio-community/"
                    "Qwen3.5-2B-GGUF/Qwen3.5-2B-Q8_0.gguf",),
     )
     assert cap["supports_audio_input"] is True, cap
@@ -444,7 +446,7 @@ Wire it into `run()` next to the existing capability tests (around the `test_cap
 
 **Step:** Verify:
 ```bash
-cd /home/roggoz/Korina-Agent && python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe 2>&1 | tail -3
+cd /path/to/Korina-Agent && python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe 2>&1 | tail -3
 # Expect: "All checks passed against http://127.0.0.1:8001."
 ```
 
@@ -532,8 +534,8 @@ Then add the two new fields to the returned dict (insert next to the existing `l
 
 **Step:** Verify with curl:
 ```bash
-ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
-  "cd /home/roggoz/Korina-Agent && python3 -c \"
+ssh -F /dev/null -o User=demo host demo host@100.71.89.62 \
+  "cd /path/to/Korina-Agent && python3 -c \"
 import urllib.request, json
 b = json.loads(urllib.request.urlopen('http://127.0.0.1:8001/api/models').read())
 print('llm_models_capabilities keys:', len(b.get('llm_models_capabilities', {})))
@@ -548,7 +550,7 @@ print('sample gemma-4-E2B cap:', {k: v for k, v in b.get('stt_llm_models_capabil
 
 ```bash
 python3 -m py_compile korina/routes/models.py  # expect: no error
-cd /home/roggoz/Korina-Agent && python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe 2>&1 | tail -3
+cd /path/to/Korina-Agent && python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe 2>&1 | tail -3
 # Expect: regression still passes (the route change is additive)
 ```
 
@@ -923,8 +925,8 @@ Insert after the existing `provider = str(req.provider ...)` line (around line 2
 
 **Step:** Verify by manually probing:
 ```bash
-ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
-  'cd /home/roggoz/Korina-Agent && python3 -c "
+ssh -F /dev/null -o User=demo host demo host@100.71.89.62 \
+  'cd /path/to/Korina-Agent && python3 -c "
 import urllib.request, json
 body = json.dumps({\"provider\": \"llama.cpp\", \"model\": \"qwen/qwen3-14b\"}).encode()
 req = urllib.request.Request(\"http://127.0.0.1:8001/api/llm/provider/activate\", data=body, headers={\"Content-Type\":\"application/json\"}, method=\"POST\")
@@ -1187,7 +1189,7 @@ git commit -m "feat: audio probe classifier + triple key helper (4.5.2)"
 **Files:** Modify `korina/routes/stt.py` (or whichever route owns multimodal STT — verify first)
 
 ```bash
-grep -rn "input_audio\|audio.*content.*part\|multimodal" /home/roggoz/Korina-Agent/korina/routes/ /home/roggoz/Korina-Agent/korina/services/ | head -20
+grep -rn "input_audio\|audio.*content.*part\|multimodal" /path/to/Korina-Agent/korina/routes/ /path/to/Korina-Agent/korina/services/ | head -20
 ```
 
 The orchestrator in `korina/services/audio_probe.py`:
@@ -1536,20 +1538,20 @@ curl -sS -X DELETE http://127.0.0.1:8001/api/audio-probe/llama.cpp/http%3A%2F%2F
 The running service was started before this phase. Restart it to pick up the route changes.
 
 ```bash
-ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
-  'cd /home/roggoz/Korina && (./stop.sh && sleep 2 && ./start.sh) 2>&1 | tail -10'
+ssh -F /dev/null -o User=demo host demo host@100.71.89.62 \
+  'cd /path/to/Korina && (./stop.sh && sleep 2 && ./start.sh) 2>&1 | tail -10'
 # Expect: "Started" + service back up.
 sleep 3
 curl -fsS http://127.0.0.1:8001/api/health | head -c 200
 # Expect: {"ok":true,...}
 ```
 
-> **Note:** the runtime `/home/roggoz/Korina/` already has the new files synced from the source checkout (cron already pushed all 23 Phase 3 commits + the 4.1–4.4 Phase 4 commits). But the Python service needs a restart to re-import `korina.routes.providers` and `korina.routes.models`.
+> **Note:** the runtime `/path/to/Korina/` already has the new files synced from the source checkout (cron already pushed all 23 Phase 3 commits + the 4.1–4.4 Phase 4 commits). But the Python service needs a restart to re-import `korina.routes.providers` and `korina.routes.models`.
 
 ### Task 4.6.2 — Live regression
 
 ```bash
-cd /home/roggoz/Korina-Agent && python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe 2>&1 | tail -3
+cd /path/to/Korina-Agent && python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe 2>&1 | tail -3
 # Expect: "All checks passed against http://127.0.0.1:8001."
 ```
 
@@ -1559,7 +1561,7 @@ If any test fails, **stop and report raw output**. Do not power through.
 
 ```bash
 # 1. /api/models now exposes *_models_capabilities
-ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
+ssh -F /dev/null -o User=demo host demo host@100.71.89.62 \
   'curl -fsS http://127.0.0.1:8001/api/models | python3 -c "import sys, json; d=json.load(sys.stdin); print(\"llm_models_capabilities:\", len(d.get(\"llm_models_capabilities\", {}))); print(\"stt_llm_models_capabilities:\", len(d.get(\"stt_llm_models_capabilities\", {}))); print(\"sample gemma-4-E2B stt cap:\", {k: v for k, v in d.get(\"stt_llm_models_capabilities\", {}).items() if \"gemma-4-E2B\" in k})"'
 
 # Expect:
@@ -1568,7 +1570,7 @@ ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
 # sample gemma-4-E2B stt cap: { "...gemma-4-E2B-it-Q8_0.gguf": {"supports_audio_input": true, "source": "local_gguf", ...} }
 
 # 2. Activate rejects incompatible combos
-ssh -F /dev/null -o User=roggoz roggoz@100.71.89.62 \
+ssh -F /dev/null -o User=demo host demo host@100.71.89.62 \
   'curl -sS -X POST http://127.0.0.1:8001/api/llm/provider/activate -H "Content-Type: application/json" -d "{\"provider\":\"llama.cpp\",\"model\":\"qwen/qwen3-14b\"}" -w "\nHTTP %{http_code}\n"'
 # Expect: HTTP 400, detail.error == "incompatible_provider_model"
 

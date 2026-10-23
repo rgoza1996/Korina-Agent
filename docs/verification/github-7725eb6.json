@@ -1,0 +1,78 @@
+{
+  "kind": "github-actions-checkpoint",
+  "observed_on": "2026-10-23",
+  "pre_event_preparation": true,
+  "head_revision": "7725eb67fdc2d806e89dfcb76c2ea27908a30146",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "checks": [
+    {
+      "id": 120445790223,
+      "name": "speech-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445790223"
+    },
+    {
+      "id": 120445790112,
+      "name": "pytest (3.10)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445790112"
+    },
+    {
+      "id": 120445790108,
+      "name": "minimum-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445790108"
+    },
+    {
+      "id": 120445790098,
+      "name": "pytest (3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445790098"
+    },
+    {
+      "id": 120445790085,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445790085"
+    },
+    {
+      "id": 120445790041,
+      "name": "pytest (3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445790041"
+    },
+    {
+      "id": 120445790023,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445790023"
+    },
+    {
+      "id": 120445790014,
+      "name": "pytest (3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445790014"
+    },
+    {
+      "id": 120445789807,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39963078197/job/120445789807"
+    }
+  ],
+  "all_nine_passed": true,
+  "scope": [
+    "Observed through the Codex Code Review backend after public repository visibility was restored.",
+    "This is hosted CI for the stated revision, separate from later focused changes and local archives.",
+    "Provider replies in automated model tests are fixtures; no physical headset, authenticated inference, final event acceptance or merge is established."
+  ]
+}

@@ -1,4 +1,4 @@
-"""GET/POST /api/converse/* -- adapter selection routes (Phase 5 Commit 4).
+"""GET/POST /api/converse/* -- channel selection routes.
 
 These routes expose the consumer-facing surface for swapping which
 ConverseChannel implementation serves traffic. They do NOT touch the
@@ -11,15 +11,15 @@ Endpoints:
     POST /api/converse/channel/{name} -> {"channel": "<name>", "ok": true}
 
 Switching the active channel is process-global. Tests must call
-``reset_for_testing()`` + ``reset_default_registered()`` to restore state.
+``reset_for_testing()`` to restore registry state.
 """
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from korina.config import save_converse_channel
 from korina.converse.registry import (
     get_active_channel_name,
-    get_converse_channel,
     list_channels,
     set_active_converse_channel,
 )
@@ -54,7 +54,7 @@ def switch_active_channel(name: str):
     channel; that is the consumer's job via ``register_converse_channel()``.
     """
     try:
-        set_active_converse_channel(name)
+        set_active_converse_channel(name, persist=save_converse_channel)
     except KeyError:
         raise HTTPException(
             status_code=404,
@@ -63,12 +63,6 @@ def switch_active_channel(name: str):
                 f"Registered: {list_channels()}"
             ),
         )
-    # WS1.3: persist the switch to config.json so it survives a restart.
-    # Late-bound lookup so tests can monkeypatch korina.config.save_config.
-    import korina.config as _cfg
-    cfg = _cfg.load_config()
-    cfg.setdefault("converse", {})["channel"] = name
-    _cfg.save_config(cfg)
     return {"channel": name, "ok": True}
 
 

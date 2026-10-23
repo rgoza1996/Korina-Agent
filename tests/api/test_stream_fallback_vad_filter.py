@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import numpy as np
-
 
 def _sse_events(text: str):
     events = []
@@ -45,7 +43,7 @@ def test_stream_fallback_uses_vad_filter_false_after_multimodal_failure(
     config_module.save_config(cfg)
 
     monkeypatch.setattr(stt, "convert_to_16k_wav", lambda src, wav: wav.write_bytes(b"fake wav"))
-    monkeypatch.setattr(stt.sf, "read", lambda wav, dtype="float32": (np.zeros(16000, dtype="float32"), 16000))
+    monkeypatch.setattr(stt, "audio_metadata", lambda wav: {"samples": 16000, "sample_rate": 16000, "duration": 1.0})
 
     detail = (
         "Multimodal STT model 'x' rejected audio transcription request: "

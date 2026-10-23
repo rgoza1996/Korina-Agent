@@ -5,11 +5,79 @@ import importlib
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
+import threading
+import time
+from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 
 import pytest
+
+from korina.asset_manifest import REQUIRED_FRONTEND_ASSETS
+
+
+@pytest.fixture
+def asgi_server():
+    """Serve an ASGI app on an ephemeral loopback port and join it on exit."""
+    import uvicorn
+
+    @contextmanager
+    def serve(app):
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            server = uvicorn.Server(uvicorn.Config(app, log_level='error', ws='none'))
+            thread = threading.Thread(target=server.run, kwargs={'sockets': [listener]}, daemon=True)
+            try:
+                thread.start()
+                deadline = time.monotonic() + 5
+                while not server.started and time.monotonic() < deadline:
+                    time.sleep(.01)
+                assert server.started
+                yield listener.getsockname()[1]
+            finally:
+                server.should_exit = True
+                if thread.ident is not None:
+                    thread.join(5)
+                listener.close()
+                assert not thread.is_alive()
+
+    return serve
+
+
+@pytest.fixture
+def mock_provider_http(monkeypatch):
+    """Replace only outbound provider I/O, retaining its real caps/deadline code."""
+    import httpx
+    from korina.runtime import json_http
+
+    client_type = httpx.AsyncClient
+
+    class BytesStream(httpx.AsyncByteStream):
+        def __init__(self, content):
+            self.content = content
+
+        async def __aiter__(self):
+            yield self.content
+
+    def install(handler):
+        def streaming_handler(request):
+            response = handler(request)
+            if response.is_stream_consumed:
+                return httpx.Response(
+                    response.status_code, headers=response.headers,
+                    stream=BytesStream(response.content),
+                )
+            return response
+
+        monkeypatch.setattr(json_http.httpx, 'AsyncClient', partial(
+            client_type, transport=httpx.MockTransport(streaming_handler),
+        ))
+
+    return install
 
 
 _TEST_ROOT = Path(tempfile.mkdtemp(prefix="korina-pytest-"))
@@ -59,8 +127,9 @@ def _write_minimal_runtime(app_dir: Path = _TEST_APP_DIR) -> Path:
     (app_dir / "config").mkdir(parents=True, exist_ok=True)
     app_dir.joinpath("index.html").write_text(MINIMAL_INDEX)
     app_dir.joinpath("styles.css").write_text("body { font-family: sans-serif; }\n")
-    for name in ["app.js", "state.js", "providers-ui.js", "capability-filter.js"]:
-        app_dir.joinpath("js", name).write_text(f"export const testModule = {name!r};\n")
+    for relative in REQUIRED_FRONTEND_ASSETS:
+        if relative.startswith('js/'):
+            app_dir.joinpath(relative).write_text(f"export const testModule = {relative!r};\n")
     app_dir.joinpath("Ack", "ack_phrases.json").write_text(json.dumps({
         "phrases": [{"id": "ack_01", "text": "OK.", "tags": ["global"]}],
     }) + "\n")

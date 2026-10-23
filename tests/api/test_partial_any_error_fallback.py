@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import numpy as np
-
 
 def test_partial_llm_transcribe_uses_whisper_fallback_on_model_not_found(
     client,
@@ -30,7 +28,7 @@ def test_partial_llm_transcribe_uses_whisper_fallback_on_model_not_found(
     config_module.save_config(cfg)
 
     monkeypatch.setattr(whisper_service, "convert_to_16k_wav", lambda src, wav: wav.write_bytes(b"fake wav"))
-    monkeypatch.setattr(whisper_service.sf, "read", lambda wav, dtype="float32": (np.zeros(16000, dtype="float32"), 16000))
+    monkeypatch.setattr(whisper_service, "audio_metadata", lambda wav: {"samples": 16000, "sample_rate": 16000, "duration": 1.0})
 
     detail = (
         "Multimodal STT model '/home/roggoz/.cache/some/path.gguf' rejected audio transcription request: "
@@ -78,7 +76,7 @@ def test_stream_llm_transcribe_uses_whisper_fallback_on_model_not_found(
     config_module.save_config(cfg)
 
     monkeypatch.setattr(stt, "convert_to_16k_wav", lambda src, wav: wav.write_bytes(b"fake wav"))
-    monkeypatch.setattr(stt.sf, "read", lambda wav, dtype="float32": (np.zeros(16000, dtype="float32"), 16000))
+    monkeypatch.setattr(stt, "audio_metadata", lambda wav: {"samples": 16000, "sample_rate": 16000, "duration": 1.0})
 
     detail = (
         "Multimodal STT model 'm' rejected audio transcription request: "

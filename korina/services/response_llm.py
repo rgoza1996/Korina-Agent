@@ -1,21 +1,41 @@
 from __future__ import annotations
 
-import json
 import re
-import urllib.error
-import urllib.request
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from korina.config import (
     config_llm_chat_url,
+    config_llm_api_env,
+    config_llm_max_tokens,
     config_llm_reasoning,
+    config_llm_reasoning_effort,
     load_config,
 )
 
 from korina.runtime.http import auth_headers_from_env
+from korina.runtime.json_http import HTTPStatusError, RequestCancelledError, request_json
+from korina.runtime.completion import CompletionUsage, completion_text, openai_completion_usage, openai_text_completion
 
 from korina.schemas import ChatRequest
 
 from korina.util.paths import LMSTUDIO_MODEL
+
+
+@dataclass(frozen=True)
+class ResponseRequestSettings:
+    provider: str
+    model: str
+    max_tokens: int
+    reasoning_effort: str | None
+    reasoning: str | None
+
+
+@dataclass(frozen=True)
+class ResponseChatResult:
+    reply: str
+    usage: CompletionUsage | None
+    request_settings: ResponseRequestSettings
 
 
 def format_voice_reply(text: str) -> str:
@@ -24,7 +44,7 @@ def format_voice_reply(text: str) -> str:
     if not text:
         return text
     # Preserve deliberate newlines, but split any multi-sentence line.
-    lines = []
+    lines: list[str] = []
     for raw in text.splitlines():
         raw = raw.strip()
         if not raw:
@@ -33,7 +53,13 @@ def format_voice_reply(text: str) -> str:
         lines.extend(p.strip() for p in parts if p.strip())
     return '\n'.join(lines)
 
-def response_llm_chat(req: ChatRequest) -> str:
+def response_llm_chat(req: ChatRequest, *, is_current: Callable[[], bool] | None = None) -> str:
+    """Return only the spoken text for existing direct service callers."""
+    return response_llm_chat_result(req, is_current=is_current).reply
+
+
+def response_llm_chat_result(req: ChatRequest, *, is_current: Callable[[], bool] | None = None) -> ResponseChatResult:
+    """Keep optional usage and labels tied to the same outbound request."""
     system = req.system or (
         'You are Korina, a concise real-time voice conversation assistant.\n'
         'Speak in short, natural sentences that are suitable for being heard aloud.\n'
@@ -54,32 +80,52 @@ def response_llm_chat(req: ChatRequest) -> str:
     messages.append({'role': 'user', 'content': req.message.strip()})
 
     config = load_config()
+    provider = str(config.get('llm_provider') or 'openai-compatible').strip().lower()
+    is_meta = provider == 'meta'
+    settings = ResponseRequestSettings(
+        provider=provider,
+        model=req.model or str(config.get('lm_model') or LMSTUDIO_MODEL),
+        max_tokens=req.max_tokens if 'max_tokens' in req.model_fields_set else config_llm_max_tokens(config),
+        reasoning_effort=(req.reasoning_effort if 'reasoning_effort' in req.model_fields_set
+                          else config_llm_reasoning_effort(config)) if is_meta else None,
+        reasoning=None if is_meta else (
+            str(req.reasoning).strip().lower() if req.reasoning else config_llm_reasoning(config)
+        ),
+    )
     payload = {
-        'model': (req.model or str(config.get('lm_model') or LMSTUDIO_MODEL)),
+        'model': settings.model,
         'messages': messages,
         'temperature': req.temperature,
-        'max_tokens': req.max_tokens,
+        'max_tokens': settings.max_tokens,
         'stream': False,
-        'reasoning': (str(req.reasoning).strip().lower() if req.reasoning else config_llm_reasoning(config)),
     }
-    data = json.dumps(payload).encode('utf-8')
-    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(str(config.get('llm_api_key_env') or ''))
-    http_req = urllib.request.Request(
-        config_llm_chat_url(config),
-        data=data,
-        headers=headers,
-        method='POST',
-    )
+    # Meta's Chat Completions API reasons by default. Its documented control
+    # is reasoning_effort; the local/generic on/off extension is not sent.
+    if is_meta:
+        if settings.reasoning_effort:
+            payload['reasoning_effort'] = settings.reasoning_effort
+    else:
+        payload['reasoning'] = settings.reasoning
+    headers = {'Content-Type': 'application/json'} | auth_headers_from_env(config_llm_api_env(config))
     try:
-        with urllib.request.urlopen(http_req, timeout=90) as resp:
-            body = json.loads(resp.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        detail = e.read().decode('utf-8', errors='replace')
-        raise RuntimeError(f'Response LLM HTTP {e.code}: {detail}')
+        body = request_json(config_llm_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90, is_current=is_current)
+    except RequestCancelledError:
+        raise
+    except HTTPStatusError as e:
+        raise RuntimeError(f'Response LLM HTTP {e.status_code}: {e.detail}') from e
     except Exception as e:
         raise RuntimeError(f'Response LLM request failed: {e}')
 
-    try:
-        return format_voice_reply(body['choices'][0]['message']['content'] or '')
-    except Exception:
-        raise RuntimeError(f'Unexpected response LLM payload: {body!r}')
+    completion = openai_text_completion(body)
+    if not completion.text and completion.finish_reason == 'length':
+        raise RuntimeError(
+            'Response model exhausted its output-token budget before answering. '
+            'Increase Response token budget in Settings or choose another response model.'
+        )
+    reply = completion.text
+    # Sentence splitting can add newlines; validate the final history value.
+    return ResponseChatResult(
+        reply=completion_text(format_voice_reply(reply), label='Response LLM'),
+        usage=openai_completion_usage(body),
+        request_settings=settings,
+    )

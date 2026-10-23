@@ -1,46 +1,67 @@
-"""GET /api/health — reports service status, loaded models, config snapshot.
-
-Phase 1.9: inlined from the monolith's _route_health helper.
-"""
+"""Read-only voice-stack liveness, component status, and readiness."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+import asyncio
+import importlib.util
+import shutil
 
+from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
+
+from korina.asset_manifest import REQUIRED_FRONTEND_ASSETS
 from korina.config import (
     agent_base_url,
     agent_chat_url,
+    agent_models_url,
     agent_provider,
+    agent_auth_headers,
     config_llm_base_url,
+    config_llm_api_env,
     config_llm_chat_url,
+    config_llm_models_url,
+    config_llm_reasoning_effort,
+    config_agent_reasoning_effort,
     config_min_speech_ms,
     config_partial_window_ms,
     config_stt_llm_base_url,
     config_stt_llm_chat_url,
+    config_stt_llm_models_url,
     config_stt_llm_model,
     config_stt_llm_provider,
+    config_stt_llm_api_env,
     config_tts_base_url,
     load_config,
     config_tts_provider,
 )
 from korina.runtime import state
-from korina.services.ack_service import ack_files_for, ack_status
+from korina.model_ids import limit_model_ids, model_list_info, normalize_model_id
+from korina.runtime.limits import AudioLimits, MAX_AUDIO_UPLOAD_BYTES, resolve_audio_limits
+from korina.runtime.http import auth_headers_from_env
+from korina.runtime.json_http import HTTPStatusError, request_json
+from korina.services.ack_service import ack_files_for, ack_status, load_ack_manifest
+from korina.services.ack_manifest import AckManifestError
 from korina.services.whisper_service import compute_type_for, cuda_available, normalize_device
+from korina.services import whistle_service
 from korina.util.paths import (
     LMSTUDIO_MODEL,
     PARTIAL_MIN_SECONDS,
     WHISPER_BEAM_SIZE,
-    WHISPER_COMPUTE_TYPE,
     WHISPER_CPU_THREADS,
     WHISPER_DEVICE,
     WHISPER_MODEL_CHOICES,
     WHISPER_MODEL_ID,
+    APP_DIR,
 )
 
 router = APIRouter()
 
 
-def _probe_tts_backend(base_url, timeout=2.0):
+def _tts_probe_url(base_url, health_url=None):
+    return health_url or base_url.rstrip('/') + '/health'
+
+
+def _probe_tts_backend(base_url, timeout=2.0, health_url=None):
     """Probe the TTS backend's /health endpoint with a short timeout.
 
     Returns (ok, parsed_body, error_message). ok=True when the server responded
@@ -50,33 +71,29 @@ def _probe_tts_backend(base_url, timeout=2.0):
     """
     import json as _json
     import socket
-    import urllib.error
-    import urllib.request
 
     if not base_url:
         return (False, {}, "no base_url configured")
+    probe_url = _tts_probe_url(base_url, health_url)
     try:
-        req = urllib.request.Request(base_url.rstrip('/') + '/health', method='GET')
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode('utf-8', errors='replace')
         try:
-            body = _json.loads(raw)
+            body = request_json(probe_url, timeout=timeout)
         except _json.JSONDecodeError:
-            return (False, {}, f'non-JSON response from {base_url}/health')
+            return (False, {}, f'non-JSON response from {probe_url}')
+        if not isinstance(body, dict):
+            return (False, {}, f'invalid health response from {probe_url}')
         return (True, body, None)
     except socket.timeout:
-        return (False, {}, f'timeout after {timeout}s probing {base_url}/health')
-    except urllib.error.HTTPError as e:
-        return (False, {}, f'HTTP {e.code} from {base_url}/health')
-    except urllib.error.URLError as e:
-        return (False, {}, f'{type(e).__name__}: {e.reason}')
+        return (False, {}, f'timeout after {timeout}s probing {probe_url}')
+    except HTTPStatusError as e:
+        return (False, {}, f'HTTP {e.status_code} from {probe_url}')
     except (ConnectionRefusedError, ConnectionResetError) as e:
         return (False, {}, f'{type(e).__name__}: {e}')
-    except OSError as e:
+    except (OSError, ValueError) as e:
         return (False, {}, f'OSError: {e}')
 
 
-def _probe_llm_models(base_url, expected, timeout=1.5):
+def _probe_llm_models(base_url, expected, timeout=1.5, headers=None, *, models_url=None):
     """Probe a provider's /v1/models endpoint and check whether ``expected``
     appears in the response. Tolerant of:
 
@@ -84,10 +101,9 @@ def _probe_llm_models(base_url, expected, timeout=1.5):
     - LM Studio returning bare catalog ids (e.g. publisher/model-id)
     - Ollama returning name:tag strings (e.g. llama3.2:3b)
 
-    Match strategy: case-insensitive substring match. llama.cpp absolute
-    paths will match both the bare model filename (suffix) and any parent
-    directory component; LM Studio bare ids match themselves; Ollama
-    name:tag strings are compared both with and without the tag suffix.
+    IDs match case-insensitively, with a bare GGUF filename alias and Ollama's
+    untagged name alias. Two explicit GGUF paths must identify the same path;
+    a matching basename alone cannot establish that the selected file loaded.
 
     Returns a dict with keys:
         provider, base_url, expected_model, ok, loaded, loaded_model,
@@ -95,12 +111,13 @@ def _probe_llm_models(base_url, expected, timeout=1.5):
     """
     import json as _json
     import socket
-    import urllib.error
-    import urllib.request
 
-    base_clean = (base_url or "").strip().rstrip("/")
-    if base_clean.endswith("/v1"):
-        base_clean = base_clean[:-3].rstrip("/")
+    if models_url is None:
+        base_clean = (base_url or "").strip().rstrip("/")
+        for suffix in ('/chat/completions', '/messages'):
+            if base_clean.endswith(suffix):
+                base_clean = base_clean[:-len(suffix)].rstrip('/')
+        models_url = f'{base_clean}/models' if base_clean else ''
     expected_clean = (expected or "").strip()
     block = {
         "provider": "",
@@ -112,29 +129,26 @@ def _probe_llm_models(base_url, expected, timeout=1.5):
         "loaded_models": [],
         "error": None,
     }
-    if not base_clean:
+    if not models_url:
         block["error"] = "no base_url configured"
         return block
     try:
-        req = urllib.request.Request(base_clean + "/v1/models", method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
+        from urllib.parse import urlsplit
+        parsed = urlsplit(models_url)
+        if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+            raise ValueError('expected an http(s) provider URL')
+        body = request_json(models_url, headers=headers or {}, timeout=timeout)
+    except _json.JSONDecodeError:
+        block["error"] = f"non-JSON response from {models_url}"
+        return block
     except (socket.timeout, ConnectionRefusedError, ConnectionResetError) as e:
         block["error"] = f"{type(e).__name__}: {e}"
         return block
-    except urllib.error.HTTPError as e:
-        block["error"] = f"HTTP {e.code} from {base_clean}/v1/models"
+    except HTTPStatusError as e:
+        block["error"] = f"HTTP {e.status_code} from {models_url}"
         return block
-    except urllib.error.URLError as e:
-        block["error"] = f"URLError: {e.reason}"
-        return block
-    except OSError as e:
+    except (OSError, ValueError) as e:
         block["error"] = f"OSError: {e}"
-        return block
-    try:
-        body = _json.loads(raw) if raw else {}
-    except _json.JSONDecodeError:
-        block["error"] = f"non-JSON response from {base_clean}/v1/models"
         return block
     items = body.get("data") if isinstance(body, dict) else None
     if items is None and isinstance(body, list):
@@ -149,41 +163,32 @@ def _probe_llm_models(base_url, expected, timeout=1.5):
             return []
         ids = []
         for k in ("id", "name", "model"):
-            v = item.get(k)
-            if isinstance(v, str) and v.strip():
-                ids.append(v.strip())
+            if k in item:
+                ids.append(item[k])
         return ids
 
-    raw_ids = []
-    seen = set()
-    for it in items:
-        for mid in _candidate_ids(it):
-            if mid not in seen:
-                seen.add(mid)
-                raw_ids.append(mid)
-    block["loaded_models"] = raw_ids
+    raw_ids = [mid for item in items for mid in _candidate_ids(item)]
 
     expected_lc = expected_clean.lower()
     if expected_lc:
-        for mid in raw_ids:
+        for raw in raw_ids:
+            mid = normalize_model_id(raw)
+            if mid is None:
+                continue
             ml = mid.lower()
-            if (ml == expected_lc
-                or ml.endswith("/" + expected_lc)
-                or ml.endswith(expected_lc)
-                or expected_lc.endswith("/" + ml)
-                or expected_lc.endswith(ml)
-                or expected_lc in ml):
+            gguf = ml.endswith('.gguf') and expected_lc.endswith('.gguf')
+            explicit_paths = gguf and '/' in mid and '/' in expected_clean
+            same_file = gguf and not explicit_paths and ml.rsplit('/', 1)[-1] == expected_lc.rsplit('/', 1)[-1]
+            untagged_alias = ':' not in expected_lc and ml.split(':', 1)[0] == expected_lc
+            exact = mid == expected_clean if explicit_paths else ml == expected_lc
+            if exact or same_file or (untagged_alias and not explicit_paths):
                 block["loaded_model"] = mid
                 break
+    listed = limit_model_ids(raw_ids, pinned=[block['loaded_model']])
+    block['loaded_models'] = listed
+    block['models_info'] = model_list_info(listed)
     block["loaded"] = block["loaded_model"] is not None
     block["ok"] = True
-    return block
-
-
-def _aggregate_provider_load(provider, base_url, expected):
-    """Build a load block for a single LLM-facing role."""
-    block = _probe_llm_models(base_url, expected)
-    block["provider"] = str(provider or "")
     return block
 
 
@@ -191,7 +196,26 @@ def _aggregate_tts(config):
     """Build the tts block: {ok, loaded, device, cuda_available, provider, base_url, error}."""
     provider = config_tts_provider(config)
     base_url = config_tts_base_url(config)
-    ok, body, error = _probe_tts_backend(base_url, timeout=2.0)
+    health_url = str(config.get('tts_health_url') or '').strip()
+    if provider != 'kokoro' and not health_url:
+        return {
+            'ok': False, 'loaded': False, 'device': None, 'cuda_available': False,
+            'provider': provider, 'base_url': base_url, 'health_url': None, 'status': 'unverified',
+            'probe_supported': False,
+            'error': 'Configure tts_health_url or verify speech manually; this provider has no standard health endpoint',
+        }
+    kwargs = {'health_url': health_url} if health_url else {}
+    probe_url = _tts_probe_url(base_url, health_url)
+    ok, body, error = _probe_tts_backend(base_url, timeout=2.0, **kwargs)
+    if ok:
+        try:
+            body = _validated_tts_health(body)
+        except ValueError as exc:
+            ok, error = False, str(exc)
+        else:
+            if body.get('ok') is False or body.get('runtime_available') is False or body.get('status') in {'error', 'failed', 'degraded', 'unavailable'}:
+                ok = False
+                error = body.get('error') or 'TTS backend reports unavailable'
     if not ok:
         return {
             'ok': False,
@@ -200,6 +224,7 @@ def _aggregate_tts(config):
             'cuda_available': False,
             'provider': provider,
             'base_url': base_url,
+            'health_url': probe_url,
             'error': error,
         }
     loaded = bool(body.get('loaded'))
@@ -212,21 +237,129 @@ def _aggregate_tts(config):
         'cuda_available': cuda,
         'provider': provider,
         'base_url': base_url,
+        'health_url': probe_url,
         'error': None,
     }
 
 
+def _validated_tts_health(body: object) -> dict:
+    """Reject malformed readiness flags without taking down Korina liveness."""
+    if not isinstance(body, dict):
+        raise ValueError('Invalid TTS health response: expected an object')
+    result = {}
+    for key in ('ok', 'runtime_available', 'loaded', 'cuda_available'):
+        if key in body:
+            if not isinstance(body[key], bool):
+                raise ValueError(f'Invalid TTS health response: {key} must be boolean')
+            result[key] = body[key]
+    for key, maximum in (('status', 64), ('device', 128), ('error', 1024)):
+        value = body.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, str):
+            raise ValueError(f'Invalid TTS health response: {key} must be text')
+        try:
+            value.encode('utf-8', errors='strict')
+        except UnicodeError as exc:
+            raise ValueError(f'Invalid TTS health response: {key} contains invalid Unicode') from exc
+        result[key] = value.strip()[:maximum]
+    statuses = {'ok', 'healthy', 'ready', 'starting', 'loading', 'initializing', 'error', 'failed', 'degraded', 'unavailable'}
+    if not any(key in result for key in ('ok', 'runtime_available', 'loaded')) and result.get('status') not in statuses:
+        raise ValueError('Invalid TTS health response: no recognized readiness signal')
+    return result
+
+
+def _aggregate_ack(config: dict) -> tuple[int | None, dict]:
+    """Collect bounded local ACK state outside the async request loop.
+
+    A rebuild may hold its queue lock while clearing or publishing its new
+    selection. Waiting for that lock must not block unrelated HTTP requests.
+    """
+    voice = state.ack.current_voice
+    try:
+        manifest = load_ack_manifest()
+        acknowledgements = ack_status(voice, manifest=manifest)
+        return len(ack_files_for(voice, manifest=manifest)), acknowledgements
+    except AckManifestError as error:
+        return None, {'ok': False, 'status': 'unavailable', 'error': str(error),
+            'voice': voice, 'enabled': config.get('ack_enabled') == 'on',
+            'manifest_count': None, 'generated_count': None, 'missing_count': None}
+
+
+def _frontend_available() -> bool:
+    """Check the complete browser file contract without prescribing content."""
+    try:
+        for relative in REQUIRED_FRONTEND_ASSETS:
+            asset = APP_DIR / relative
+            if not asset.is_file():
+                return False
+            with asset.open('rb') as stream:
+                stream.read(1)
+    except OSError:
+        return False
+    return True
+
+
 @router.get('/api/health')
-def health():
+async def health(request: Request):
     config = load_config()
-    has_cuda = cuda_available()
-    return {
+    audio_limits: AudioLimits | None
+    audio_limits_error: str | None = None
+    try:
+        audio_limits = resolve_audio_limits(
+            max_upload_bytes=request.scope.get('korina.audio_max_upload_bytes', MAX_AUDIO_UPLOAD_BYTES),
+        )
+    except ValueError as exc:
+        audio_limits = None
+        audio_limits_error = str(exc)
+    roles = {
+        'response_llm_load': (
+            str(config.get('llm_provider') or 'llama.cpp'), config_llm_base_url(config),
+            config_llm_models_url(config), str(config.get('lm_model') or LMSTUDIO_MODEL),
+            auth_headers_from_env(config_llm_api_env(config)),
+        ),
+        'multimodal_stt_load': (
+            config_stt_llm_provider(config), config_stt_llm_base_url(config),
+            config_stt_llm_models_url(config), config_stt_llm_model(config),
+            auth_headers_from_env(config_stt_llm_api_env(config)),
+        ),
+        'agent_load': (
+            agent_provider(config), agent_base_url(config), agent_models_url(config),
+            str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
+            agent_auth_headers(config),
+        ),
+    }
+    # Independent probes share a timeout window. Roles using the same model
+    # and endpoint reuse the request instead of querying it three times.
+    probes = {}
+    for _, base, models_url, model, headers in roles.values():
+        key = (models_url, model, tuple(sorted(headers.items())))
+        if key not in probes:
+            probes[key] = asyncio.create_task(asyncio.to_thread(
+                _probe_llm_models, base, model, headers=headers, models_url=models_url,
+            ))
+    tts_task = asyncio.create_task(asyncio.to_thread(_aggregate_tts, config))
+    has_cuda = await asyncio.to_thread(cuda_available)
+    loads = {}
+    for name, (provider, base, models_url, model, headers) in roles.items():
+        loads[name] = {
+            **await probes[(models_url, model, tuple(sorted(headers.items())))],
+            'provider': provider, 'base_url': base, 'models_url': models_url,
+        }
+    whisper_available = importlib.util.find_spec('faster_whisper') is not None
+    ack_count, acknowledgements = await asyncio.to_thread(_aggregate_ack, config)
+    result = {
         'ok': True,
         'service': 'korina-voice-lab',
+        'audio_limits': audio_limits,
+        'audio_limits_error': audio_limits_error,
         'whisper_backend': 'faster-whisper',
         'whisper_model': WHISPER_MODEL_ID,
         'whisper_model_choices': WHISPER_MODEL_CHOICES,
         'whisper_loaded': bool(state.asr.models),
+        'whisper_available': whisper_available,
+        'whistle': await asyncio.to_thread(whistle_service.status),
+        'stt_backend': str(config.get('stt_backend') or 'whisper'),
         'whisper_loaded_devices': sorted(state.asr.models.keys()),
         'whisper_loaded_at_by_device': state.asr.loaded_at_by_device,
         'whisper_device': state.asr.device or normalize_device(None, default_env=WHISPER_DEVICE),
@@ -242,32 +375,42 @@ def health():
         'response_llm_base_url': config_llm_base_url(config),
         'response_llm_chat_url': config_llm_chat_url(config),
         'response_llm_model': str(config.get('lm_model') or LMSTUDIO_MODEL),
+        'response_llm_reasoning_effort': config_llm_reasoning_effort(config)
+        if str(config.get('llm_provider') or '').strip().lower() == 'meta' else '',
         'agent_provider': agent_provider(config),
         'agent_base_url': agent_base_url(config),
         'agent_chat_url': agent_chat_url(config),
         'agent_model': str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
+        'agent_reasoning_effort': config_agent_reasoning_effort(config) if agent_provider(config) == 'meta' else '',
         'multimodal_stt_provider': config_stt_llm_provider(config),
         'multimodal_stt_base_url': config_stt_llm_base_url(config),
         'multimodal_stt_chat_url': config_stt_llm_chat_url(config),
         'multimodal_stt_model': config_stt_llm_model(config),
         'tts_provider': config_tts_provider(config),
         'tts_base_url': config_tts_base_url(config),
-        'tts': _aggregate_tts(config),
-        'response_llm_load': _aggregate_provider_load(
-            str(config.get('llm_provider') or 'llama.cpp'),
-            config_llm_base_url(config),
-            str(config.get('lm_model') or LMSTUDIO_MODEL),
-        ),
-        'multimodal_stt_load': _aggregate_provider_load(
-            config_stt_llm_provider(config),
-            config_stt_llm_base_url(config),
-            config_stt_llm_model(config),
-        ),
-        'agent_load': _aggregate_provider_load(
-            agent_provider(config),
-            agent_base_url(config),
-            str(config.get('agent_model') or config.get('lm_model') or LMSTUDIO_MODEL),
-        ),
-        'ack_count': len(ack_files_for(state.ack.current_voice)),
-        'ack_status': ack_status(state.ack.current_voice),
+        'tts': await tts_task,
+        **loads,
+        'ack_count': ack_count,
+        'ack_status': acknowledgements,
     }
+    checks = {
+        'audio_limits': audio_limits is not None,
+        'frontend': await asyncio.to_thread(_frontend_available),
+        'response_llm': bool(loads['response_llm_load']['ok'] and loads['response_llm_load']['loaded']),
+        'stt': bool(shutil.which('ffmpeg')) and (
+            bool(loads['multimodal_stt_load']['ok'] and loads['multimodal_stt_load']['loaded'])
+            if result['stt_backend'] == 'llm' else
+            result['whistle']['available'] if result['stt_backend'] == 'whistle' else whisper_available
+        ),
+        'tts': bool(result['tts']['ok']),  # lazy Kokoro loads on first speech
+        'agent': config.get('agent_enabled') != 'on' or bool(loads['agent_load']['ok'] and loads['agent_load']['loaded']),
+    }
+    result['readiness'] = {'ready': all(checks.values()), 'checks': checks}
+    return result
+
+
+@router.get('/api/ready')
+async def ready(request: Request):
+    """Voice-stack readiness for rehearsal/monitoring; liveness stays HTTP 200."""
+    result = (await health(request))['readiness']
+    return JSONResponse(result, status_code=200 if result['ready'] else 503)

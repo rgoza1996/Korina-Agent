@@ -3,17 +3,8 @@
 Uses the FastAPI TestClient via the ``client`` fixture from
 ``tests/conftest.py``.
 
-Each test runs against a cleaned registry: the autouse fixture calls
-``reset_for_testing()`` and ``reset_default_registered()`` so destructive
-tests (register/unregister) don't leak global state into the rest of
-the suite.
-
-NOTE: ordering between this file's tests and broader integration tests
-matters -- if any other integration test imports ``korina.converse``
-after a destructive test in this file ran, the default channel will
-not be re-registered unless they too use the ``client`` fixture
-(which restarts the app per request via FastAPI's TestClient). The
-autouse fixture is a defensive layer.
+Each test resets the registry and ensures the default channel. Application
+startup can re-establish that default after destructive registry tests.
 """
 from __future__ import annotations
 
@@ -25,17 +16,14 @@ def _reset_converse_state():
     """Reset the global ConverseChannel registry between tests."""
     from korina.converse import (
         ensure_default_registered,
-        reset_default_registered,
         reset_for_testing,
     )
 
     reset_for_testing()
-    reset_default_registered()
     # Re-ensure the default so reads see the post-startup state.
     ensure_default_registered()
     yield
     reset_for_testing()
-    reset_default_registered()
 
 
 def test_get_active_channel_returns_korina_by_default(client):

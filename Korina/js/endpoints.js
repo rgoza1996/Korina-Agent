@@ -15,6 +15,7 @@ import { $ } from './dom.js';
 
 const PAGE_SERVER_ENDPOINTS = [
   { group: 'Page server', key: 'GET  /api/health', path: '/api/health' },
+  { group: 'Page server', key: 'GET  /api/ready', path: '/api/ready' },
   { group: 'Page server', key: 'GET  /api/config', path: '/api/config' },
   { group: 'Page server', key: 'GET  /api/capabilities', path: '/api/capabilities' },
   { group: 'Page server', key: 'GET  /api/models', path: '/api/models' },
@@ -23,6 +24,7 @@ const PAGE_SERVER_ENDPOINTS = [
   { group: 'Page server', key: 'GET  /api/acks/status', path: '/api/acks/status' },
   { group: 'Page server', key: 'GET  /api/audio-probe', path: '/api/audio-probe' },
   { group: 'Page server', key: 'GET  /api/agent/status', path: '/api/agent/status' },
+  { group: 'Page server', key: 'GET  /api/agent/capabilities', path: '/api/agent/capabilities' },
   { group: 'Page server', key: 'GET  /api/agent/events', path: '/api/agent/events' },
   { group: 'Page server', key: 'GET  /api/agent/models', path: '/api/agent/models' },
   { group: 'Page server', key: 'POST /api/chat', path: '/api/chat', method: 'POST' },
@@ -52,7 +54,7 @@ const EXTERNAL_GROUPS = [
     keys: [
       { key: 'base_url', path: ['response_llm_base_url'] },
       { key: 'chat_url', path: ['response_llm_chat_url'] },
-      { key: 'models',   path: ['response_llm_base_url'], append: '/models' },
+      { key: 'models',   path: ['response_llm_load', 'models_url'] },
     ],
   },
   {
@@ -61,7 +63,7 @@ const EXTERNAL_GROUPS = [
     keys: [
       { key: 'base_url', path: ['multimodal_stt_base_url'] },
       { key: 'chat_url', path: ['multimodal_stt_chat_url'] },
-      { key: 'models',   path: ['multimodal_stt_base_url'], append: '/models' },
+      { key: 'models',   path: ['multimodal_stt_load', 'models_url'] },
     ],
   },
   {
@@ -70,7 +72,7 @@ const EXTERNAL_GROUPS = [
     keys: [
       { key: 'base_url', path: ['agent_base_url'] },
       { key: 'chat_url', path: ['agent_chat_url'] },
-      { key: 'models',   path: ['agent_base_url'], append: '/models' },
+      { key: 'models',   path: ['agent_load', 'models_url'] },
     ],
   },
   {
@@ -78,7 +80,7 @@ const EXTERNAL_GROUPS = [
     loadKey: 'tts',
     keys: [
       { key: 'base_url', path: ['tts_base_url'] },
-      { key: 'health',   path: ['tts', 'base_url'], append: '/health' },
+      { key: 'health',   path: ['tts', 'health_url'] },
     ],
   },
 ];
@@ -133,6 +135,7 @@ function _loadState(h, grp) {
   if (!grp.loadKey) return { disabled: false };
   const block = h && h[grp.loadKey];
   if (!block || typeof block !== 'object') return { disabled: false };
+  if (block.status === 'unverified') return { disabled: false };
   const hasError = !!block.error;
   const ok = block.ok !== false;
   if (hasError && !ok) return { disabled: true, title: block.error };
@@ -147,7 +150,9 @@ export async function populateEndpoints() {
   let h = {};
   try {
     const r = await fetch('/api/health');
-    if (r.ok) h = await r.json();
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    h = await r.json();
+    if (!h || typeof h !== 'object' || Array.isArray(h) || h.ok !== true) throw new Error('Invalid health response');
   } catch (e) {
     list.innerHTML = `<p class="small" style="color:var(--red)">Failed to fetch /api/health: ${_escape(e.message)}</p>`;
     return;
@@ -167,8 +172,7 @@ export async function populateEndpoints() {
       for (const item of grp.keys) {
         const base = _lookup(h, item.path);
         if (!base) continue;
-        const url = item.append ? String(base).replace(/\/+$/, '') + item.append : String(base);
-        rows.push(_rowHtml(item.key, _externalize(url), groupDisabled, groupTitle));
+        rows.push(_rowHtml(item.key, _externalize(base), groupDisabled, groupTitle));
         count++;
       }
       if (rows.length) groups.push(_groupHtml(grp.group, rows.join(''), count));

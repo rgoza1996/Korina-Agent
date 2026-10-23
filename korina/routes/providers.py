@@ -1,45 +1,50 @@
-"""POST /api/llm/provider/activate — switch active LLM provider.
-
-Phase 1.9: inlined from the monolith's _route_activate_provider helper.
-"""
+"""Explicit response-provider activation and audio capability probes."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from collections.abc import Callable
+from time import monotonic
+from typing import Annotated
 
-from korina.config import load_config, save_config, synchronize_llm_dependents
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+
+from korina.config import load_config, select_response_provider
 from korina.schemas import ProviderActivateRequest
-from korina.services.provider_manager import activate_llm_provider
+from korina.runtime.json_http import RequestCancelledError
+from korina.runtime.request_owner import RequestOwner, check_current
+from korina.services.provider_manager import (
+    InvalidLocalModelPath,
+    ProviderRoleConflict,
+    _llama_selection,
+    activate_llm_provider,
+    provider_activation_lock,
+)
 from korina.services.active_probe import probe_audio_support
-from korina.util.presets import provider_preset_base_url
+from korina.services.model_catalog import AmbiguousProjectorError
+from korina.util.presets import capabilities_for_section
 
 router = APIRouter()
+_activation_lock = provider_activation_lock
+MAX_PROBE_BATCH_SECONDS = 60.0
 
 
 @router.post('/api/llm/provider/activate')
-async def activate_provider(req: ProviderActivateRequest):
+def activate_provider(req: ProviderActivateRequest):
+    if not _activation_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail='Another provider activation is in progress')
+    try:
+        return _activate_provider(req)
+    finally:
+        _activation_lock.release()
+
+
+def _activate_provider(req: ProviderActivateRequest):
     config = load_config()
-    provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip()
-    # Phase 4.5: clear probe cache entries for this provider. Re-activating
-    # may have changed base_url or model, so old probe failures no longer apply.
-    # Reload after clearing so the later save_config(current) cannot resurrect
-    # stale audio_unsupported entries from the pre-clear config snapshot.
-    from korina.config import clear_audio_unsupported_for_provider
-    cleared = clear_audio_unsupported_for_provider(provider)
-    if cleared:
-        print(f"[activate] cleared {cleared} audio probe cache entries for {provider}")
-        config = load_config()  # reload after cache clear
-    current = dict(config)
-    current['llm_provider'] = provider
-    preset = provider_preset_base_url(provider)
-    if provider == 'openai-compatible':
-        current['llm_base_url'] = str(config.get('llm_base_url') or current.get('llm_base_url') or '').strip()
-    elif preset:
-        current['llm_base_url'] = preset
-    if req.model:
-        current['lm_model'] = str(req.model).strip()
-    # Phase 4.4: pre-flight provider/model compatibility check.
+    provider = str(req.provider or config.get('llm_provider') or 'openai-compatible').strip().lower()
+    if provider not in capabilities_for_section('response_llm'):
+        raise HTTPException(status_code=400, detail='Unsupported response provider')
     if req.model:
         from korina.services.provider_manager import provider_supports_model
         supported, reason = provider_supports_model(provider, str(req.model).strip())
@@ -53,13 +58,27 @@ async def activate_provider(req: ProviderActivateRequest):
                     "reason": reason,
                 },
             )
-    current = synchronize_llm_dependents(current, config)
-    saved = save_config(current)
+    if provider == 'llama.cpp':
+        # Resolve saved/default selections too, before selection/cache writes.
+        # Keep projector scans out of the shared per-option display validator.
+        try:
+            _llama_selection(req.model, config)
+        except (InvalidLocalModelPath, AmbiguousProjectorError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    saved = select_response_provider(provider, req.model)
     try:
         result = activate_llm_provider(provider, saved, model=req.model)
         return {'ok': True, 'saved': saved, 'activation': result}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except ProviderRoleConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f'Selection was saved, but activation was blocked (no automatic rollback): {exc}',
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f'Selection was saved, but activation failed (no automatic rollback): {exc}',
+        ) from exc
 
 
 @router.get("/api/audio-probe")
@@ -85,13 +104,25 @@ def clear_audio_probe(provider: str, base_url: str, model: str):
 
 
 class ProbeModelsRequest(BaseModel):
-    provider: str = ''
-    base_url: str = ''
-    models: list[str] = Field(default_factory=list, max_length=64)
+    provider: str = Field('', max_length=64)
+    base_url: str = Field('', max_length=4096)
+    models: list[Annotated[str, Field(max_length=512)]] = Field(default_factory=list, max_length=64)
+    api_key_env: str | None = Field(default=None, max_length=128)
 
 
 @router.post('/api/llm/probe-models')
-def probe_models(req: ProbeModelsRequest):
+async def probe_models(req: ProbeModelsRequest, request: Request):
+    owner = RequestOwner()
+    try:
+        async with owner.watch(request):
+            result = await run_in_threadpool(_probe_models, req, is_current=owner.is_current)
+            check_current(owner.is_current)
+            return result
+    except RequestCancelledError as exc:
+        raise HTTPException(status_code=499, detail='Audio probe request was cancelled') from exc
+
+
+def _probe_models(req: ProbeModelsRequest, *, is_current: Callable[[], bool] | None = None):
     """Phase 5.0: actively probe audio-capability of a list of models.
 
     Drives the existing ``active_probe.probe_audio_support`` for each model,
@@ -112,18 +143,30 @@ def probe_models(req: ProbeModelsRequest):
         raise HTTPException(status_code=400, detail='provider is required')
     if not base_url_clean:
         raise HTTPException(status_code=400, detail='base_url is required')
-    if not req.models:
+    models = list(dict.fromkeys(model.strip() for model in req.models if model.strip()))
+    if not models:
         raise HTTPException(status_code=400, detail='models list is empty')
 
+    check_current(is_current)
     cache_before = config_audio_unsupported()
     triple_prefix = f"{provider_id}::"
 
     results: dict[str, dict] = {}
-    for model in req.models:
-        mid = str(model or '').strip()
-        if not mid:
-            continue
-        probe = probe_audio_support(provider_id, base_url_clean, mid)
+    deadline = monotonic() + MAX_PROBE_BATCH_SECONDS
+    skipped: list[str] = []
+    for index, mid in enumerate(models):
+        check_current(is_current)
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            skipped = models[index:]
+            break
+        timeout = min(15.0, remaining)
+        if req.api_key_env is None:
+            probe = probe_audio_support(provider_id, base_url_clean, mid, timeout=timeout, is_current=is_current)
+        else:
+            probe = probe_audio_support(provider_id, base_url_clean, mid, api_env=req.api_key_env, timeout=timeout,
+                                        is_current=is_current)
+        check_current(is_current)
         triple = triple_key(provider_id, base_url_clean, mid)
         results[mid] = {
             'supported': probe.supported,
@@ -135,6 +178,7 @@ def probe_models(req: ProbeModelsRequest):
 
     # Snapshot the cache AFTER the probes so the UI can tell which
     # models are currently in the persistent audio_unsupported set.
+    check_current(is_current)
     cache_after = config_audio_unsupported()
     for mid in results:
         triple = triple_key(provider_id, base_url_clean, mid)
@@ -146,4 +190,7 @@ def probe_models(req: ProbeModelsRequest):
         'base_url': base_url_clean,
         'triple_prefix': triple_prefix,
         'results': results,
+        'skipped_models': skipped,
+        'timed_out': bool(skipped),
+        'max_seconds': MAX_PROBE_BATCH_SECONDS,
     }

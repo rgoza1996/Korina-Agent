@@ -13,35 +13,40 @@ Notes on schema vs events:
       expose the older ``transcript``/``delivery_mode`` fields.
     * The adapter emits events whose ``type`` field is one of
       ``"state_report"`` / ``"injection"`` / ``"permission_request"``.
-    * Completion signal is ``agent_state.last_report`` becoming
-      non-empty (it's a plain ``str`` on the adapter state).
+    * Completion is a fresh report/error event after the submission cursor.
 """
 from __future__ import annotations
 
 import asyncio
+import threading
+from contextlib import asynccontextmanager
 import time
 from typing import AsyncIterator, List
 
+from korina.agents import AgentAdapter, AgentHttpBridge
+from korina.agents.base import AGENT_REPORT_TIMEOUT_SECONDS, AgentAdmissionRejected
 from korina.schemas import UserTurn
 
 from .protocol import ConverseChannel, ConverseRequest, ConverseResponse
-from .registry import register_converse_channel
+from .registry import _register_converse_channel, get_converse_channel
 
 
-_MAX_POLL_SECONDS = 30.0
-_POLL_INTERVAL = 0.1  # 100ms; caps at ~300 polls/send for 30s ceiling
+_MAX_POLL_SECONDS = AGENT_REPORT_TIMEOUT_SECONDS + 5.0
+_POLL_INTERVAL = 0.1  # 100ms; caps at ~950 polls/send for the 95s ceiling.
+
+
+class _RecoveryRequired(RuntimeError):
+    pass
 
 
 class KorinaConverseChannel(ConverseChannel):
     """Bridge between the ``ConverseChannel`` protocol and ``agent_gateway()``.
 
     Semantics:
-        * ``send()``  — submit a turn, poll ``last_report`` until it is
-          non-empty or the deadline passes. Single submission per call.
+        * ``send()`` — submit once and wait for a fresh completion event.
         * ``stream()``— yields the interim "thinking" event, then calls
           ``send()`` once for the final. No double-submit.
-        * ``cancel()``— placeholder; the wrapped adapter has no
-          per-channel cancellation surface today.
+        * ``cancel()`` — invalidate the wait and reset queued adapter work.
     """
 
     name = "korina"
@@ -49,9 +54,18 @@ class KorinaConverseChannel(ConverseChannel):
     def __init__(self) -> None:
         # Lazy import: gateway instantiates KorinaAgentAdapter on first call,
         # which pulls in agent_service. Keep the import out of this module's
-        # import-time path to avoid cyclic imports during Phase 3+ wiring.
+        # import-time path to keep the dependency acyclic.
         from korina.agents.gateway import agent_gateway
         self._agent_gateway = agent_gateway
+        self._send_lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()
+        self._submit_reset_lock = threading.Lock()
+        self._generation = 0
+        self._active_adapter: AgentAdapter | None = None
+        self._pending_resets = 0
+        self._recovery_adapter: AgentAdapter | None = None
+        self._recovery_generation = 0
+        self._recovery_reason = ''
 
     # ---- helpers (testable; exposed at module level too) ------------
 
@@ -91,85 +105,186 @@ class KorinaConverseChannel(ConverseChannel):
             turn_count=int(meta.get("turn_count", 0) or 0),
         )
 
-    @staticmethod
-    def _poll_state() -> tuple[str, str]:
-        """Snapshot adapter state under its lock.
-
-        Returns ``(last_report, status)``. ``last_report`` is a string.
-        """
-        from korina.agents.state import agent_state
-        with agent_state.lock:
-            return (
-                str(agent_state.last_report or ""),
-                str(agent_state.status or "idle"),
-            )
-
     async def _poll_until_report(
-        self, started_at: float, cursor: int
-    ) -> tuple[str, str, int, int, str | None]:
-        """Poll until ``last_report`` is set or we time out.
+        self, adapter: AgentAdapter, started_at: float, cursor: int, generation: int,
+        builtin_generation: int | None,
+    ) -> tuple[str, str, int, int, str | None, bool]:
+        """Wait for a new report event instead of replaying last_report.
 
-        Returns ``(text, status, scanned_events, new_cursor, last_error)``.
-        ``cursor`` is passed in from the caller; we advance it as events
-        are drained via ``adapter.poll_events``.
+        The cursor is captured before submission. Old reports remain useful
+        diagnostics but can never complete the next turn.
         """
-        adapter = self._adapter()
-        last_error: str | None = None
         scanned = 0
-
         while time.monotonic() - started_at < _MAX_POLL_SECONDS:
+            if self._operation_cancelled(adapter, generation, builtin_generation):
+                return '', 'idle', scanned, cursor, 'cancelled', False
             try:
-                text, status = await asyncio.to_thread(self._poll_state)
-            except Exception as e:  # pragma: no cover
-                last_error = f"state probe failed: {e}"
-                break
-
-            try:
+                previous_cursor = cursor
                 cursor, events = await asyncio.to_thread(adapter.poll_events, cursor)
+                if self._operation_cancelled(adapter, generation, builtin_generation):
+                    return '', 'idle', scanned, cursor, 'cancelled', False
                 scanned += len(events)
-                for ev in events or []:
-                    if not isinstance(ev, dict):
-                        continue
-                    if ev.get("type") == "error":
-                        last_error = str(
-                            ev.get("error") or last_error or "agent error"
-                        )
-            except Exception as e:  # pragma: no cover
-                last_error = f"poll_events failed: {e}"
-
-            if text:
-                return text, status, scanned, cursor, last_error
-
+                if builtin_generation is not None and cursor > previous_cursor and (
+                    not events or int(events[0].get('id', 0)) > previous_cursor + 1
+                ):
+                    return '', 'idle', scanned, cursor, 'Agent event history was truncated', True
+                for event in events:
+                    kind = event.get('type')
+                    if kind in {'state_report', 'permission_request'}:
+                        text = str(event.get('report') or event.get('message') or '')
+                        if text:
+                            return text, 'idle', scanned, cursor, None, False
+                    if kind in {'agent_error', 'error'}:
+                        error = str(event.get('message') or event.get('error') or 'agent error')
+                        return '', 'idle', scanned, cursor, error, False
+                    if event.get('status') == 'duplicate_report_suppressed':
+                        if isinstance(event.get('report'), str):
+                            return event['report'], 'idle', scanned, cursor, None, False
+                        snapshot = await asyncio.to_thread(AgentHttpBridge(adapter).snapshot)
+                        if self._operation_cancelled(adapter, generation, builtin_generation):
+                            return '', 'idle', scanned, cursor, 'cancelled', False
+                        return str(snapshot.get('last_report') or ''), 'idle', scanned, cursor, None, False
+                    if event.get('status') == 'empty_report_suppressed':
+                        return '', 'idle', scanned, cursor, None, False
+            except Exception as exc:
+                if self._operation_cancelled(adapter, generation, builtin_generation):
+                    return '', 'idle', scanned, cursor, 'cancelled', False
+                return '', 'idle', scanned, cursor, f'poll_events failed: {exc}', True
             await asyncio.sleep(_POLL_INTERVAL)
-
-        text, status = await asyncio.to_thread(self._poll_state)
-        return text or "", status, scanned, cursor, last_error or "timeout"
+        return '', 'idle', scanned, cursor, 'timeout', True
 
     # ---- ConverseChannel surface ------------------------------------
 
     def _adapter(self):
         return self._agent_gateway()
 
-    async def send(self, req: ConverseRequest) -> ConverseResponse:
-        adapter = self._adapter()
-        turn = self.turn_from_request(req)
-        try:
-            await asyncio.to_thread(adapter.submit_turn, turn)
-        except Exception as e:
-            return ConverseResponse(text="", finished=True, error=f"submit failed: {e}")
+    def _cancelled(self, generation: int) -> bool:
+        with self._lifecycle_lock:
+            return generation != self._generation
 
-        started_at = time.monotonic()
-        text, status, scanned, cursor, err = await self._poll_until_report(started_at, 0)
-        return ConverseResponse(
-            text=text or "",
-            finished=True,
-            error=err,
-            metadata={
-                "status": status,
-                "events_scanned": scanned,
-                "next_cursor": cursor,
-            },
+    @staticmethod
+    def _builtin_generation(adapter: AgentAdapter) -> int | None:
+        # Only the exact built-in adapter owns this process-wide state.
+        # Custom adapters, including subclasses with another backend, retain
+        # their existing protocol and cancellation semantics.
+        from korina.agents.korina_adapter import KorinaAgentAdapter
+        if type(adapter) is not KorinaAgentAdapter:
+            return None
+        from korina.agents.state import agent_state
+        with agent_state.lock:
+            return agent_state.generation
+
+    def _operation_cancelled(self, adapter: AgentAdapter, generation: int, builtin_generation: int | None) -> bool:
+        return self._cancelled(generation) or (
+            builtin_generation is not None and builtin_generation != self._builtin_generation(adapter)
         )
+
+    def _require_recovery(self, adapter: AgentAdapter, generation: int, reason: str) -> None:
+        with self._lifecycle_lock:
+            if generation != self._generation:
+                return  # an explicit reset already owns recovery
+            self._generation += 1
+            self._recovery_adapter = adapter
+            self._recovery_generation = self._generation
+            self._recovery_reason = reason
+
+    def _submit_if_current(
+        self, adapter: AgentAdapter, turn: UserTurn, generation: int, builtin_generation: int | None,
+    ) -> tuple[bool, int | None]:
+        # Reset must follow an already-started synchronous submission. If its
+        # thread has not started yet, cancellation prevents submission entirely.
+        with self._submit_reset_lock:
+            if self._operation_cancelled(adapter, generation, builtin_generation):
+                return False, None
+            if builtin_generation is None:
+                adapter.submit_turn(turn)
+                return True, None
+            else:
+                from korina.agents.state import bind_builtin_admission
+                with bind_builtin_admission(builtin_generation) as admission:
+                    adapter.submit_turn(turn)
+                return True, admission.cursor
+
+    @asynccontextmanager
+    async def _serialize_sends(self):
+        # Channels can be shared by several event loops; do not bind the lock
+        # to one loop or block that loop while another caller holds it.
+        while not self._send_lock.acquire(blocking=False):
+            await asyncio.sleep(_POLL_INTERVAL)
+        try:
+            # Claim the adapter and cancellation epoch together. A queued send
+            # must not submit while an earlier cancel is resetting that adapter.
+            while True:
+                with self._lifecycle_lock:
+                    if not self._pending_resets:
+                        if self._recovery_adapter is not None:
+                            raise _RecoveryRequired(
+                                f'Channel recovery required after {self._recovery_reason}; '
+                                'call cancel() successfully before sending another turn'
+                            )
+                        adapter = self._adapter()
+                        generation = self._generation
+                        self._active_adapter = adapter
+                        break
+                await asyncio.sleep(_POLL_INTERVAL)
+            try:
+                yield adapter, generation
+            finally:
+                with self._lifecycle_lock:
+                    self._active_adapter = None
+        finally:
+            self._send_lock.release()
+
+    async def send(self, req: ConverseRequest) -> ConverseResponse:
+        # The adapter is a single conversational worker. Serialize awaited
+        # channel sends so each caller receives its own completion event.
+        try:
+            async with self._serialize_sends() as (adapter, generation):
+                return await self._send_on_adapter(req, adapter, generation)
+        except _RecoveryRequired as exc:
+            return ConverseResponse(error=str(exc))
+
+    async def _send_on_adapter(self, req: ConverseRequest, adapter: AgentAdapter, generation: int) -> ConverseResponse:
+        admission_started = False
+        builtin_generation = self._builtin_generation(adapter)
+        try:
+            try:
+                turn = self.turn_from_request(req)
+                cursor, _ = await asyncio.to_thread(adapter.poll_events, 0)
+                if self._operation_cancelled(adapter, generation, builtin_generation):
+                    return ConverseResponse(error='cancelled')
+                admission_started = True
+                submitted, admission_cursor = await asyncio.to_thread(self._submit_if_current, adapter, turn, generation, builtin_generation)
+                if not submitted or self._operation_cancelled(adapter, generation, builtin_generation):
+                    return ConverseResponse(error='cancelled')
+                if admission_cursor is not None:
+                    cursor = admission_cursor
+            except AgentAdmissionRejected as exc:
+                if self._operation_cancelled(adapter, generation, builtin_generation):
+                    return ConverseResponse(error='cancelled')
+                return ConverseResponse(error=f'submit rejected: {exc}')
+            except Exception as exc:
+                if self._operation_cancelled(adapter, generation, builtin_generation):
+                    return ConverseResponse(error='cancelled')
+                if admission_started:
+                    self._require_recovery(adapter, generation, 'an uncertain submission failure')
+                return ConverseResponse(text='', finished=True, error=f'submit failed: {exc}')
+            text, status, scanned, cursor, error, uncertain = await self._poll_until_report(
+                adapter, time.monotonic(), cursor, generation, builtin_generation
+            )
+            if self._operation_cancelled(adapter, generation, builtin_generation):
+                text, error = '', 'cancelled'
+            elif uncertain:
+                self._require_recovery(adapter, generation, error or 'an uncertain completion')
+            return ConverseResponse(
+                text=text, finished=True, error=error,
+                metadata={'status': status, 'events_scanned': scanned, 'next_cursor': cursor},
+            )
+        except asyncio.CancelledError:
+            # Mark uncertainty before releasing the cross-event-loop send lock.
+            if admission_started and not self._operation_cancelled(adapter, generation, builtin_generation):
+                self._require_recovery(adapter, generation, 'caller cancellation of an admitted turn')
+            raise
 
     async def stream(
         self, req: ConverseRequest
@@ -190,8 +305,43 @@ class KorinaConverseChannel(ConverseChannel):
         yield final
 
     async def cancel(self) -> None:
-        """No-op placeholder; the wrapped adapter has no per-channel cancellation."""
-        return None
+        """Invalidate this channel wait and discard queued agent work."""
+        with self._lifecycle_lock:
+            self._generation += 1
+            generation = self._generation
+            if self._active_adapter is not None:
+                adapter = self._active_adapter
+            elif self._recovery_adapter is not None:
+                adapter = self._recovery_adapter
+            else:
+                adapter = self._adapter()
+            self._recovery_adapter = adapter
+            self._recovery_generation = generation
+            self._recovery_reason = 'an incomplete reset'
+            self._pending_resets += 1
+
+        def reset_adapter():
+            try:
+                with self._submit_reset_lock:
+                    adapter.reset()
+            except BaseException:
+                with self._lifecycle_lock:
+                    self._recovery_adapter = adapter
+                    self._recovery_generation = max(self._recovery_generation, generation)
+                    self._recovery_reason = 'a failed reset'
+                raise
+            else:
+                with self._lifecycle_lock:
+                    if self._recovery_adapter is adapter and self._recovery_generation <= generation:
+                        self._recovery_adapter = None
+                        self._recovery_reason = ''
+            finally:
+                with self._lifecycle_lock:
+                    self._pending_resets -= 1
+
+        # Cancelling the caller cannot stop a synchronous reset already running.
+        # Keep new sends blocked until that worker has really finished.
+        await asyncio.shield(asyncio.to_thread(reset_adapter))
 
     async def health(self) -> dict:
         adapter = self._adapter()
@@ -203,30 +353,23 @@ class KorinaConverseChannel(ConverseChannel):
             return {"ok": False, "channel": self.name, "error": str(e)}
 
 
-_DEFAULT_REGISTERED = False
-
-
 def reset_default_registered() -> None:
-    """Reset the module-level _DEFAULT_REGISTERED flag.
+    """Compatibility no-op: reset_for_testing() alone resets registration.
 
-    Tests that call reset_for_testing() must also call this so the
-    next ensure_default_registered() actually re-registers.
+    Registry membership is authoritative; no separate default flag remains.
     """
-    global _DEFAULT_REGISTERED
-    _DEFAULT_REGISTERED = False
 
 
 def ensure_default_registered() -> None:
-    """Register the default ``KorinaConverseChannel`` if nothing is active yet.
+    """Ensure a default exists without replacing a registered channel.
 
-    Idempotent. Phase 5 startup code should call this exactly once at app
-    boot, before the first HTTP request lands.
+    Construct outside the registry lock, then publish only if still missing.
+    Explicit registration and an existing active selection take precedence.
     """
-    global _DEFAULT_REGISTERED
-    if _DEFAULT_REGISTERED:
-        return
-    register_converse_channel(KorinaConverseChannel())
-    _DEFAULT_REGISTERED = True
+    try:
+        get_converse_channel('korina')
+    except KeyError:
+        _register_converse_channel(KorinaConverseChannel(), replace=False)
 
 
 __all__ = ["KorinaConverseChannel", "ensure_default_registered", "reset_default_registered"]

@@ -1,0 +1,88 @@
+{
+  "kind": "github-actions-checkpoint",
+  "observed_on": "2026-10-23",
+  "pre_event_preparation": true,
+  "head_revision": "5ef3c9d2352dd56744fc8d4e414d5cd7c1643894",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "checks": [
+    {
+      "id": 120461671265,
+      "name": "pytest (3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461671265",
+      "annotations_count": 0
+    },
+    {
+      "id": 120461671247,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461671247",
+      "annotations_count": 0
+    },
+    {
+      "id": 120461671215,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461671215",
+      "annotations_count": 0
+    },
+    {
+      "id": 120461671181,
+      "name": "pytest (3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461671181",
+      "annotations_count": 0
+    },
+    {
+      "id": 120461671000,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461671000",
+      "annotations_count": 0
+    },
+    {
+      "id": 120461670972,
+      "name": "pytest (3.10)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461670972",
+      "annotations_count": 0
+    },
+    {
+      "id": 120461670964,
+      "name": "pytest (3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461670964",
+      "annotations_count": 0
+    },
+    {
+      "id": 120461670912,
+      "name": "minimum-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461670912",
+      "annotations_count": 0
+    },
+    {
+      "id": 120461670648,
+      "name": "speech-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39967662650/job/120461670648",
+      "annotations_count": 0
+    }
+  ],
+  "all_nine_passed": true,
+  "scope": [
+    "Observed through the Codex Code Review backend for the exact stated revision.",
+    "All nine hosted jobs pass after the action runtime upgrades; each reports zero annotations.",
+    "Separate local incremental verification preserves c430012 non-browser and 5ef3c9d browser source identities.",
+    "Provider replies in automated model tests are fixtures; no physical headset, authenticated inference, final event acceptance or merge is established."
+  ]
+}

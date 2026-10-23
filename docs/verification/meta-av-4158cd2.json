@@ -1,0 +1,486 @@
+{
+  "kind": "pre-event-native-tab-audio-video-voice-rehearsal",
+  "observed_on": "2026-10-23",
+  "source_commit": "4158cd2e811ea6d8869e5687204f264ea8ac2caf",
+  "pre_event_preparation": true,
+  "accepted_as_generated_microphone_voice_rehearsal": true,
+  "complete": true,
+  "source_verification": {
+    "tracked_git_blobs_matched": 359,
+    "installed_frontend_assets_matched": 30,
+    "instrumentation": "Observers and native browser capture; tracked product source was unchanged."
+  },
+  "input": {
+    "seed": "For this demonstration, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence.",
+    "question": "What is my project called and when is our practice?",
+    "microphone": "Generated WAV decoded into a native AudioContext/MediaStreamDestination returned to audio-only getUserMedia; never connected to speakers. No physical microphone.",
+    "agent": "off",
+    "acknowledgements": "off",
+    "context": "Seed user turn and its assistant response appeared once in supplied history; the current question appeared once without restating either fact."
+  },
+  "services": {
+    "transcription": {
+      "backend": "faster-whisper",
+      "model": "base.en",
+      "device": "cpu",
+      "compute_type": "int8",
+      "language": "en",
+      "seconds": 14.040146350860596,
+      "sample_rate": 16000,
+      "samples": 104640,
+      "duration": 6.54
+    },
+    "response": {
+      "provider": "Direct Meta Model API",
+      "model": "muse-spark-1.3-contributor",
+      "reasoning_effort": "minimal",
+      "max_tokens": 2048,
+      "temperature": 0.7
+    },
+    "speech": {
+      "engine": "Kokoro",
+      "voice": "af_heart",
+      "device": "cpu"
+    }
+  },
+  "actual_outputs": {
+    "seed_reply": "Got it, Cedar rehearsal is Friday at ten in the morning.",
+    "final_transcript": "What is my project called and when is our practice?",
+    "voice_reply": "Your project is called Cedar.\nYour rehearsal is Friday at ten in the morning."
+  },
+  "usage": {
+    "seed": {
+      "prompt_tokens": 211,
+      "completion_tokens": 88,
+      "reasoning_tokens": 65,
+      "cached_tokens": 0
+    },
+    "voice": {
+      "prompt_tokens": 246,
+      "completion_tokens": 88,
+      "reasoning_tokens": 62,
+      "cached_tokens": 0
+    },
+    "visible_panel_matched_voice_request": true,
+    "reasoning_already_in_completion_tokens": true,
+    "cached_already_in_prompt_tokens": true
+  },
+  "observed_timing": {
+    "origin": "Browser orchestration; includes recording/observation/CPU encoding overhead.",
+    "live_clicked_seconds": 20.465,
+    "voice_native_ended_seconds": 68.175,
+    "live_to_observed_native_ended_seconds": 47.71,
+    "scope": "Capture, transcription, model response, CPU synthesis and instrumentation; not a controlled latency benchmark or comparison."
+  },
+  "verification": {
+    "browser_checks": {
+      "selected_settings": true,
+      "actual_av_started_before_paid_seed": true,
+      "not_interrupted_before_seed": true,
+      "seed_http": true,
+      "not_interrupted_before_live": true,
+      "voice_http": true,
+      "exactly_two_chats": true,
+      "one_real_full_transcription": true,
+      "context_path": true,
+      "remembered_fact": true,
+      "two_actual_speech_responses": true,
+      "no_agent_submission": true,
+      "request_settings": true,
+      "usage_panel_exact": true,
+      "native_pcm_complete": true,
+      "capture_stopped": true,
+      "no_page_errors": true,
+      "not_interrupted": true,
+      "actual_av_complete": true
+    },
+    "readiness_checks_before": 6,
+    "readiness_checks_after": 6,
+    "all_readiness_checks_passed": true,
+    "page_errors": 0,
+    "actual_meta_generation_calls": 2,
+    "actual_full_transcription_requests": 1,
+    "native_seed_and_both_voice_chunks_ended": true,
+    "voice_pcm_frames": 128400,
+    "voice_pcm_seconds": 5.35,
+    "capture_released_after_stop": true,
+    "partial_request_before_final": "One partial request was observed failed/cancelled before the successful full SSE transcription.",
+    "independent_actual_encoded_audio_inspection": "Nonzero actual Opus speech matched short native PCM snippets and an offline cached base.en inspection recognized the seed and both complete answer sentences. This is model-based/digital verification, not a physical listening test.",
+    "native_player_both_formats_all_three_spoken_chunks_and_captions_passed": true
+  },
+  "capture": {
+    "mechanism": "One native getDisplayMedia stream containing browser video and actual Tab audio, recorded together by MediaRecorder before the seed through Stop and the usage panel.",
+    "mime_type": "video/webm;codecs=vp8,opus",
+    "video": "VP8 1440x1200",
+    "audio": "Opus mono 48000Hz",
+    "audio_track_label": "Tab audio",
+    "display_surface": "browser",
+    "native_video_frames": 116,
+    "native_last_video_pts_seconds": 71.005,
+    "native_last_audio_frame_end_seconds": 71.791,
+    "native_audio_pts_gaps": {
+      "count": 169,
+      "total_seconds": 4.5,
+      "maximum_seconds": 0.21
+    },
+    "timing_note": "Native video timestamps are retained. The selected player derivatives render the same captured audio on its own native timestamps, filling timestamp gaps with silence. No earlier speech buffers or guessed AV offset are used.",
+    "tracks_ended_after_stop": true,
+    "generated_question_not_in_tab_speakers": true,
+    "no_global_fake_media_flags": true,
+    "mp4_derivative": "H264/AAC and VP8/Opus conversions from the same raw AV; native audio gaps rendered as encoded silence for consistent browser playback.",
+    "normalized_playback": {
+      "conversion": {
+        "input": "actual-av.webm",
+        "audio_filter": "aresample=async=1:first_pts=0:min_hard_comp=0.001",
+        "method": "Render the same captured AV audio timestamps as continuous encoded samples, filling original timestamp gaps with silence; preserve original video presentation timestamps. No earlier speech buffers or synthetic speech/alignment used.",
+        "initial_silence_seconds_from_first_audio_pts": 0.031,
+        "original_native_audio_gap_count": 169,
+        "original_native_audio_gap_total_seconds": 4.5,
+        "original_maximum_audio_gap_seconds": 0.21,
+        "inserted_silence_samples": 217488,
+        "inserted_silence_seconds": 4.531,
+        "pre_lossy_encode_decoded_sample_payloads_unchanged": true,
+        "note": "Before lossy encoding, output exactly equals decoded captured samples placed on their own native timestamps with zeros in the recorded gaps. This is not a reconstruction from earlier native speech buffers or a guessed AV offset.",
+        "commands": [
+          [
+            "ffmpeg",
+            "-hide_banner",
+            "-n",
+            "-i",
+            "actual-av.webm",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0",
+            "-c:v",
+            "libx264",
+            "-threads",
+            "2",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "22",
+            "-pix_fmt",
+            "yuv420p",
+            "-fps_mode",
+            "passthrough",
+            "-af",
+            "aresample=async=1:first_pts=0:min_hard_comp=0.001",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "128k",
+            "-movflags",
+            "+faststart",
+            "demo-timestamped.mp4"
+          ],
+          [
+            "ffmpeg",
+            "-hide_banner",
+            "-n",
+            "-i",
+            "actual-av.webm",
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0",
+            "-c:v",
+            "copy",
+            "-af",
+            "aresample=async=1:first_pts=0:min_hard_comp=0.001",
+            "-c:a",
+            "libopus",
+            "-b:a",
+            "96k",
+            "demo-timestamped.webm"
+          ]
+        ],
+        "vp8_packet_payloads": {
+          "source_count": 116,
+          "normalized_count": 116,
+          "all_hashes_equal": true,
+          "ordered_payload_hash_list_sha256": "28873f94ab8d89c0d472309f3af09373ef25f9c9da872068aa9bce760aad6350",
+          "digest_method": "SHA256 of compact JSON array of per-packet FFprobe SHA256 labels in stream order."
+        }
+      },
+      "derivatives": [
+        {
+          "file": "demo-timestamped.mp4",
+          "bytes": 889272,
+          "sha256": "e37797e88bf32f10846d90d026cd9a7ed083cd2ee195fe442a240a310493390f",
+          "duration_seconds": 71.791,
+          "streams": [
+            {
+              "kind": "video",
+              "codec": "h264",
+              "start_seconds": 0.0
+            },
+            {
+              "kind": "audio",
+              "codec": "aac",
+              "start_seconds": 0.0
+            }
+          ],
+          "all_video_pts_preserved": true,
+          "video_frame_count": 116,
+          "remaining_audio_frame_gaps_over_1ms": 0,
+          "decoded_samples": 3446784,
+          "reference_audio_correlation": 0.9996628761291504,
+          "decoded_rms": 0.03017902560532093
+        },
+        {
+          "file": "demo-timestamped.webm",
+          "bytes": 950516,
+          "sha256": "52a837f8bedca02e9b740d00a42066bae93b7cd920fc86a7ba75e2f9996cdd1f",
+          "duration_seconds": 71.799,
+          "streams": [
+            {
+              "kind": "video",
+              "codec": "vp8",
+              "start_seconds": 0.0
+            },
+            {
+              "kind": "audio",
+              "codec": "opus",
+              "start_seconds": -0.007
+            }
+          ],
+          "all_video_pts_preserved": true,
+          "video_frame_count": 116,
+          "remaining_audio_frame_gaps_over_1ms": 0,
+          "decoded_samples": 3445968,
+          "reference_audio_correlation": 0.9988448619842529,
+          "decoded_rms": 0.03047204576432705,
+          "all_vp8_packet_payload_hashes_preserved": true
+        }
+      ],
+      "native_browser_validation": {
+        "browser_version": "156.0.8078.4",
+        "viewports": [
+          {
+            "width": 320,
+            "document_width": 320,
+            "video_left": 16,
+            "video_right": 304,
+            "video_width": 288,
+            "muted": false,
+            "default_muted": false,
+            "source_count": 2,
+            "caption_default": true
+          },
+          {
+            "width": 360,
+            "document_width": 360,
+            "video_left": 16,
+            "video_right": 344,
+            "video_width": 328,
+            "muted": false,
+            "default_muted": false,
+            "source_count": 2,
+            "caption_default": true
+          },
+          {
+            "width": 1440,
+            "document_width": 1440,
+            "video_left": 254,
+            "video_right": 1186,
+            "video_width": 932,
+            "muted": false,
+            "default_muted": false,
+            "source_count": 2,
+            "caption_default": true
+          }
+        ],
+        "no_page_errors": true,
+        "no_unexpected_request_failures": true,
+        "no_external_requests": true,
+        "explainer_video_caption_poster_links_checked": true,
+        "browser_closed": true,
+        "server_closed": true,
+        "playback": [
+          {
+            "file": "demo-timestamped.mp4",
+            "duration_seconds": 71.791,
+            "caption_default": true,
+            "caption_mode": "showing",
+            "muted": false,
+            "volume": 1,
+            "observations": [
+              {
+                "cue_index": 0,
+                "expected_start_seconds": 13.4,
+                "maximum_rms": 0.3305429670535564,
+                "active_caption_observed": true,
+                "muted": false,
+                "volume": 1,
+                "context_state": "running",
+                "observed_media_time": 15.110667
+              },
+              {
+                "cue_index": 1,
+                "expected_start_seconds": 52.8,
+                "maximum_rms": 0.16783640797919433,
+                "active_caption_observed": true,
+                "muted": false,
+                "volume": 1,
+                "context_state": "running",
+                "observed_media_time": 54.459999
+              },
+              {
+                "cue_index": 2,
+                "expected_start_seconds": 62.05,
+                "maximum_rms": 0.12719052422375984,
+                "active_caption_observed": true,
+                "muted": false,
+                "volume": 1,
+                "context_state": "running",
+                "observed_media_time": 63.760666
+              }
+            ]
+          },
+          {
+            "file": "demo-timestamped.webm",
+            "duration_seconds": 71.799,
+            "caption_default": true,
+            "caption_mode": "showing",
+            "muted": false,
+            "volume": 1,
+            "observations": [
+              {
+                "cue_index": 0,
+                "expected_start_seconds": 13.4,
+                "maximum_rms": 0.357031239164965,
+                "active_caption_observed": true,
+                "muted": false,
+                "volume": 1,
+                "context_state": "running",
+                "observed_media_time": 15.126667
+              },
+              {
+                "cue_index": 1,
+                "expected_start_seconds": 52.8,
+                "maximum_rms": 0.17049874704375617,
+                "active_caption_observed": true,
+                "muted": false,
+                "volume": 1,
+                "context_state": "running",
+                "observed_media_time": 54.499999
+              },
+              {
+                "cue_index": 2,
+                "expected_start_seconds": 62.05,
+                "maximum_rms": 0.12855851960067016,
+                "active_caption_observed": true,
+                "muted": false,
+                "volume": 1,
+                "context_state": "running",
+                "observed_media_time": 63.781622
+              }
+            ]
+          }
+        ],
+        "test_mapping": "Exact normalized file bytes were served under both player media request paths for local native validation; no published HTML was modified during the test."
+      },
+      "prior_passthrough_derivative": {
+        "sha256": "94a6c9650ac4db375e95b2c12e0bd985a361fa4c2eb1f026c02f873a23c61126",
+        "status": "Preserved failed playback-timing attempt. Metadata/decoded content matched, but natural native playback emitted answers near49/58s rather than53/62s; not an approved player asset.",
+        "selected": false,
+        "failed_seek_checks": [
+          {
+            "caption_start_seconds": 52.8,
+            "maximum_rms": 0.0
+          },
+          {
+            "caption_start_seconds": 62.05,
+            "maximum_rms": 0.0
+          }
+        ],
+        "natural_playback_audible_regions": [
+          {
+            "first_media_time": 13.029333,
+            "last_media_time": 15.938667,
+            "maximum_rms": 0.34606568300770957
+          },
+          {
+            "first_media_time": 48.997931,
+            "last_media_time": 50.44,
+            "maximum_rms": 0.1581226572130571
+          },
+          {
+            "first_media_time": 57.810667,
+            "last_media_time": 60,
+            "maximum_rms": 0.1245222863481178
+          }
+        ],
+        "note": "Retained failed seek and natural-playback observations are separate from the approved normalized derivatives; metadata-only preservation did not prove native playback timing."
+      }
+    }
+  },
+  "cost_accounting": {
+    "task_generation_calls_before": 41,
+    "task_generation_calls_after": 43,
+    "prior_estimated_usd": "0.005700232",
+    "seed_estimated_usd": "0.000038700",
+    "voice_estimated_usd": "0.000042200",
+    "new_estimated_usd": "0.000080900",
+    "task_estimated_usd_after": "0.005781132",
+    "authorized_cap_usd": "3.00",
+    "all_prior_records_unchanged": true,
+    "failed_recording_call_39_retained": true,
+    "paid_openrouter_generations": 0,
+    "scope": "Returned-token estimate, including all priming/stopped attempts; not an invoice or an account-enforced cap. Reasoning is included in output.",
+    "pricing_source": "https://dev.meta.ai/docs/pricing-rate-limits",
+    "pricing_verified_on": "2026-10-23"
+  },
+  "cleanup": {
+    "browser_closed": true,
+    "generated_input_context_closed": true,
+    "playback_context_closed": true,
+    "backend_graceful_shutdown_logged": true,
+    "tts_graceful_shutdown_logged": true,
+    "owned_ports_closed": true,
+    "stop_button_observed": true
+  },
+  "media": {
+    "page": "https://rgoza1996.github.io/Korina-Agent/Demo.html",
+    "files": {
+      "actual-av.webm": {
+        "bytes": 946118,
+        "sha256": "e18ed07a590c300a6d7ac3ec4d2eb62211a797ee096420022f5dbbb9a4d99159",
+        "description": "Unchanged original browser capture; raw download. Native sparse-audio playback timing varies; the player uses converted files.",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2-av/actual-av.webm"
+      },
+      "demo.mp4": {
+        "bytes": 889272,
+        "sha256": "e37797e88bf32f10846d90d026cd9a7ed083cd2ee195fe442a240a310493390f",
+        "description": "H264/AAC conversion of the same captured AV, rendering native audio timestamp gaps as silence.",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2-av/demo.mp4"
+      },
+      "demo.webm": {
+        "bytes": 950516,
+        "sha256": "52a837f8bedca02e9b740d00a42066bae93b7cd920fc86a7ba75e2f9996cdd1f",
+        "description": "Copied original VP8 video with Opus audio converted from the same captured AV, rendering native audio timestamp gaps as silence.",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2-av/demo.webm"
+      },
+      "poster.jpg": {
+        "bytes": 146751,
+        "sha256": "59e4edce7682ebd6e49c2b9cf05e804e46727631549c7d2e29526be3a3329fd9",
+        "description": "Actual captured UI frame at 68.761 seconds.",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2-av/poster.jpg"
+      },
+      "captions.en.vtt": {
+        "bytes": 241,
+        "sha256": "96fb84ceafca113f9e3834dfa360909c8218fe4a6bac078ea1722b03946f7a22",
+        "description": "Three English captions for actual spoken chunks at recorded media times.",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2-av/captions.en.vtt"
+      }
+    }
+  },
+  "limits": [
+    "Generated microphone and digital tab output; physical microphone/headset, echo and human interruption remain unverified.",
+    "Current-session supplied history, not durable memory or tool execution.",
+    "One instrumented CPU rehearsal; no general latency or cache-saving claim.",
+    "Contributor content may train Meta models; all demonstration content was fictional.",
+    "Earlier silent recording, separate speech buffers and failed attempts retain their own source/usage/cost/media identities."
+  ]
+}

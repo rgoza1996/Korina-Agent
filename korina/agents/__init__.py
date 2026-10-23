@@ -1,8 +1,8 @@
 """Agent adapter package.
 
-Phase 2 (Converse/Agent adapter separation). Converse owns channel I/O and
-speaks to agents through the ``AgentAdapter`` protocol. Korina Agent is one
-adapter implementation; Hermes Agent, OpenClaw, etc. are future additions.
+Converse owns channel I/O and speaks to agents through ``AgentAdapter``.
+Korina Agent supplies the built-in implementation; applications can register
+their own adapter without changing the HTTP bridge's core contract.
 
 Public API:
     - ``AgentAdapter`` -- structural protocol every adapter satisfies.
@@ -10,14 +10,20 @@ Public API:
     - ``register_adapter(adapter)`` -- swap the active adapter at runtime.
 """
 
-from korina.agents.base import AgentAdapter
+from korina.agents.base import AgentAdapter, AgentAdmissionRejected, LegacyAgentHttpAdapter
 from korina.agents.gateway import (
+    AgentHttpBridge,
+    UnsupportedAgentOperation,
     agent_gateway,
     register_adapter,
 )
 
 __all__ = [
     "AgentAdapter",
+    "AgentAdmissionRejected",
+    "LegacyAgentHttpAdapter",
+    "AgentHttpBridge",
+    "UnsupportedAgentOperation",
     "agent_gateway",
     "register_adapter",
 ]

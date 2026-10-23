@@ -1,10 +1,12 @@
+> Historical record from the June/July 2026 implementation. Paths below are placeholders. For current setup and behavior, use the [README](../../README.md), [architecture](../wiki/Architecture.md), and [October tracker](https://github.com/rgoza1996/Korina-Agent/issues/23).
+
 # Phase 6 — pytest + CI
 
 ## Status
 Not started. Stub seeded by prep cron (`korina-phase6-prep`, 2026-06-25). Expanded after review to capture the real gaps found before execution.
 
 ## Goal
-Future Korina refactors should not repeat the regressions already fixed in Phases 0–5. Phase 6 adds a pytest-based unit/API test scaffold, CI that can run without roggoz-only services, and a live roggoz regression close-out that proves source and runtime are actually in sync.
+Future Korina refactors should not repeat the regressions already fixed in Phases 0–5. Phase 6 adds a pytest-based unit/API test scaffold, CI that can run without demo host-only services, and a live demo host regression close-out that proves source and runtime are actually in sync.
 
 ## Key findings from the Phase 6 plan review
 
@@ -13,25 +15,25 @@ These are blockers/gaps that must be handled before or during Phase 6:
 1. **The original Phase 6 plan was only a stub.** The detailed task list existed only in `docs/refactor/blueprint.md`, and that section predates Phases 4 and 5.
 2. **Runtime sync was missing `Korina/js/`.** Any manual live regression after Phase 3 must sync the ES module tree, not only `index.html` and `styles.css`; otherwise tests can pass against stale frontend code.
 3. **CI cannot run `pip install -e .[test]` yet.** The repo currently has no `pyproject.toml`, `setup.py`, or `requirements-dev.txt` defining test dependencies.
-4. **pytest must not touch live runtime state.** `korina.util.paths.APP_DIR` resolves to `/home/roggoz/Korina` on roggoz unless `KORINA_APP_DIR` is set before import. Tests must isolate this to a temp app dir.
+4. **pytest must not touch live runtime state.** `korina.util.paths.APP_DIR` resolves to `/path/to/Korina` on demo host unless `KORINA_APP_DIR` is set before import. Tests must isolate this to a temp app dir.
 5. **`TestClient(create_app())` can trigger ACK startup side effects.** `create_app()` registers a startup hook that calls `enqueue_missing_acks(...)`. Unit/API tests must monkeypatch this or provide a test-only disable path.
 6. **Blueprint Phase 6 misses Phase 4/5 coverage.** New fragile areas include model capabilities, audio probe cache, provider/model compatibility, static mounts, and systemd wrapper behavior.
-7. **CI must not require real local services.** GitHub Actions should not require llama.cpp, Kokoro, Whisper, GGUF models, `systemd --user`, or roggoz paths. Live service coverage remains a roggoz-only close-out step.
+7. **CI must not require real local services.** GitHub Actions should not require llama.cpp, Kokoro, Whisper, GGUF models, `systemd --user`, or demo host paths. Live service coverage remains a demo host-only close-out step.
 8. **`PROGRESS.md` header can drift.** At review time it still named `a29502d` as current HEAD, while `origin/beta` had advanced to `fd111e1` after the Phase 6 stub commit. Refresh the header at Phase 6 start.
 
 ---
 
 ## Deployment sync strategy
 
-- For automated tests / CI: run from `/home/roggoz/Korina-Agent`, no live rsync needed.
-- For manual live regression on roggoz: MUST rsync from source → live before testing.
+- For automated tests / CI: run from `/path/to/Korina-Agent`, no live rsync needed.
+- For manual live regression on demo host: MUST rsync from source → live before testing.
   - Concrete sync commands:
     ```bash
-    rsync -a --delete /home/roggoz/Korina-Agent/korina/ /home/roggoz/Korina/korina/
-    rsync -a --delete /home/roggoz/Korina-Agent/Korina/js/ /home/roggoz/Korina/js/
-    rsync -a /home/roggoz/Korina-Agent/Korina/index.html /home/roggoz/Korina/index.html
-    rsync -a /home/roggoz/Korina-Agent/Korina/styles.css /home/roggoz/Korina/styles.css
-    rsync -a /home/roggoz/Korina-Agent/tests/regression_smoke.py /home/roggoz/Korina/tests/regression_smoke.py
+    rsync -a --delete /path/to/Korina-Agent/korina/ /path/to/Korina/korina/
+    rsync -a --delete /path/to/Korina-Agent/Korina/js/ /path/to/Korina/js/
+    rsync -a /path/to/Korina-Agent/Korina/index.html /path/to/Korina/index.html
+    rsync -a /path/to/Korina-Agent/Korina/styles.css /path/to/Korina/styles.css
+    rsync -a /path/to/Korina-Agent/tests/regression_smoke.py /path/to/Korina/tests/regression_smoke.py
     ```
   - Then: `systemctl --user restart korina-voice-lab.service` + poll `/api/health`.
   - Static deployment smoke after restart:
@@ -94,7 +96,7 @@ git commit -m "docs: refresh refactor status before Phase 6"
 - Define project metadata for editable install.
 - Include only lightweight baseline runtime deps needed to import the app and run mocked tests.
 - Put pytest dependencies under `[project.optional-dependencies].test`.
-- Do **not** require heavy roggoz-only runtime dependencies in CI unless a test needs them. Avoid forcing real `torch`, `faster-whisper`, model weights, Kokoro voices, or systemd.
+- Do **not** require heavy demo host-only runtime dependencies in CI unless a test needs them. Avoid forcing real `torch`, `faster-whisper`, model weights, Kokoro voices, or systemd.
 
 **Suggested dependency split:**
 ```toml
@@ -136,7 +138,7 @@ git commit -m "test: add pytest packaging scaffold"
 
 ### Task 6.1.2 — Add isolated pytest fixtures
 
-**Objective:** Prevent tests from reading/writing live `/home/roggoz/Korina` state.
+**Objective:** Prevent tests from reading/writing live `/path/to/Korina` state.
 
 **Files:**
 - Create: `tests/conftest.py`
@@ -357,7 +359,7 @@ No JS test framework in this phase. Use Python file/static-response tests only.
 - real Kokoro
 - real Whisper/GGUF models
 - `systemd --user`
-- `/home/roggoz/*` paths
+- `/home/demo/*` paths
 
 **Suggested workflow body:**
 ```yaml
@@ -393,24 +395,24 @@ jobs:
 
 **Cover:**
 - local pytest command
-- live roggoz regression command
+- live demo host regression command
 - why CI does not start real local services
 
 **Commit:** `docs: document test layers`
 
 ---
 
-## Phase 6.6 — Live roggoz regression close-out
+## Phase 6.6 — Live demo host regression close-out
 
 ### Task 6.6.1 — Sync source to runtime
 
 **Commands:**
 ```bash
-rsync -a --delete /home/roggoz/Korina-Agent/korina/ /home/roggoz/Korina/korina/
-rsync -a --delete /home/roggoz/Korina-Agent/Korina/js/ /home/roggoz/Korina/js/
-rsync -a /home/roggoz/Korina-Agent/Korina/index.html /home/roggoz/Korina/index.html
-rsync -a /home/roggoz/Korina-Agent/Korina/styles.css /home/roggoz/Korina/styles.css
-rsync -a /home/roggoz/Korina-Agent/tests/regression_smoke.py /home/roggoz/Korina/tests/regression_smoke.py
+rsync -a --delete /path/to/Korina-Agent/korina/ /path/to/Korina/korina/
+rsync -a --delete /path/to/Korina-Agent/Korina/js/ /path/to/Korina/js/
+rsync -a /path/to/Korina-Agent/Korina/index.html /path/to/Korina/index.html
+rsync -a /path/to/Korina-Agent/Korina/styles.css /path/to/Korina/styles.css
+rsync -a /path/to/Korina-Agent/tests/regression_smoke.py /path/to/Korina/tests/regression_smoke.py
 systemctl --user restart korina-voice-lab.service
 ```
 
@@ -429,7 +431,7 @@ done
 
 **Commands:**
 ```bash
-cd /home/roggoz/Korina-Agent
+cd /path/to/Korina-Agent
 pytest -q
 python3 tests/regression_smoke.py --base http://127.0.0.1:8001 --no-chat --no-transcribe
 ```
@@ -476,8 +478,8 @@ git commit -m "docs: close out Phase 6 testing and CI"
   test "$(git rev-parse HEAD)" = "$(git ls-remote --heads origin beta | awk '{print $1}')"
   ```
 - Do not modify `alpha` or `master` unless the user explicitly asks.
-- Do not edit live runtime data (`/home/roggoz/Korina/config.json`, `Ack/*.wav`, backups).
-- Do not run `tests/regression_smoke.py` from `/home/roggoz/Korina`; it must run from `/home/roggoz/Korina-Agent`.
+- Do not edit live runtime data (`/path/to/Korina/config.json`, `Ack/*.wav`, backups).
+- Do not run `tests/regression_smoke.py` from `/path/to/Korina`; it must run from `/path/to/Korina-Agent`.
 - Stop and report if pytest requires a heavy/runtime-only dependency; do not quietly add model-serving dependencies to CI.
 - Stop and report if TestClient startup touches real Kokoro/Whisper/LLM resources; isolate or monkeypatch before continuing.
 

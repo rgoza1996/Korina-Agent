@@ -1,43 +1,144 @@
-// js/agent-ui.js
-//
-// Frontend agent-driver UI: priority/interrupt helpers, transcript
-// delivery to /api/agent/transcript, /api/agent/events poll loop,
-// event handlers for state reports / permission requests / interrupts,
-// and the LM round-trip — extracted verbatim from the original inline
-// <script> in Korina/index.html (lines 819–933 plus agentDebug at
-// line 433, at commit bdda3cc).
-//
-// Bare top-level globals (agentStateReport, agentLastTranscriptHash,
-// pendingAgentStateReport, pendingImportantAgentMessage,
-// awaitingAgentPermission, agentEventCursor, agentTurnCount,
-// agentLastDeliveredTurn, agentFirstDelivered, agentStartedAt,
-// agentLastDeliveryAt, suppressAckUntil, agentInterruptCooldownUntil,
-// deferredAgentInterrupt, agentInterruptInProgress,
-// currentTtsEstimatedEnd, audioCtx, ackSource, ackPlayingUntil,
-// ttsSpeaking, history) have been migrated to the consolidated `state`
-// object (see state.js). `priorityRank` is a top-level const used by
-// the priority helpers; redeclared as a module-private constant since
-// it's purely an internal lookup table and not externally meaningful.
-// `EventBus` is imported from state.js (3.1.1, already merged).
-// `stripTranscriptLabels`, `cleanHistoryForModel`, `addTranscriptEntry`
-// are from history.js (3.2.5, already merged). `agentEnabled`,
-// `lmModel`, `llmReasoningEnabled` are from settings-ui.js (3.2.4,
-// already merged). `speakText`, `stopTtsNow` are from speech.js
-// (3.2.8, already merged). `$`, `status`, `log` are from dom.js
-// (3.2.1, already merged).
-//
-// Consumers import the named exports below.
+// Agent transcript delivery, event polling, interruptions, and response orchestration.
 
-import { state, EventBus } from "./state.js";
+import { state } from "./state.js";
+import { apiErrorMessage } from './api-errors.js';
 import { $, status, log } from "./dom.js";
 import { stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry } from "./history.js";
-import { agentEnabled, lmModel, llmReasoningEnabled } from "./settings-ui.js";
+import { agentEnabled, agentInterruptCooldownPaddingMs, lmModel, llmProvider, llmReasoningEnabled, llmReasoningEffort, llmMaxTokens } from "./settings-ui.js";
 import { speakText, stopTtsNow } from "./speech.js";
+import { saveAgentEnabled } from "./api.js";
 
-// Priority lookup table (verbatim from index.html:819).
+// Priority lookup table.
+// Keep this ceiling aligned with ChatRequest.message on the backend.
+const MAX_CHAT_MESSAGE_CHARS = 8192;
+const MAX_MODEL_HISTORY_TURNS = 12;
 const priorityRank = { low: 0, normal: 1, important: 2, critical: 3 };
+let deliveryInFlight = null;
+let eventPollInFlight = null;
+let activeInterruptSpeech = null;
+let permissionAnswerInFlight = null;
+const ownedRequests = new Set();
+const chatRequests = new Set();
+let responseUsageOwner = null;
 
-// --- agentDebug (verbatim from index.html:433) ---
+function renderResponseUsage(message, observation = null) {
+  const write = (id, value) => { const element = $(id); if (element) element.textContent = value; };
+  write('responseUsageStatus', message);
+  const settings = observation?.settings;
+  write('responseUsageSettings', settings
+    ? `Provider: ${settings.provider} · Model: ${settings.model} · Output budget: ${settings.max_tokens} · ${settings.provider === 'meta'
+      ? `Reasoning effort: ${settings.reasoning_effort || 'model default'}` : `Reasoning: ${settings.reasoning}`}`
+    : 'Request settings unavailable.');
+  for (const [field, id] of Object.entries({
+    prompt_tokens: 'responsePromptTokens', completion_tokens: 'responseCompletionTokens',
+    reasoning_tokens: 'responseReasoningTokens', cached_tokens: 'responseCachedTokens',
+  })) write(id, observation?.usage?.[field] == null ? 'Unavailable' : String(observation.usage[field]));
+}
+
+function responseUsageObservation(result) {
+  const record = value => value && typeof value === 'object' && !Array.isArray(value);
+  const bounded = (value, limit) => typeof value === 'string' && value.length <= limit * 2 && [...value].length <= limit;
+  const settings = result?.request_settings;
+  if (!record(settings) || !bounded(settings.provider, 64) || !settings.provider.trim()
+      || !bounded(settings.model, 512) || !settings.model.trim()
+      || !Number.isSafeInteger(settings.max_tokens) || settings.max_tokens < 1 || settings.max_tokens > 8192) return null;
+  if (settings.provider === 'meta') {
+    if (settings.reasoning !== null || !['', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(settings.reasoning_effort)) return null;
+  } else if (settings.reasoning_effort !== null || !bounded(settings.reasoning, 64)) return null;
+  let usage = result.usage;
+  const fields = ['prompt_tokens', 'completion_tokens', 'reasoning_tokens', 'cached_tokens'];
+  if (!record(usage) || fields.some(field => usage[field] !== null && (!Number.isSafeInteger(usage[field]) || usage[field] < 0))
+      || (usage.cached_tokens !== null && usage.prompt_tokens !== null && usage.cached_tokens > usage.prompt_tokens)
+      || (usage.reasoning_tokens !== null && usage.completion_tokens !== null && usage.reasoning_tokens > usage.completion_tokens)) usage = null;
+  else usage = Object.fromEntries(fields.map(field => [field, usage[field]]));
+  return { settings, usage };
+}
+
+export function clearResponseUsage() {
+  responseUsageOwner = null;
+  renderResponseUsage('No response yet.');
+}
+
+// Clear retires all existing conversation requests; later requests own new controllers.
+export function cancelChatRequests() {
+  const retiring = [...chatRequests];
+  chatRequests.clear();
+  for (const controller of retiring) controller.abort();
+}
+
+function agentActive() {
+  return agentEnabled() === 'on' && !state.agentResetBlocked && !state.agentActivityBlocked;
+}
+
+function agentOwnership(isCurrent = () => true) {
+  const session = state.agentSession;
+  const epoch = state.agentActivityEpoch;
+  return () => agentActive() && session === state.agentSession && epoch === state.agentActivityEpoch && isCurrent();
+}
+
+function beginAgentRequest() {
+  const controller = new AbortController();
+  ownedRequests.add(controller);
+  return controller;
+}
+
+function retireAgentActivity() {
+  state.agentActivityEpoch++;
+  for (const controller of ownedRequests) controller.abort();
+  ownedRequests.clear();
+  deliveryInFlight = eventPollInFlight = permissionAnswerInFlight = null;
+  if (activeInterruptSpeech && activeInterruptSpeech.controller === state.controller) stopTtsNow();
+  activeInterruptSpeech = null;
+  state.agentInterruptInProgress = false;
+  state.pendingAgentStateReport = state.pendingImportantAgentMessage = '';
+  state.pendingAgentReportVersion++;
+  state.awaitingAgentPermission = state.deferredAgentInterrupt = null;
+  state.agentInterruptCooldownUntil = 0;
+  state.agentFirstDelivered = false;
+  state.agentLastDeliveredTurn = 0;
+  state.agentLastDeliveryAt = 0;
+  state.agentStartedAt = performance.now();
+}
+
+export async function setAgentEnabledFromUi() {
+  const enabled = agentEnabled() === 'on';
+  retireAgentActivity();
+  const epoch = state.agentActivityEpoch;
+  const session = state.agentSession;
+  state.agentControlPending = state.agentActivityBlocked = true;
+  try {
+    await saveAgentEnabled(enabled);
+    if (epoch !== state.agentActivityEpoch) return false;
+    if (enabled && session === state.agentSession) {
+      const controller = beginAgentRequest();
+      try {
+        const response = await fetch('/api/agent/events?after=0', { signal: controller.signal });
+        const result = await response.json();
+        if (epoch !== state.agentActivityEpoch) return false;
+        if (!response.ok || !Number.isSafeInteger(result?.last_event_id) || result.last_event_id < 0) {
+          throw new Error('Agent event cursor was not confirmed');
+        }
+        // Custom adapters keep their memory; skip their pre-enable event backlog.
+        if (session === state.agentSession) state.agentEventCursor = result.last_event_id;
+      } finally { ownedRequests.delete(controller); }
+    }
+    if (epoch !== state.agentActivityEpoch) return false;
+    state.agentControlPending = state.agentActivityBlocked = false;
+    $('settingsActionStatus').textContent = enabled ? 'Korina Agent enabled with fresh delivery context.' : 'Korina Agent disabled. Conversation can continue.';
+    return true;
+  } catch (error) {
+    if (epoch !== state.agentActivityEpoch) return false;
+    $('settingsActionStatus').textContent = `Agent setting failed: ${error.message}. Toggle again to retry; agent delivery remains paused.`;
+    return false;
+  }
+}
+
+function queueAgentReport(report) {
+  state.pendingAgentStateReport = report;
+  state.pendingAgentReportVersion++;
+}
+
+// agentDebug
 export function agentDebug(label, obj) {
   const el = $('agentDebug'); if (!el) return;
   const stamp = new Date().toLocaleTimeString();
@@ -46,14 +147,14 @@ export function agentDebug(label, obj) {
   el.scrollTop = el.scrollHeight;
 }
 
-// --- Priority helpers (verbatim from index.html:820) ---
+// Priority helpers
 export function priorityAtLeast(p, min) {
   return (priorityRank[p || 'normal'] ?? 1) >= (priorityRank[min || 'important'] ?? 2);
 }
 
-// --- Interrupt cooldown (verbatim from index.html:821–825) ---
+// Interrupt cooldown
 export function agentInterruptPaddingSec() {
-  return (parseInt($('agentInterruptCooldownPaddingMs')?.value || '3000', 10) || 3000) / 1000;
+  return agentInterruptCooldownPaddingMs() / 1000;
 }
 
 export function agentInterruptAllowed() {
@@ -66,13 +167,13 @@ export function setAgentInterruptCooldown() {
   agentDebug('Agent interrupt cooldown set', {
     until_audio_time: state.agentInterruptCooldownUntil,
     current_audio_time: state.audioCtx.currentTime,
-    padding_ms: parseInt($('agentInterruptCooldownPaddingMs')?.value || '3000', 10) || 3000
+    padding_ms: agentInterruptCooldownPaddingMs()
   });
 }
 
 export function deferAgentInterrupt(message, ev) {
-  state.deferredAgentInterrupt = { message, ev, createdAt: performance.now() };
-  state.pendingAgentStateReport = stripTranscriptLabels(ev?.report || ev?.message || message);
+  state.deferredAgentInterrupt = { message };
+  queueAgentReport(stripTranscriptLabels(ev?.report || ev?.message || message));
   agentDebug('Agent interrupt deferred by cooldown', {
     cooldown_until_audio_time: state.agentInterruptCooldownUntil,
     current_audio_time: state.audioCtx?.currentTime || 0,
@@ -81,36 +182,57 @@ export function deferAgentInterrupt(message, ev) {
 }
 
 export function maybeReleaseDeferredAgentInterrupt() {
-  if (!state.deferredAgentInterrupt || !agentInterruptAllowed() || state.ttsSpeaking) return;
+  if (!agentActive() || !state.deferredAgentInterrupt || !agentInterruptAllowed() || state.ttsSpeaking) return;
   const item = state.deferredAgentInterrupt;
   state.deferredAgentInterrupt = null;
   interruptConverse(item.message, false);
 }
 
-// --- Transcript slice + delivery (verbatim from index.html:826–847) ---
+// Transcript slice + delivery
 export function agentTranscriptSlice() {
   const max = parseInt($('agentMaxTurns')?.value || '16', 10) || 16;
   return cleanHistoryForModel().slice(-max);
 }
 
 export async function deliverTranscriptToAgent(reason = 'turn') {
-  if (agentEnabled() !== 'on') return;
-  const statusResp = await fetch('/api/agent/status').then(r => r.json()).catch(() => ({ busy: false }));
-  const mode = statusResp.busy ? ($('agentBusyDeliveryMode')?.value || 'injection') : ($('agentIdleDeliveryMode')?.value || 'prompt');
-  const payload = { transcript: agentTranscriptSlice(), delivery_mode: mode, reason, turn_count: state.agentTurnCount };
-  agentDebug(`Transcript delivery (${mode})`, payload);
-  await fetch('/api/agent/transcript', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).catch(e => console.warn('agent transcript delivery failed', e));
-  state.agentLastDeliveredTurn = state.agentTurnCount;
-  state.agentLastDeliveryAt = performance.now();
-  if (!state.agentFirstDelivered) state.agentFirstDelivered = true;
+  if (!agentActive() || deliveryInFlight) return false;
+  const current = agentOwnership();
+  const controller = beginAgentRequest();
+  deliveryInFlight = controller;
+  try {
+    const statusResp = await fetch('/api/agent/status', { signal: controller.signal })
+      .then(r => r.ok ? r.json() : { busy: false }).catch(() => ({ busy: false }));
+    if (!current()) return false;
+    const mode = statusResp.busy ? ($('agentBusyDeliveryMode')?.value || 'injection') : ($('agentIdleDeliveryMode')?.value || 'prompt');
+    const payload = { transcript: agentTranscriptSlice(), delivery_mode: mode, reason, turn_count: state.agentTurnCount };
+    agentDebug(`Transcript delivery (${mode})`, payload);
+    const response = await fetch('/api/agent/transcript', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    const result = await response.json();
+    if (!response.ok || result?.ok === false || result?.accepted !== true) {
+      throw new Error(apiErrorMessage(result, `Agent did not accept transcript (HTTP ${response.status}).`));
+    }
+    if (!current()) return false;
+    state.agentLastDeliveredTurn = payload.turn_count;
+    state.agentLastDeliveryAt = performance.now();
+    state.agentFirstDelivered = true;
+    return true;
+  } catch (error) {
+    if (!current()) return false;
+    agentDebug('Transcript delivery failed; will retry', error.message || String(error));
+    console.warn('agent transcript delivery failed', error);
+    return false;
+  } finally {
+    ownedRequests.delete(controller);
+    if (deliveryInFlight === controller) deliveryInFlight = null;
+  }
 }
 
 export function maybeDeliverTranscriptToAgent(reason = 'timer') {
-  if (agentEnabled() !== 'on' || !state.history.length) return;
+  if (!agentActive() || !state.history.length) return;
   const now = performance.now();
   const firstMode = $('agentFirstDeliveryMode')?.value || 'first_turn_or_timer';
   const firstSeconds = (parseInt($('agentFirstDeliverySeconds')?.value || '20', 10) || 20) * 1000;
@@ -125,31 +247,63 @@ export function maybeDeliverTranscriptToAgent(reason = 'timer') {
   if (turnsDue || secondsDue) deliverTranscriptToAgent(reason);
 }
 
-// --- Event polling (verbatim from index.html:853–858) ---
-export async function pollAgentEvents() {
-  if (agentEnabled() !== 'on') return;
-  try {
-    const j = await (await fetch(`/api/agent/events?after=${state.agentEventCursor}`)).json();
-    for (const ev of (j.events || [])) {
-      state.agentEventCursor = Math.max(state.agentEventCursor, ev.id || 0);
-      agentDebug(`Agent event ${ev.type || ''} #${ev.id || ''}`, ev);
-      handleAgentEvent(ev);
-    }
-  } catch (e) { console.warn('agent event poll failed', e); }
+// Event polling
+function clearPreviousAgentSession() {
+  // A server reset/restart invalidates reports and work accepted by that session.
+  // Keep the conversation so the next delivery can establish the new agent context.
+  state.agentSession++;
+  state.pendingAgentReportVersion++;
+  state.pendingAgentStateReport = '';
+  state.pendingImportantAgentMessage = '';
+  state.awaitingAgentPermission = null;
+  state.deferredAgentInterrupt = null;
+  state.agentInterruptCooldownUntil = 0;
+  state.agentFirstDelivered = false;
+  state.agentLastDeliveredTurn = 0;
+  state.agentLastDeliveryAt = 0;
+  state.agentStartedAt = performance.now();
 }
 
-// --- Concise message helper (verbatim from index.html:860) ---
+export async function pollAgentEvents() {
+  if (!agentActive() || eventPollInFlight) return;
+  const current = agentOwnership();
+  const controller = beginAgentRequest();
+  eventPollInFlight = controller;
+  try {
+    const response = await fetch(`/api/agent/events?after=${state.agentEventCursor}`, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Agent events HTTP ${response.status}`);
+    const result = await response.json();
+    if (!current()) return;
+    const cursor = result.last_event_id;
+    const hasCursor = Number.isSafeInteger(cursor) && cursor >= 0;
+    if (hasCursor && cursor < state.agentEventCursor) clearPreviousAgentSession();
+    for (const event of (result.events || [])) {
+      state.agentEventCursor = Math.max(state.agentEventCursor, event.id || 0);
+      agentDebug(`Agent event ${event.type || ''} #${event.id || ''}`, event);
+      handleAgentEvent(event);
+    }
+    if (hasCursor) state.agentEventCursor = cursor;
+  } catch (error) {
+    if (current()) console.warn('agent event poll failed', error);
+  } finally {
+    ownedRequests.delete(controller);
+    if (eventPollInFlight === controller) eventPollInFlight = null;
+  }
+}
+
+// Concise message helper
 export function conciseAgentMessage(ev) {
   const msg = stripTranscriptLabels(ev.report || ev.message || '').replace(/\s+/g, ' ').trim();
   return msg.length > 520 ? msg.slice(0, 520) + '…' : msg;
 }
 
-// --- Event dispatcher (verbatim from index.html:861–886) ---
+// Event dispatcher
 export function handleAgentEvent(ev) {
+  if (!agentActive()) return;
   if (ev.type === 'agent_status') return;
-  if (ev.type === 'agent_error') { state.pendingAgentStateReport = `Korina Agent error: ${ev.message}`; return; }
+  if (ev.type === 'agent_error') { queueAgentReport(`Korina Agent error: ${ev.message}`); return; }
   if (ev.type === 'permission_request') {
-    if (($('agentPermissionInterrupts')?.value || 'on') === 'off') { state.pendingAgentStateReport = conciseAgentMessage(ev); return; }
+    if (($('agentPermissionInterrupts')?.value || 'on') === 'off') { queueAgentReport(conciseAgentMessage(ev)); return; }
     state.awaitingAgentPermission = ev;
     const msg = `Korina Agent needs your permission. ${conciseAgentMessage(ev)} Should I allow it?`;
     if (!agentInterruptAllowed()) { deferAgentInterrupt(msg, ev); return; }
@@ -157,8 +311,8 @@ export function handleAgentEvent(ev) {
     return;
   }
   if (ev.type === 'state_report') {
-    state.agentStateReport = stripTranscriptLabels(ev.report || ev.message || '');
-    if (!state.agentStateReport) return;
+    const report = stripTranscriptLabels(ev.report || ev.message || '');
+    if (!report) return;
     const priority = ev.priority || 'normal';
     if (($('agentInterruptsEnabled')?.value || 'on') === 'on' && priorityAtLeast(priority, $('agentInterruptMinPriority')?.value || 'important')) {
       const hard = priorityAtLeast(priority, $('agentHardInterruptMinPriority')?.value || 'critical');
@@ -166,109 +320,232 @@ export function handleAgentEvent(ev) {
       if (!agentInterruptAllowed()) { deferAgentInterrupt(msg, ev); return; }
       interruptConverse(msg, hard);
     } else if (($('agentReportInjectionMode')?.value || 'next_reply') === 'next_reply') {
-      state.pendingAgentStateReport = state.agentStateReport;
+      queueAgentReport(report);
       $('transcriptInfo').textContent = 'Korina Agent report stored for next reply.';
     }
   }
 }
 
-// --- Interrupt TTS and inject important message (verbatim from index.html:887–898) ---
+// Interrupt TTS and inject important message
+async function speakAgentInterrupt(message, isCurrent = () => true, cooldown = true) {
+  const current = agentOwnership(isCurrent);
+  if (!current()) return;
+  const session = state.agentSession;
+  const speech = {};
+  activeInterruptSpeech = speech;
+  state.agentInterruptInProgress = true;
+  try {
+    const playing = speakText(message, true);
+    speech.controller = state.controller;
+    await playing;
+    if (activeInterruptSpeech === speech && current() && cooldown) setAgentInterruptCooldown();
+  } catch (error) {
+    if (current()) throw error;
+  } finally {
+    if (activeInterruptSpeech === speech) {
+      activeInterruptSpeech = null;
+      if (session === state.agentSession) state.agentInterruptInProgress = false;
+    }
+  }
+}
+
 export function interruptConverse(text, hard = false) {
+  if (!agentActive()) return;
   state.pendingImportantAgentMessage = text;
   state.suppressAckUntil = performance.now() + 12000;
   if (state.ackSource) { try { state.ackSource.stop(); } catch {} state.ackSource = null; state.ackPlayingUntil = 0; }
   if (hard && state.ttsSpeaking) stopTtsNow();
   if (!state.ttsSpeaking || hard) {
     const msg = state.pendingImportantAgentMessage; state.pendingImportantAgentMessage = '';
-    state.agentInterruptInProgress = true;
     addTranscriptEntry('Korina Agent Interrupt', msg, { includeInHistory: false });
-    speakText(msg, true).then(() => setAgentInterruptCooldown()).catch(e => console.warn('agent interrupt speech failed', e)).finally(() => { state.agentInterruptInProgress = false; });
+    speakAgentInterrupt(msg).catch(e => console.warn('agent interrupt speech failed', e));
   }
 }
 
-// --- Permission answer detection (verbatim from index.html:899–912) ---
-export async function handlePermissionAnswerIfAny(message) {
+// Permission answer detection
+export function isPermissionAnswerPending() {
+  return Boolean(agentActive() && permissionAnswerInFlight?.session === state.agentSession
+    && !permissionAnswerInFlight.controller.signal.aborted);
+}
+
+export async function handlePermissionAnswerIfAny(message, { isCurrent = () => true } = {}) {
+  const session = state.agentSession;
+  const current = agentOwnership(isCurrent);
+  if (!current()) return false;
   if (!state.awaitingAgentPermission) return false;
   const m = message.trim().toLowerCase();
   const yes = /^(yes|yeah|yep|approve|allow|go ahead|do it)\b/.test(m);
   const no = /^(no|nope|deny|stop|do not|don't)\b/.test(m);
   if (!yes && !no) return false;
+  if (permissionAnswerInFlight?.session === session) return true;
   const answer = yes ? 'yes' : 'no';
-  const req = state.awaitingAgentPermission; state.awaitingAgentPermission = null;
-  state.history.push({ role: 'user', content: `Permission answer to Korina Agent: ${answer}` });
-  await fetch('/api/agent/permission-answer', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ request_id: String(req.id || ''), answer, transcript: agentTranscriptSlice() })
-  }).catch(e => console.warn('permission answer failed', e));
+  const req = state.awaitingAgentPermission;
+  const controller = beginAgentRequest();
+  const delivery = { session, request: req, controller };
+  permissionAnswerInFlight = delivery;
+  const turnCount = state.agentTurnCount + 1;
+  const answerTurn = { role: 'user', content: `Permission answer to Korina Agent: ${answer}` };
+  const maxTurns = Math.min(64, Math.max(1, parseInt($('agentMaxTurns')?.value || '16', 10) || 16));
+  const transcript = [...cleanHistoryForModel(), answerTurn].slice(-maxTurns);
+  status($('sttStatus'), 'Sending permission answer to Korina Agent…', 'warn');
+  try {
+    const response = await fetch('/api/agent/permission-answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_id: String(req.id ?? ''), answer, transcript }),
+      signal: controller.signal,
+    });
+    if (!current()) return true;
+    let result;
+    try { result = await response.json(); }
+    catch {
+      throw new Error(response.ok ? 'Agent returned an invalid JSON confirmation' : `Agent permission HTTP ${response.status}`);
+    }
+    if (!current()) return true;
+    if (!response.ok || result?.ok === false || result?.accepted !== true) {
+      throw new Error(apiErrorMessage(result, result?.disabled ? 'Korina Agent is disabled' : 'Agent did not accept the permission answer'));
+    }
+  } catch (error) {
+    if (!current()) return true;
+    if (state.awaitingAgentPermission !== req) return true;
+    const message = `Permission answer failed: ${error.message}. The request is still pending; try yes or no again.`;
+    status($('sttStatus'), message, 'bad');
+    throw new Error(message);
+  } finally {
+    ownedRequests.delete(controller);
+    if (permissionAnswerInFlight === delivery) permissionAnswerInFlight = null;
+  }
+  if (!current()) return true;
+  log('You', message);
+  state.history.push(answerTurn);
+  state.agentTurnCount++;
+  // Both permission operations own their follow-up work. This successful
+  // delivery must not trigger a second immediate transcript submission.
+  state.agentLastDeliveredTurn = Math.max(state.agentLastDeliveredTurn, turnCount);
+  state.agentLastDeliveryAt = performance.now();
+  state.agentFirstDelivered = true;
+  if (state.awaitingAgentPermission !== req) {
+    status($('sttStatus'), state.awaitingAgentPermission
+      ? 'Permission answer accepted; a newer permission request is still waiting.'
+      : 'Korina Agent accepted the permission answer.', 'good');
+    return true;
+  }
+  state.awaitingAgentPermission = null;
+  status($('sttStatus'), 'Korina Agent accepted the permission answer.', 'good');
   const reply = answer === 'yes' ? 'Okay. I told Korina Agent it has permission.' : 'Okay. I told Korina Agent not to proceed.';
   $('text').value = reply; log('Korina', reply); state.history.push({ role: 'assistant', content: reply });
-  state.agentTurnCount++;
-  await speakText(reply, true);
-  maybeDeliverTranscriptToAgent('permission-answer');
+  await speakAgentInterrupt(reply, current, false);
   return true;
 }
 
-// --- LLM call (verbatim from index.html:913–922) ---
-export async function askLM(message) {
-  let injection = '';
-  if (state.pendingAgentStateReport) {
-    injection = `Injection: Korina Agent state report for this next reply:\n${state.pendingAgentStateReport}\n\n`;
-    state.pendingAgentStateReport = '';
-  }
+// ChatRequest.history contains prior turns only; the backend appends message.
+// Explicit history lets callers record the visible current turn before awaiting I/O.
+export async function askLM(message, priorHistory = cleanHistoryForModel(), { isCurrent = () => true, signal } = {}) {
+  const session = state.agentSession;
+  const controller = new AbortController();
+  const current = () => session === state.agentSession && !controller.signal.aborted && !signal?.aborted && isCurrent();
+  if (!current()) return null;
+  const report = agentActive() ? state.pendingAgentStateReport : '';
+  const activityEpoch = state.agentActivityEpoch;
+  const reportVersion = state.pendingAgentReportVersion;
+  const userMessage = stripTranscriptLabels(message);
+  const userLength = [...userMessage].length;
+  if (userLength > MAX_CHAT_MESSAGE_CHARS) throw new Error('Your message is too long. Split it into shorter turns.');
+  const prefix = 'Injection: Korina Agent state report for this next reply:\n';
+  const reportBudget = Math.max(0, MAX_CHAT_MESSAGE_CHARS - userLength - prefix.length - 2);
+  const includedReport = [...stripTranscriptLabels(report)].slice(0, reportBudget).join('');
+  const injection = includedReport ? `${prefix}${includedReport}\n\n` : '';
   status($('sttStatus'), 'Sending transcript to configured LLM…', 'warn');
-  const r = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message: stripTranscriptLabels(injection + message),
-      history: cleanHistoryForModel(),
-      max_tokens: 180,
-      temperature: 0.7,
-      model: lmModel(),
-      reasoning: llmReasoningEnabled()
-    })
-  });
-  const j = await r.json(); if (!r.ok) throw new Error(j.detail || JSON.stringify(j));
-  return j.reply || '';
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  chatRequests.add(controller);
+  const usageOwner = { pending: true };
+  responseUsageOwner = usageOwner;
+  renderResponseUsage('Waiting for response…');
+  try {
+    const r = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: injection + userMessage,
+        history: priorHistory.slice(-MAX_MODEL_HISTORY_TURNS),
+        max_tokens: llmMaxTokens(),
+        temperature: 0.7,
+        model: lmModel(),
+        reasoning: llmReasoningEnabled(),
+        ...(llmProvider() === 'meta' ? { reasoning_effort: llmReasoningEffort() } : {}),
+      }),
+      signal: controller.signal,
+    });
+    if (!current()) return null;
+    const j = await r.json();
+    if (!current()) return null;
+    if (includedReport && (!agentActive() || activityEpoch !== state.agentActivityEpoch)) {
+      status($('sttStatus'), 'Agent context changed. Ask again for a fresh reply.', 'warn');
+      return null;
+    }
+    if (!r.ok) throw new Error(apiErrorMessage(j, `HTTP ${r.status}`));
+    if (typeof j?.reply !== 'string') throw new Error('The response LLM returned an invalid reply.');
+    if (j.reply.trim() && includedReport && state.pendingAgentReportVersion === reportVersion && state.pendingAgentStateReport === report) {
+      state.pendingAgentStateReport = '';
+    }
+    if (responseUsageOwner === usageOwner) {
+      const observation = responseUsageObservation(j);
+      const reported = observation?.usage && Object.values(observation.usage).some(value => value !== null);
+      renderResponseUsage(reported ? 'Provider-reported usage received.' : 'Usage unavailable for this response.', observation);
+      usageOwner.pending = false;
+    }
+    return j.reply;
+  } catch (error) {
+    if (!current()) return null;
+    if (responseUsageOwner === usageOwner) {
+      renderResponseUsage('Response failed; usage unavailable.');
+      usageOwner.pending = false;
+    }
+    throw error;
+  } finally {
+    signal?.removeEventListener('abort', abort);
+    chatRequests.delete(controller);
+    if (responseUsageOwner === usageOwner && usageOwner.pending && session === state.agentSession) {
+      renderResponseUsage('Response cancelled; usage unavailable.');
+      usageOwner.pending = false;
+    }
+  }
 }
 
-// --- LM round-trip + speak + post-speak interrupt drain (verbatim from index.html:923–933) ---
-export async function askAndSpeak(message, context = '') {
+// LM round-trip + speak + post-speak interrupt drain
+export async function askAndSpeak(message, context = '', { isCurrent = () => true, signal } = {}) {
+  const session = state.agentSession;
+  const current = () => session === state.agentSession && !signal?.aborted && isCurrent();
+  if (!current()) return null;
+  if (await handlePermissionAnswerIfAny(message, { isCurrent: current })) return null;
+  if (!current()) return null;
   log('You', message);
-  if (await handlePermissionAnswerIfAny(message)) return;
+  const priorHistory = cleanHistoryForModel();
   state.history.push({ role: 'user', content: stripTranscriptLabels(message) });
-  // /steer is the kept LLM-prompt contract (renamed variable above; the literal
-  // sent to the LLM is /steer for stability with the existing prompt convention).
-  const systemExtra = window._pendingInjection ? "\n/steer " + window._pendingInjection : "";
-  window._pendingInjection = "";
   const lmMessage = context
-    ? `${stripTranscriptLabels(context)}${systemExtra}\n\nThe user now says: ${stripTranscriptLabels(message)}`
+    ? `${stripTranscriptLabels(context)}\n\nThe user now says: ${stripTranscriptLabels(message)}`
     : stripTranscriptLabels(message);
-  EventBus.emit("ConversationTurnComplete", { role: "user", text: message, ts: Date.now() });
 
-  const reply = stripTranscriptLabels(await askLM(lmMessage));
-  let displayReply = reply;
-  if (window._pendingSentenceInterrupt) { displayReply = (window._pendingSentenceInterrupt.message || "") + " " + reply; window._pendingSentenceInterrupt = null; }
-  $('text').value = displayReply; log('Korina', displayReply);
-  state.history.push({ role: 'assistant', content: displayReply });
+  const rawReply = await askLM(lmMessage, priorHistory, { isCurrent: current, signal });
+  if (!current() || rawReply === null) return null;
+  const reply = stripTranscriptLabels(rawReply);
+  $('text').value = reply; log('Korina', reply);
+  state.history.push({ role: 'assistant', content: reply });
   state.history = state.history.slice(-20);
   state.agentTurnCount++;
-  EventBus.lastConverseActivity = Date.now();
   status($('sttStatus'), `LLM replied ${reply ? 'ok' : 'empty'}; speaking…`, 'good');
-  EventBus.lastConverseActivity = Date.now();
   await speakText(reply, true);
-  if (state.pendingImportantAgentMessage && !state.ttsSpeaking) {
+  if (!current()) return null;
+  if (agentActive() && state.pendingImportantAgentMessage && !state.ttsSpeaking) {
     const msg = state.pendingImportantAgentMessage; state.pendingImportantAgentMessage = '';
     addTranscriptEntry('Korina Agent Interrupt', msg, { includeInHistory: false });
-    state.agentInterruptInProgress = true;
-    await speakText(msg, true).catch(() => {});
-    setAgentInterruptCooldown();
-    state.agentInterruptInProgress = false;
+    await speakAgentInterrupt(msg, current).catch(() => {});
+    if (!current()) return null;
   }
   maybeDeliverTranscriptToAgent('turn');
   // Phase 5/visibility fix: let callers (live loop, manual transcript)
   // introspect what the LLM actually said so they can surface empty replies
   // instead of going silent after the ack plays.
-  return displayReply;
+  return reply;
 }

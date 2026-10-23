@@ -1,26 +1,4 @@
-"""Regression tests for the silent-empty STT fallback (Phase 5, 2026-06-27).
-
-The user's reported bug: when the multimodal STT model is text-only
-(e.g. google/gemma-4-e4b), the upstream call returns HTTP 200 with
-empty content and a non-'stop' finish_reason (typically 'length' after
-the model spends its budget on reasoning without producing audio-derived
-text). The audio-probe previously punted on this case ("200 + empty
-content = transient_or_content_failure"), so every utterance repeated
-the same ~4-second multimodal round-trip instead of falling back to
-Whisper.
-
-These tests lock in:
-  1. classify_failure(200, '', finish_reason='length') -> (True, 'silent_200_empty_content')
-  2. classify_failure(200, '', finish_reason='')       -> legacy (False, 'transient...')
-  3. classify_failure(200, 'some text', finish_reason='length') -> (False, transient)
-  4. maybe_fallback_to_whisper persists 'silent_200_empty_content' on first hit
-  5. Subsequent calls to maybe_fallback_to_whisper hit the cache and
-     skip the multimodal call entirely (verified by whisper_fallback_fn
-     being called even with stt_status_code=0 indicating no upstream call)
-  6. lmstudio_transcribe_wav now returns finish_reason alongside text
-  7. Existing 415/400/422 patterns still classify as audio-unsupported
-     (no regression).
-"""
+"""Completion stop causes do not establish persistent audio incompatibility."""
 
 import json
 from pathlib import Path
@@ -32,25 +10,26 @@ import pytest
 # ---------- classify_failure direct cases ----------
 
 
-def test_classify_failure_silent_empty_with_length_finish_reason():
-    """The exact shape from the user's log: 200 + empty body + 'length' finish_reason."""
+@pytest.mark.parametrize('body', ['', 'empty_text', json.dumps({
+    'choices': [{'finish_reason': 'length', 'message': {'content': None}}],
+}), json.dumps({'choices': [{'finish_reason': 'length', 'message': {'content': ''}}]})])
+def test_classify_failure_empty_length_does_not_prove_audio_unsupported(body):
+    """Reasoning can exhaust the output budget before any transcript appears."""
     from korina.services.audio_probe import classify_failure
-    unsupported, reason = classify_failure(200, '', finish_reason='length')
-    assert unsupported is True
-    assert reason == 'silent_200_empty_content'
+    assert classify_failure(200, body, finish_reason='length') == (False, 'transient_or_content_failure')
 
 
 def test_classify_failure_silent_empty_with_tool_calls_finish_reason():
-    """finish_reason='tool_calls' with empty content is also silent-empty."""
+    """A tool-call completion is not an audio rejection."""
     from korina.services.audio_probe import classify_failure
     unsupported, _ = classify_failure(200, '', finish_reason='tool_calls')
-    assert unsupported is True
+    assert unsupported is False
 
 
 def test_classify_failure_silent_empty_with_content_filter_finish_reason():
     from korina.services.audio_probe import classify_failure
     unsupported, _ = classify_failure(200, '', finish_reason='content_filter')
-    assert unsupported is True
+    assert unsupported is False
 
 
 def test_classify_failure_stop_finish_reason_is_not_silent_empty():
@@ -98,8 +77,8 @@ def test_classify_failure_400_audio_body_still_unsupported():
 # ---------- maybe_fallback_to_whisper persistence ----------
 
 
-def test_maybe_fallback_persists_silent_empty_to_audio_unsupported(tmp_path, monkeypatch):
-    """First silent-empty hit → classify → set_audio_unsupported → return whisper payload."""
+def test_maybe_fallback_persists_explicit_audio_rejection(tmp_path, monkeypatch):
+    """An explicit unsupported-media response still persists and falls back."""
     from korina.services import audio_probe
     from korina import config as korina_config
     captured = {'whisper_calls': 0, 'persist_calls': []}
@@ -109,7 +88,7 @@ def test_maybe_fallback_persists_silent_empty_to_audio_unsupported(tmp_path, mon
         captured['whisper_calls'] += 1
         return {'text': 'whisper transcript', 'engine': 'whisper'}
 
-    def fake_set(provider, base_url, model, reason, body):
+    def fake_set(provider, base_url, model, reason, body, *, is_current=None):
         captured['persist_calls'].append({
             'provider': provider, 'base_url': base_url, 'model': model,
             'reason': reason, 'body': body,
@@ -127,19 +106,16 @@ def test_maybe_fallback_persists_silent_empty_to_audio_unsupported(tmp_path, mon
             provider='llama.cpp',
             base_url='http://127.0.0.1:8080/v1',
             model='google/gemma-4-e4b',
-            stt_status_code=200,
-            stt_response_body=json.dumps({
-                'choices': [{'finish_reason': 'length', 'message': {'content': ''}}],
-            }),
+            stt_status_code=415,
+            stt_response_body='audio input is not supported',
             whisper_fallback_fn=fake_whisper,
-            finish_reason='length',
         )
 
     assert used is True
-    assert payload['fallback_reason'] == 'silent_200_empty_content'
+    assert payload['fallback_reason'] == 'http_415_unsupported_media_type'
     assert captured['whisper_calls'] == 1
     assert len(captured['persist_calls']) == 1
-    assert captured['persist_calls'][0]['reason'] == 'silent_200_empty_content'
+    assert captured['persist_calls'][0]['reason'] == 'http_415_unsupported_media_type'
     assert captured['persist_calls'][0]['model'] == 'google/gemma-4-e4b'
 
 
@@ -227,7 +203,7 @@ def test_maybe_fallback_legacy_empty_text_no_finish_reason_is_transient():
 # ---------- lmstudio_transcribe_wav returns finish_reason ----------
 
 
-def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch):
+def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch, mock_provider_http):
     """The new contract: lmstudio_transcribe_wav now includes finish_reason
     in the returned dict so the audio-probe / stt route can detect silent-empty."""
     from korina.services import multimodal_stt
@@ -240,18 +216,8 @@ def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch):
         'usage': {'prompt_tokens': 10, 'completion_tokens': 5, 'total_tokens': 15},
     }
 
-    class FakeResp:
-        def __init__(self, body):
-            self._body = body
-        def read(self):
-            return json.dumps(self._body).encode('utf-8')
-        def __enter__(self):
-            return self
-        def __exit__(self, *a):
-            return False
-
-    # Patch urlopen + the wav.read_bytes + config so the call doesn't touch disk/network
-    monkeypatch.setattr('urllib.request.urlopen', lambda *a, **kw: FakeResp(fake_response_body))
+    import httpx
+    mock_provider_http(lambda request: httpx.Response(200, json=fake_response_body))
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_chat_url', lambda c: 'http://127.0.0.1:8080/v1/chat/completions')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_api_env', lambda c: '')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_model', lambda c: 'google/gemma-4-e4b')
@@ -275,7 +241,7 @@ def test_lmstudio_transcribe_wav_returns_finish_reason_in_result(monkeypatch):
     assert result['backend'] == 'multimodal-stt'
 
 
-def test_lmstudio_transcribe_wav_stop_finish_reason():
+def test_lmstudio_transcribe_wav_stop_finish_reason(monkeypatch, mock_provider_http):
     """When the model stops cleanly, finish_reason='stop' is captured."""
     from korina.services import multimodal_stt
 
@@ -286,18 +252,8 @@ def test_lmstudio_transcribe_wav_stop_finish_reason():
         }],
     }
 
-    class FakeResp:
-        def read(self):
-            return json.dumps(self._body).encode('utf-8')
-        def __enter__(self):
-            return self
-        def __exit__(self, *a):
-            return False
-        def __init__(self, body):
-            self._body = body
-
-    monkeypatch = __import__('pytest').MonkeyPatch()
-    monkeypatch.setattr('urllib.request.urlopen', lambda *a, **kw: FakeResp(fake_response_body))
+    import httpx
+    mock_provider_http(lambda request: httpx.Response(200, json=fake_response_body))
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_chat_url', lambda c: 'http://127.0.0.1:8080/v1/chat/completions')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_api_env', lambda c: '')
     monkeypatch.setattr(multimodal_stt, 'config_stt_llm_model', lambda c: 'good-model')
@@ -314,4 +270,3 @@ def test_lmstudio_transcribe_wav_stop_finish_reason():
     )
     assert result['finish_reason'] == 'stop'
     assert result['text'] == 'hello world'
-    monkeypatch.undo()
