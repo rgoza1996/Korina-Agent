@@ -20,6 +20,6 @@ Record this evidence:
 - Actual Meta model ID and redacted API request/response evidence.
 - First and warm turn timings, with their start/end boundaries.
 - Browser, physical headset, recognition errors, audible result, and Stop behavior.
-- Cache usage only if measured from `usage.prompt_tokens_details.cached_tokens`; the response UI does not expose it. A faster repeat does not prove a cache hit.
+- Record provider-reported cached input from the **Last response usage** panel or `usage.prompt_tokens_details.cached_tokens`. Zero means zero; unavailable is not a cache hit. A faster repeat does not prove reuse.
 
 Compare results with the [verification boundaries](verification.md); local CPU or mocked-provider checks are not authenticated Meta proof.

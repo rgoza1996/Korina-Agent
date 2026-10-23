@@ -1,0 +1,804 @@
+{
+  "kind": "authenticated-synthetic-context-effort-study",
+  "recorded_on": "2026-10-23",
+  "pre_event_preparation": true,
+  "source_commit": "f6e655f16fe273c4ea3148d9e8629a608c6cb90b",
+  "entrypoint": "korina.services.response_llm.response_llm_chat_result",
+  "source_sha256": {
+    "korina/services/response_llm.py": "aa8182eb592244af1e156010776929bd61f6915d02339cbd7aaea1c3092a642e",
+    "korina/runtime/completion.py": "200c91357a036c65756b6912c7f557bdb418e8ee5ba79dc2034d085fd25c4618",
+    "korina/runtime/json_http.py": "89e774c0b9d67e3c9fab907a787a4f9dc3dd271dcd013eada4c34fe1ed38b91b",
+    "korina/runtime/http.py": "cd32953c00379f75ac3df7c925c1582a623a31d6f146f4129620b71db43f10b0",
+    "korina/config.py": "01a2cbe2137156189ed2e83b35372f992a0e07424da82a3f865649facf1064d4",
+    "korina/schemas.py": "96cbb987d4856b31f68d216354b083efd794c09c0a74f45c15b612ed2eb82ae0"
+  },
+  "runtime": {
+    "python": "3.12.3",
+    "httpx": "0.28.1",
+    "platform": "Linux aarch64"
+  },
+  "provider": "Meta Model API",
+  "endpoint": "https://api.meta.ai/v1/chat/completions",
+  "model": "muse-spark-1.3-contributor",
+  "max_tokens": 2048,
+  "temperature": 0.2,
+  "plan": {
+    "system": "You are Korina. Answer only from the supplied fictional conversation history. Apply explicit accepted corrections; keep facts for different projects separate. Do not invent missing information. Return exactly one JSON object, without fences, explanations, or extra keys. All times use the same local clock; no timezone conversion is needed.",
+    "history": [
+      {
+        "role": "user",
+        "content": "Fictional rehearsal planning notes. These notes describe invented people and projects, not a real event.\n\n2026-10-26, 09:00, initial planning: Cedar is a short assistant demonstration. Its owner was initially Theo. The initial practice slot was Friday 2026-10-30 at 10:00, with a delivery checkpoint at 11:00 that day. Cedar's practice location had not been selected. The team planned to demonstrate conversational context, not a persistent personal memory store. The first draft suggested that the model might choose a practice venue, but that suggestion was explicitly rejected: a missing venue must remain unknown until someone confirms it.\n\n2026-10-26, 14:00, separate Maple planning: Maple is a different project, owned by Noah. Maple's practice is Friday 2026-10-30 at 09:00 in room Birch, and its delivery checkpoint is at 12:00. These are Maple's facts only. Maple's venue must not be used as Cedar's venue. Both projects use the same local clock. Maple's support volunteer is Mira, but a support role on Maple does not establish ownership of Cedar.\n\n2026-10-27, 11:00, accepted Cedar correction: Mira takes over as Cedar's owner from Theo. Theo remains a reviewer and will check the demo script. This is an actual ownership change, not merely a proposed substitution. Cedar's original practice and delivery times remain unchanged at this point. The team will prepare one short example showing that a later correction can replace an earlier fact. A forgotten detail should lead to an admission of uncertainty rather than an invented answer.\n\n2026-10-28, 15:00, accepted Cedar correction: move Cedar's practice from Friday at 10:00 to Friday 2026-10-30 at 10:30. Keep the date the same. The earlier 10:00 time is superseded. Move Cedar's delivery checkpoint from 11:00 to 11:15 on the same Friday. These are accepted changes. Cedar's owner is still Mira. A note proposing room Oak is only a suggestion: no location has been accepted or booked.\n\n2026-10-29, 16:00, final handover: no further changes were accepted for Cedar. The practice and delivery checkpoint are on the same day and clock. There is no booked or confirmed Cedar practice location in these notes. Do not infer one from Maple, the room Oak suggestion, or the rejected venue-selection idea. A later informal message asks whether Cedar could practice at 10:45, but the handover explicitly says that request is unconfirmed and does not change the accepted 10:30 slot. The owner remains Mira; Theo's review work does not reverse the ownership correction. Keep the final answer brief and structured so the receiving interface can check each field."
+      },
+      {
+        "role": "assistant",
+        "content": "I will use the accepted Cedar corrections and keep an unconfirmed location unknown."
+      }
+    ],
+    "question": "For Cedar, return exactly these keys: project, practice, owner, delivery, minutes_between, location. Use the project name and owner name as written. Format practice and delivery as YYYY-MM-DDTHH:MM. minutes_between must be an integer counting minutes from the accepted practice time to the accepted delivery checkpoint. Use the exact string \"unknown\" if no practice location is confirmed.",
+    "expected": {
+      "project": "Cedar",
+      "practice": "2026-10-30T10:30",
+      "owner": "Mira",
+      "delivery": "2026-10-30T11:15",
+      "minutes_between": 45,
+      "location": "unknown"
+    },
+    "order": [
+      {
+        "phase": "priming",
+        "block": 0,
+        "effort": ""
+      },
+      {
+        "phase": "priming",
+        "block": 0,
+        "effort": "minimal"
+      },
+      {
+        "phase": "priming",
+        "block": 0,
+        "effort": "low"
+      },
+      {
+        "phase": "measured",
+        "block": 1,
+        "effort": ""
+      },
+      {
+        "phase": "measured",
+        "block": 1,
+        "effort": "minimal"
+      },
+      {
+        "phase": "measured",
+        "block": 1,
+        "effort": "low"
+      },
+      {
+        "phase": "measured",
+        "block": 2,
+        "effort": "minimal"
+      },
+      {
+        "phase": "measured",
+        "block": 2,
+        "effort": "low"
+      },
+      {
+        "phase": "measured",
+        "block": 2,
+        "effort": ""
+      },
+      {
+        "phase": "measured",
+        "block": 3,
+        "effort": "low"
+      },
+      {
+        "phase": "measured",
+        "block": 3,
+        "effort": ""
+      },
+      {
+        "phase": "measured",
+        "block": 3,
+        "effort": "minimal"
+      }
+    ],
+    "maximum_new_attempts": 12,
+    "no_retries": true,
+    "invalid_json_or_wrong_fields": "Count as failures; do not tune the prompt or retry",
+    "stop_on_transport_auth_quota_or_ledger_failure": true
+  },
+  "method": [
+    "The synthetic brief, expected answer and 12-call order were fixed before the first call.",
+    "Three priming attempts are reported and charged but excluded from measured summaries; they do not guarantee a warm cache.",
+    "Nine measured calls use three balanced blocks; each effort occupies each position once.",
+    "Fresh request objects replay identical supplied synthetic history; no observed model reply is fed into later requests.",
+    "Only reasoning_effort changes. Explicit blank omits the wire parameter; fixed payload and message hashes match across all attempts.",
+    "JSON is scored without repair; duplicate keys and nonstandard nonfinite numbers are rejected. Exact keys and value types are required.",
+    "A field is counted correct only under the exact-schema contract. Missing or extra keys make every field fail.",
+    "The archived service uses a fresh HTTP client per request. Transport time includes connection/TLS, response body read and JSON parsing; service time also includes private ledger instrumentation and completion formatting.",
+    "No app server, microphone, STT, TTS, browser, tools or persistent conversation store was used."
+  ],
+  "records": [
+    {
+      "attempt": 1,
+      "phase": "priming",
+      "block": 0,
+      "effort": "",
+      "utc": "2026-10-23T10:04:19.962363+00:00",
+      "ledger_number": 27,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 1364,
+        "reasoning_tokens": 1309,
+        "cached_tokens": 0
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": null,
+      "reasoning_effort_parameter_present": false,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0003489",
+      "instrumented_transport_wall_seconds": 9.129,
+      "instrumented_service_wall_seconds": 9.132909
+    },
+    {
+      "attempt": 2,
+      "phase": "priming",
+      "block": 0,
+      "effort": "minimal",
+      "utc": "2026-10-23T10:04:29.096273+00:00",
+      "ledger_number": 28,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "minimal",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 275,
+        "reasoning_tokens": 220,
+        "cached_tokens": 0
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": "minimal",
+      "reasoning_effort_parameter_present": true,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001311",
+      "instrumented_transport_wall_seconds": 2.28,
+      "instrumented_service_wall_seconds": 2.287377
+    },
+    {
+      "attempt": 3,
+      "phase": "priming",
+      "block": 0,
+      "effort": "low",
+      "utc": "2026-10-23T10:04:31.385056+00:00",
+      "ledger_number": 29,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "low",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 466,
+        "reasoning_tokens": 411,
+        "cached_tokens": 0
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": "low",
+      "reasoning_effort_parameter_present": true,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001693",
+      "instrumented_transport_wall_seconds": 3.371,
+      "instrumented_service_wall_seconds": 3.378398
+    },
+    {
+      "attempt": 4,
+      "phase": "measured",
+      "block": 1,
+      "effort": "",
+      "utc": "2026-10-23T10:04:34.767393+00:00",
+      "ledger_number": 30,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 1386,
+        "reasoning_tokens": 1331,
+        "cached_tokens": 753
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": null,
+      "reasoning_effort_parameter_present": false,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000279506",
+      "instrumented_transport_wall_seconds": 8.801,
+      "instrumented_service_wall_seconds": 8.808925
+    },
+    {
+      "attempt": 5,
+      "phase": "measured",
+      "block": 1,
+      "effort": "minimal",
+      "utc": "2026-10-23T10:04:43.577467+00:00",
+      "ledger_number": 31,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "minimal",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 239,
+        "reasoning_tokens": 184,
+        "cached_tokens": 0
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": "minimal",
+      "reasoning_effort_parameter_present": true,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001239",
+      "instrumented_transport_wall_seconds": 3.65,
+      "instrumented_service_wall_seconds": 3.656752
+    },
+    {
+      "attempt": 6,
+      "phase": "measured",
+      "block": 1,
+      "effort": "low",
+      "utc": "2026-10-23T10:04:47.235454+00:00",
+      "ledger_number": 32,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "low",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 484,
+        "reasoning_tokens": 429,
+        "cached_tokens": 0
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": "low",
+      "reasoning_effort_parameter_present": true,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001729",
+      "instrumented_transport_wall_seconds": 3.786,
+      "instrumented_service_wall_seconds": 3.793119
+    },
+    {
+      "attempt": 7,
+      "phase": "measured",
+      "block": 2,
+      "effort": "minimal",
+      "utc": "2026-10-23T10:04:51.030622+00:00",
+      "ledger_number": 33,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\": \"Cedar\", \"practice\": \"2026-10-30T10:30\", \"owner\": \"Mira\", \"delivery\": \"2026-10-30T11:15\", \"minutes_between\": 45, \"location\": \"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "minimal",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 173,
+        "reasoning_tokens": 107,
+        "cached_tokens": 753
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": "minimal",
+      "reasoning_effort_parameter_present": true,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000036906",
+      "instrumented_transport_wall_seconds": 2.317,
+      "instrumented_service_wall_seconds": 2.340622
+    },
+    {
+      "attempt": 8,
+      "phase": "measured",
+      "block": 2,
+      "effort": "low",
+      "utc": "2026-10-23T10:04:53.407129+00:00",
+      "ledger_number": 34,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "low",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 379,
+        "reasoning_tokens": 324,
+        "cached_tokens": 753
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": "low",
+      "reasoning_effort_parameter_present": true,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000078106",
+      "instrumented_transport_wall_seconds": 3.518,
+      "instrumented_service_wall_seconds": 3.527078
+    },
+    {
+      "attempt": 9,
+      "phase": "measured",
+      "block": 2,
+      "effort": "",
+      "utc": "2026-10-23T10:04:56.937300+00:00",
+      "ledger_number": 35,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 1142,
+        "reasoning_tokens": 1087,
+        "cached_tokens": 0
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": null,
+      "reasoning_effort_parameter_present": false,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0003045",
+      "instrumented_transport_wall_seconds": 7.181,
+      "instrumented_service_wall_seconds": 7.185699
+    },
+    {
+      "attempt": 10,
+      "phase": "measured",
+      "block": 3,
+      "effort": "low",
+      "utc": "2026-10-23T10:05:04.124814+00:00",
+      "ledger_number": 36,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "low",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 421,
+        "reasoning_tokens": 366,
+        "cached_tokens": 753
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": "low",
+      "reasoning_effort_parameter_present": true,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000086506",
+      "instrumented_transport_wall_seconds": 3.113,
+      "instrumented_service_wall_seconds": 3.117173
+    },
+    {
+      "attempt": 11,
+      "phase": "measured",
+      "block": 3,
+      "effort": "",
+      "utc": "2026-10-23T10:05:07.244460+00:00",
+      "ledger_number": 37,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\":\"Cedar\",\"practice\":\"2026-10-30T10:30\",\"owner\":\"Mira\",\"delivery\":\"2026-10-30T11:15\",\"minutes_between\":45,\"location\":\"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 1385,
+        "reasoning_tokens": 1330,
+        "cached_tokens": 753
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": null,
+      "reasoning_effort_parameter_present": false,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000279306",
+      "instrumented_transport_wall_seconds": 8.907,
+      "instrumented_service_wall_seconds": 8.911111
+    },
+    {
+      "attempt": 12,
+      "phase": "measured",
+      "block": 3,
+      "effort": "minimal",
+      "utc": "2026-10-23T10:05:16.157304+00:00",
+      "ledger_number": 38,
+      "status": "returned",
+      "provider_status": "returned",
+      "reply": "{\"project\": \"Cedar\", \"practice\": \"2026-10-30T10:30\", \"owner\": \"Mira\", \"delivery\": \"2026-10-30T11:15\", \"minutes_between\": 45, \"location\": \"unknown\"}",
+      "request_settings": {
+        "provider": "meta",
+        "model": "muse-spark-1.3-contributor",
+        "max_tokens": 2048,
+        "reasoning_effort": "minimal",
+        "reasoning": null
+      },
+      "request_settings_match": true,
+      "usage": {
+        "prompt_tokens": 761,
+        "completion_tokens": 182,
+        "reasoning_tokens": 116,
+        "cached_tokens": 753
+      },
+      "valid_json": true,
+      "exact_schema": true,
+      "correct_fields": {
+        "project": true,
+        "practice": true,
+        "owner": true,
+        "delivery": true,
+        "minutes_between": true,
+        "location": true
+      },
+      "all_fields_correct": true,
+      "fixed_payload_sha256": "fe5d9ed8a77333ad1ae3f90211e43a4d4c5ded77786ae4b3b99e57abff257053",
+      "messages_sha256": "98c0613eed492b70cec5a81647d85d98a8c02036ef51165c2122d90ee5984343",
+      "reasoning_effort_sent": "minimal",
+      "reasoning_effort_parameter_present": true,
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000038706",
+      "instrumented_transport_wall_seconds": 1.757,
+      "instrumented_service_wall_seconds": 1.761437
+    }
+  ],
+  "measured_summary": {
+    "omitted": {
+      "attempts": 3,
+      "all_fields_correct": 3,
+      "instrumented_transport_wall_seconds": {
+        "median": 8.801,
+        "min": 7.181,
+        "max": 8.907
+      },
+      "reported_tokens_by_call": [
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 1386,
+          "reasoning_tokens": 1331,
+          "cached_tokens": 753
+        },
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 1142,
+          "reasoning_tokens": 1087,
+          "cached_tokens": 0
+        },
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 1385,
+          "reasoning_tokens": 1330,
+          "cached_tokens": 753
+        }
+      ],
+      "estimated_usd": "0.000863312"
+    },
+    "minimal": {
+      "attempts": 3,
+      "all_fields_correct": 3,
+      "instrumented_transport_wall_seconds": {
+        "median": 2.317,
+        "min": 1.757,
+        "max": 3.65
+      },
+      "reported_tokens_by_call": [
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 239,
+          "reasoning_tokens": 184,
+          "cached_tokens": 0
+        },
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 173,
+          "reasoning_tokens": 107,
+          "cached_tokens": 753
+        },
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 182,
+          "reasoning_tokens": 116,
+          "cached_tokens": 753
+        }
+      ],
+      "estimated_usd": "0.000199512"
+    },
+    "low": {
+      "attempts": 3,
+      "all_fields_correct": 3,
+      "instrumented_transport_wall_seconds": {
+        "median": 3.518,
+        "min": 3.113,
+        "max": 3.786
+      },
+      "reported_tokens_by_call": [
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 484,
+          "reasoning_tokens": 429,
+          "cached_tokens": 0
+        },
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 379,
+          "reasoning_tokens": 324,
+          "cached_tokens": 753
+        },
+        {
+          "prompt_tokens": 761,
+          "completion_tokens": 421,
+          "reasoning_tokens": 366,
+          "cached_tokens": 753
+        }
+      ],
+      "estimated_usd": "0.000337512"
+    }
+  },
+  "spend": {
+    "approved_task_budget_usd": "3.00",
+    "study_attempts": 12,
+    "study_estimated_usd": "0.002049636",
+    "task_generation_calls": 38,
+    "task_estimated_usd": "0.005595506",
+    "paid_openrouter_generations": 0,
+    "unknown_or_reserved_calls": 0,
+    "all_priming_and_stopped_prior_attempts_included": true,
+    "rates_usd_per_million": {
+      "uncached_input": "0.10",
+      "cached_input": "0.002",
+      "output": "0.20"
+    },
+    "calculation": "(prompt - cached) * input_rate + cached * cached_rate + completion * output_rate, divided by 1000000; reasoning is already included in completion.",
+    "estimate_scope": "Returned-usage estimate, not an invoice or account-enforced spending cap.",
+    "pricing_source": "https://dev.meta.ai/docs/pricing-rate-limits",
+    "reasoning_source": "https://dev.meta.ai/docs/reasoning",
+    "verified_on": "2026-10-23"
+  },
+  "observations": [
+    "All 12 attempts returned valid exact-schema JSON with all six expected fields correct.",
+    "Every request reported 761 prompt tokens. Six reported 753 cached input tokens; six reported zero.",
+    "The measured omitted/minimal/low groups each contain three correct replies; transport medians were 8.801/2.317/3.518 seconds.",
+    "Cached counts vary within each effort. This study does not establish the cause of timing or token differences."
+  ],
+  "limitations": [
+    "One short synthetic task, one model/account and three measured observations per effort; no general quality ranking or significance claim.",
+    "Priming and balanced ordering cannot eliminate cache, provider-load, sampling, connection or order effects.",
+    "Provider-reported cached tokens establish reuse for those calls, not guaranteed hits, retention, cache-specific latency savings or billing savings on another request.",
+    "No voice-latency, physical audibility, human interruption, durable-memory or tool-execution proof.",
+    "Production defaults and model payload code were unchanged for this study.",
+    "All submitted content was fictional. Contributor content may be used to train Meta models; credentials stayed outside Git and browser state."
+  ]
+}
