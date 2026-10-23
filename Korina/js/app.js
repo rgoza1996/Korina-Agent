@@ -27,7 +27,7 @@ import {
   resetSelectedAudioProbe, syncAudioProbeButton,
 } from "./providers-ui.js";
 import { setCapabilityFilterOverride } from "./capability-filter.js";
-import { loadAcks, preloadAckBuffers, playRandomAck, cancelAckPlayback, changeAckVoice } from "./acks.js";
+import { loadAcks, preloadAckBuffers, playRandomAck, cancelAckPlayback, changeAckVoice, refreshAckEnabledStatus } from "./acks.js";
 import { drawWave, rmsLevel, resetAdaptiveVad, updateAdaptiveVad } from "./vad.js";
 import { setupMic, releaseMic, makeRecorder, transcribeBlob, transcribePartialBlob } from "./recorder.js";
 import {
@@ -339,6 +339,7 @@ function wireSettingsInputs() {
   const ackEnabled = $('ackEnabled');
   if (ackEnabled) ackEnabled.onchange = () => {
     if (ackEnabled.value !== 'on') cancelAckPlayback();
+    else refreshAckEnabledStatus();
     saveConfigSoon();
   };
   const silenceMs = $('silenceMs');

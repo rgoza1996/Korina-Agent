@@ -14,6 +14,7 @@ let pendingPlayback = null;
 const preloads = new Map();
 const retryAfter = new Map();
 const EMPTY_RETRY_MS = 2000;
+const ACK_DISABLED_MESSAGE = 'Acknowledgements are disabled.';
 let catalogTimer = null;
 let nextRebuild = null;
 let rebuildWorker = null;
@@ -23,6 +24,15 @@ function ackStatus(message, level = 'warn') {
     state.ackStatusRevision++;
     status($('ackStatus'), message, level);
   }
+}
+
+export function refreshAckEnabledStatus() {
+  const ack = $('ackStatus');
+  state.ackStatusRevision++;
+  // Disabling playback does not repair a failed catalog or voice operation.
+  if (ack?.className?.split(/\s+/).includes('bad')) return;
+  if ($('ackEnabled')?.value === 'off') ackStatus(ACK_DISABLED_MESSAGE);
+  else if (ack?.textContent === ACK_DISABLED_MESSAGE) ackStatus('Acknowledgements enabled; cached clips reload on use.');
 }
 
 async function ackJson(response, options = {}) {
@@ -111,7 +121,9 @@ function selectVoice(voice) {
 }
 
 export function cancelAckPlayback() {
-  if (nextRebuild || rebuildWorker || catalogTimer) ackStatus('Acknowledgement playback stopped.');
+  const ack = $('ackStatus');
+  const hasError = ack?.className?.split(/\s+/).includes('bad');
+  if (!hasError && (nextRebuild || rebuildWorker || catalogTimer)) ackStatus('Acknowledgement playback stopped.');
   generation++;
   clearTimeout(catalogTimer);
   catalogTimer = null;
@@ -123,6 +135,7 @@ export function cancelAckPlayback() {
   if (state.ackSource) { try { state.ackSource.stop(); } catch {} }
   state.ackSource = null;
   state.ackPlayingUntil = 0;
+  refreshAckEnabledStatus();
 }
 
 export async function loadAcks(tag = 'global', context = snapshot(), { signal } = {}) {
@@ -139,8 +152,16 @@ export async function loadAcks(tag = 'global', context = snapshot(), { signal } 
       name: item.name, tags: item.tags || [] }));
     if (tag === 'global') state.ackFiles = urls;
     if (urls.length) retryAfter.delete(tag);
-    if (tag === 'global') ackStatus(urls.length ? `${urls.length} cached acknowledgement clips available.`
-      : payload.status?.missing_count > 0 ? 'Acknowledgement audio is being generated; no cached clips yet.' : 'No cached acknowledgement clips available.', urls.length ? 'good' : 'warn');
+    if (tag === 'global') {
+      const disabled = $('ackEnabled')?.value === 'off' || payload.status?.enabled === false;
+      const queued = Number.isSafeInteger(payload.status?.queue_depth) && payload.status.queue_depth > 0;
+      const message = disabled ? ACK_DISABLED_MESSAGE
+        : urls.length ? `${urls.length} cached acknowledgement clips available.`
+        : payload.status?.generating === true ? 'Acknowledgement audio is being generated; no cached clips yet.'
+        : queued ? 'Acknowledgement generation is queued; no cached clips yet.'
+        : 'No cached acknowledgement clips available.';
+      ackStatus(message, !disabled && urls.length ? 'good' : 'warn');
+    }
     return urls;
   } catch (error) {
     if (current(context) && error.name !== 'AbortError') ackStatus(`ACK catalog unavailable: ${apiErrorMessage(error)}. Repair the catalog or retry.`, 'bad');

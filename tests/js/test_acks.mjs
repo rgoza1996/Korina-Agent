@@ -1,7 +1,7 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
-import { cancelAckPlayback, changeAckVoice, loadAcks, playRandomAck, preloadAckBuffers } from '../../Korina/js/acks.js';
+import { cancelAckPlayback, changeAckVoice, loadAcks, playRandomAck, preloadAckBuffers, refreshAckEnabledStatus } from '../../Korina/js/acks.js';
 import { stopLive } from '../../Korina/js/live.js';
 import { MAX_ACK_AUDIO_BYTES } from '../../Korina/js/response-body.js';
 
@@ -99,6 +99,102 @@ test('catalog and buffer loading never replace transcription or playback status'
   audio.finish();
   assert.equal((await loading).length, 1);
   assert.equal(element('sttStatus').textContent, 'Current transcription error');
+});
+
+for (const cached of [false, true]) {
+  test(`a disabled catalog reports playback off and preserves ${cached ? 'cached clips' : 'an empty cache'}`, async () => {
+    element('ackEnabled').value = 'off';
+    globalThis.fetch = async url => {
+      requests.push(url);
+      return jsonResponse({ acks: cached ? [{ url: '/cached.wav', text: 'One moment.' }] : [],
+        status: { enabled: false, missing_count: 2, generating: cached, queue_depth: cached ? 1 : 0 } });
+    };
+    const clips = await loadAcks();
+    assert.match(element('ackStatus').textContent, /Acknowledgements are disabled/);
+    assert.doesNotMatch(element('ackStatus').textContent, /being generated|queued/);
+    assert.equal(clips.length, cached ? 1 : 0);
+    assert.equal(state.ackFiles, clips);
+    assert.equal(requests.length, 1, 'catalog inspection does not download audio or request a rebuild');
+  });
+}
+
+for (const [name, worker, expected] of [
+  ['idle', { generating: false, queue_depth: 0 }, /No cached acknowledgement clips available/],
+  ['queued', { generating: false, queue_depth: 2 }, /generation is queued/],
+  ['generating', { generating: true, queue_depth: 0 }, /being generated/],
+  ['unknown worker state', {}, /No cached acknowledgement clips available/],
+]) {
+  test(`an enabled empty catalog describes ${name} work without inferring from missing clips`, async () => {
+    globalThis.fetch = async () => jsonResponse({ acks: [], status: { enabled: true, missing_count: 2, ...worker } });
+    await loadAcks();
+    assert.match(element('ackStatus').textContent, expected);
+  });
+}
+
+test('the Off toggle action immediately retires an old catalog hint without clearing cached clips', async () => {
+  const entered = deferred(), finish = deferred();
+  const clips = [{ url: '/cached.wav', text: 'Keep the cache.' }];
+  state.ackFiles = clips;
+  element('ackStatus').textContent = 'Acknowledgement audio is being generated; no cached clips yet.';
+  globalThis.fetch = async () => {
+    entered.resolve(); await finish.promise;
+    return jsonResponse({ acks: [], status: { enabled: true, missing_count: 2, generating: true } });
+  };
+  const loading = loadAcks();
+  await entered.promise;
+  element('ackEnabled').value = 'off';
+  cancelAckPlayback(); // The existing Ack phrases onchange handler uses this action.
+  assert.match(element('ackStatus').textContent, /Acknowledgements are disabled/);
+  const disabledMessage = element('ackStatus').textContent;
+  finish.resolve(); await loading;
+  assert.equal(element('ackStatus').textContent, disabledMessage, 'the retired GET cannot restore the old generation hint');
+  assert.equal(state.ackFiles, clips);
+});
+
+test('switching Off preserves a catalog error and its later recovery', async () => {
+  globalThis.fetch = async () => jsonResponse({ acks: 'invalid' });
+  await loadAcks();
+  const error = element('ackStatus').textContent;
+  element('ackEnabled').value = 'off';
+  cancelAckPlayback();
+  assert.equal(element('ackStatus').textContent, error);
+  assert.equal(element('ackStatus').className, 'status bad');
+  globalThis.fetch = async () => jsonResponse({ acks: [], status: { enabled: false, missing_count: 2 } });
+  await loadAcks();
+  assert.match(element('ackStatus').textContent, /Acknowledgements are disabled/);
+  assert.doesNotMatch(element('ackStatus').textContent, /catalog unavailable/);
+});
+
+test('switching back On replaces the disabled hint without rebuilding or clearing cached clips', () => {
+  const clips = [{ url: '/cached.wav', text: 'Keep the cache.' }];
+  state.ackFiles = clips;
+  globalThis.fetch = () => assert.fail('an enabled-state hint does not request catalog/audio/rebuild work');
+  element('ackEnabled').value = 'off';
+  cancelAckPlayback();
+  assert.match(element('ackStatus').textContent, /Acknowledgements are disabled/);
+  element('ackEnabled').value = 'on';
+  refreshAckEnabledStatus();
+  assert.match(element('ackStatus').textContent, /Acknowledgements enabled/);
+  assert.doesNotMatch(element('ackStatus').textContent, /disabled|being generated/);
+  assert.equal(state.ackFiles, clips);
+});
+
+test('enabling acknowledgements during a voice save preserves its subsequent rebuild', async () => {
+  const save = deferred();
+  element('ackEnabled').value = 'off';
+  const rebuilds = [];
+  globalThis.fetch = async (_url, options) => {
+    const payload = JSON.parse(options.body);
+    rebuilds.push(payload);
+    return jsonResponse({ ok: true, voice: payload.voice, removed: 0, queued_or_missing: 1 });
+  };
+  const changingVoice = changeAckVoice(() => save.promise);
+  assert.deepEqual(rebuilds, []);
+  element('ackEnabled').value = 'on';
+  refreshAckEnabledStatus();
+  save.resolve(); await changingVoice;
+  assert.deepEqual(rebuilds, [{ voice: 'af_heart', clear: true, require_saved_voice: true }]);
+  assert.match(element('ackStatus').textContent, /rebuild queued for af_heart/);
 });
 
 test('cancelling a playing acknowledgement stops and releases its source', async () => {
