@@ -86,6 +86,12 @@ Probe batches share chat/STT request ownership. Disconnect or cancellation close
 
 `DELETE /api/audio-probe` clears a selected provider/base/model entry. After the server confirms the exact entry and removal result, Reset clears only that captured local entry and becomes available immediately; optional model discovery continues in the background. Probe-cache presence is separate from response-provider activation and from successful end-to-end speech rehearsal.
 
+## Transcription and partial feedback
+
+With full-utterance final transcription selected, queued rolling partial feedback waits while VAD is timing endpoint silence. Speech resumption admits the held windows again; finalization and Stop retire them using the existing request epoch. Already admitted feedback may finish normally, and chunks mode continues draining its complete windows. This avoids starting avoidable partial work near a full final pass; it does not establish a measured latency saving.
+
+Whisper also rechecks ownership after waiting for its model/cache or native-inference lock, before starting a new factory or lazy iterator step. Retired waiters release their model lease without admitting new native work. A step already running drains before iterator close and lease release; cancellation does not interrupt that native operation.
+
 ## Health and verification
 
 `/api/health` reports server-resolved URLs and model load blocks. Matching actual models URL/model/credentials reuse one probe within a request, while each role retains its configured display URL. `/api/ready` combines frontend, audio limits, selected STT, response model, TTS, and enabled agent checks. A reachable lazy Kokoro service is available before warm-up; a custom service without a configured health contract remains unverified. TTS health must contain recognized readiness signals with real boolean flags and valid text fields. Malformed data degrades TTS readiness while Korina liveness stays HTTP 200. Loaded-model diagnostics use the same identifier/count/byte bounds as discovery and pin the matched selected model; `models_info` reports omitted/invalid IDs. Two explicit GGUF paths do not match merely because their basenames agree.
