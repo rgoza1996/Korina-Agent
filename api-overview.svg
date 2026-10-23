@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620" role="img" aria-labelledby="title desc">
+<title id="title">Korina API at a glance</title><desc id="desc">Selected current API routes, not a complete inventory. Korina serves health, readiness, models, settings, transcription, chat and optional agent reporting. Speech routes belong to a separate Kokoro-compatible service. The running instance exposes the full schema at /docs and /openapi.json.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#3a5a7a"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.code{font-family:ui-monospace,"DejaVu Sans Mono",monospace}</style>
+<rect width="900" height="620" fill="#f4efe6"/>
+<text x="24" y="42" font-size="28" font-weight="700" text-anchor="start" fill="#2b2620">API at a glance</text>
+<text x="24" y="73" font-size="18" font-weight="400" text-anchor="start" fill="#5a4f44">Selected routes · full schema on the running instance at /docs</text>
+<rect x="24" y="102" width="414" height="140" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="42" y="133" font-size="21" font-weight="700" text-anchor="start" fill="#3a5a7a">Status + readiness</text>
+<text x="42" y="164" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">GET /api/health</text>
+<text x="42" y="191" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">GET /api/ready</text>
+<text x="42" y="222" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Is the selected voice stack ready?</text>
+<rect x="462" y="102" width="414" height="140" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="480" y="133" font-size="21" font-weight="700" text-anchor="start" fill="#3a5a7a">Models + settings</text>
+<text x="480" y="164" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">GET /api/models</text>
+<text x="480" y="191" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">GET · POST /api/config</text>
+<text x="480" y="222" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Provider selection and saved settings.</text>
+<rect x="24" y="260" width="414" height="140" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="42" y="291" font-size="21" font-weight="700" text-anchor="start" fill="#3a5a7a">Transcription</text>
+<text x="42" y="322" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">POST /api/transcribe</text>
+<text x="42" y="380" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Full, partial and streamed routes.</text>
+<rect x="462" y="260" width="414" height="140" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="480" y="291" font-size="21" font-weight="700" text-anchor="start" fill="#3a5a7a">Response</text>
+<text x="480" y="322" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">POST /api/chat</text>
+<text x="480" y="380" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Earlier turns + the current message.</text>
+<rect x="24" y="418" width="414" height="140" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="42" y="449" font-size="21" font-weight="700" text-anchor="start" fill="#3a5a7a">Speech service</text>
+<text x="42" y="480" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">POST /stream/speech</text>
+<text x="42" y="507" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">POST /v1/audio/speech</text>
+<text x="42" y="538" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Separate Kokoro-compatible service.</text>
+<rect x="462" y="418" width="414" height="140" rx="12" fill="#f0eaf4" stroke="#b29bbf" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="480" y="449" font-size="21" font-weight="700" text-anchor="start" fill="#6a4f7a">Optional agent</text>
+<text x="480" y="480" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">POST /api/agent/transcript</text>
+<text x="480" y="507" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620" class="code">GET /api/agent/events</text>
+<text x="480" y="538" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Reports and permission prompts.</text>
+<text x="24" y="604" font-size="17" font-weight="400" text-anchor="start" fill="#5a4f44">These routes describe conversation and reporting, not autonomous tool execution.</text>
+</svg>

@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="568" viewBox="0 0 900 568" role="img" aria-labelledby="title desc">
+<title id="title">Korina voice and context flow</title><desc id="desc">Focused demo flow: browser microphone and VAD, local Whisper transcription, current-session history plus the question, Meta Model API response, then local Kokoro and native browser playback. Optional agent reporting is a separate path sharing runtime state. No durable memory or built-in tool execution is shown.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#3a5a7a"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}.code{font-family:ui-monospace,"DejaVu Sans Mono",monospace}</style>
+<rect width="900" height="568" fill="#f4efe6"/>
+<text x="24" y="42" font-size="28" font-weight="700" text-anchor="start" fill="#2b2620">A voice turn, with context</text>
+<text x="24" y="73" font-size="18" font-weight="400" text-anchor="start" fill="#5a4f44">Focused demo path · Whisper → Meta → Kokoro</text>
+<rect x="20" y="108" width="156" height="158" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="34" y="135" font-size="13" font-weight="700" text-anchor="start" fill="#3a5a7a">1 · BROWSER</text>
+<text x="34" y="171" font-size="21" font-weight="700" text-anchor="start" fill="#2b2620">Capture</text>
+<text x="34" y="212" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Microphone</text>
+<text x="34" y="236" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">+ VAD</text>
+<path d="M178 187H192" fill="none" stroke="#3a5a7a" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="196" y="108" width="156" height="158" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="210" y="135" font-size="13" font-weight="700" text-anchor="start" fill="#3a5a7a">2 · LOCAL</text>
+<text x="210" y="171" font-size="21" font-weight="700" text-anchor="start" fill="#2b2620">Whisper</text>
+<text x="210" y="212" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Audio</text>
+<text x="210" y="236" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">to transcript</text>
+<path d="M354 187H368" fill="none" stroke="#3a5a7a" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="372" y="108" width="156" height="158" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="386" y="135" font-size="13" font-weight="700" text-anchor="start" fill="#3a5a7a">3 · THIS SESSION</text>
+<text x="386" y="171" font-size="21" font-weight="700" text-anchor="start" fill="#2b2620">Context</text>
+<text x="386" y="212" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Earlier turns</text>
+<text x="386" y="236" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">+ this question</text>
+<path d="M530 187H544" fill="none" stroke="#3a5a7a" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="548" y="108" width="156" height="158" rx="12" fill="#e7eef5" stroke="#3a5a7a" stroke-width="1.5"/>
+<text x="562" y="135" font-size="13" font-weight="700" text-anchor="start" fill="#3a5a7a">4 · REMOTE</text>
+<text x="562" y="171" font-size="21" font-weight="700" text-anchor="start" fill="#2b2620">Meta Model</text>
+<text x="562" y="195" font-size="21" font-weight="700" text-anchor="start" fill="#2b2620">API</text>
+<text x="562" y="225" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Text context</text>
+<text x="562" y="249" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">to an answer</text>
+<path d="M706 187H720" fill="none" stroke="#3a5a7a" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="724" y="108" width="156" height="158" rx="12" fill="#fffaf1" stroke="#cdc1ad" stroke-width="1.5"/>
+<text x="738" y="135" font-size="13" font-weight="700" text-anchor="start" fill="#3a5a7a">5 · LOCAL</text>
+<text x="738" y="171" font-size="21" font-weight="700" text-anchor="start" fill="#2b2620">Kokoro</text>
+<text x="738" y="212" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Local speech</text>
+<text x="738" y="236" font-size="16" font-weight="400" text-anchor="start" fill="#5a4f44">Native playback</text>
+<rect x="20" y="304" width="860" height="76" rx="12" fill="#e7eef5" stroke="#aabccd" stroke-width="1.5"/>
+<text x="40" y="334" font-size="20" font-weight="700" text-anchor="start" fill="#3a5a7a">The earlier fact travels with the next question</text>
+<text x="40" y="361" font-size="17" font-weight="400" text-anchor="start" fill="#5a4f44">Cedar · Friday · 10 AM — supplied conversation context, not durable memory.</text>
+<rect x="20" y="414" width="860" height="126" rx="12" fill="#f0eaf4" stroke="#b29bbf" stroke-width="1.5" stroke-dasharray="6 4"/>
+<text x="40" y="446" font-size="21" font-weight="700" text-anchor="start" fill="#6a4f7a">Optional agent reporting · a separate path</text>
+<text x="40" y="477" font-size="17" font-weight="400" text-anchor="start" fill="#2b2620">Conversation transcript → agent model / worker → reports or permission prompts</text>
+<text x="40" y="509" font-size="17" font-weight="400" text-anchor="start" fill="#5a4f44">Shared runtime state; enabled separately. No built-in tool execution.</text>
+</svg>

@@ -102,12 +102,19 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
  <div class="card"><h3>Review and evidence</h3><p>The working branch is <code>codex/hackathon-refactor</code>, based on <code>alpha</code>. Review the changes in <a href="https://github.com/rgoza1996/Korina-Agent/pull/24">PR #24</a>; final verification evidence lives in issue #23.</p><div class="card-footer"><a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Follow progress →</a></div></div>
  <div class="card"><h3>Recorded rehearsal</h3><p>The accepted <code>4158cd2</code> recording adds two actual generations, totaling 41 task calls / estimated $0.005700232. Earlier accepted sources and the stopped attempt at 39 calls remain preserved. Generated input and native digital playback do not establish physical hardware or final event acceptance.</p><div class="card-footer"><a href="Demo.html">Watch pre-event demo →</a></div></div>
  </div>
- <h2>System Architecture</h2>
- <img class="chart-img" width="900" height="563" loading="lazy" src="arch_diagram.png" alt="Korina system architecture diagram">
+ <h2>The voice and context path</h2>
+ <p style="color:var(--ink-soft);margin-bottom:0.75rem">The focused demo uses local Whisper, Meta Model API and local Kokoro. Korina sends earlier conversation turns with the new question; optional agent reporting runs separately in the shared runtime.</p>
+ <picture>
+ <source media="(max-width:600px)" srcset="voice-context-flow-mobile.svg" width="320" height="1072">
+ <img class="chart-img" width="900" height="568" loading="lazy" src="voice-context-flow.svg" alt="Voice flows from browser capture through Whisper, current-session context, Meta Model API, and Kokoro playback. Optional agent reporting is separate; no durable memory or tool execution is shown.">
+ </picture>
 
  <h2>API Surface</h2>
- <p style="color:var(--ink-soft);margin-bottom:0.75rem">The illustration is a historical overview. The running backend’s <code>/docs</code> and <code>/openapi.json</code> describe the current API, including the Converse channel layer.</p>
- <img class="chart-img" width="900" height="540" loading="lazy" src="routes_chart.png" alt="API routes reference">
+ <p style="color:var(--ink-soft);margin-bottom:0.75rem">Selected current routes are grouped below. Speech endpoints belong to the separate Kokoro-compatible service. The running backend’s <code>/docs</code> and <code>/openapi.json</code> provide the complete API schema.</p>
+ <picture>
+ <source media="(max-width:600px)" srcset="api-overview-mobile.svg" width="320" height="1080">
+ <img class="chart-img" width="900" height="620" loading="lazy" src="api-overview.svg" alt="Selected API groups: status and readiness, models and settings, transcription, response chat, separate speech synthesis, and optional agent reporting. This is not a complete endpoint inventory.">
+ </picture>
 
  <h2>Release Gate</h2>
  <div class="card-grid">
