@@ -106,7 +106,9 @@ export async function processPartialQueue() {
       // Full-final mode will replace partial feedback at the endpoint. Hold
       // queued work during its silence timer rather than start another native
       // step that cannot be interrupted when the full recording is submitted.
-      if (finalSttMode() === 'full' && state.liveSilenceStart) break;
+      // An already-started chunks finalization must finish draining even if
+      // the user changes the next turn's mode while a request is in flight.
+      if (!state.liveBusy && finalSttMode() === 'full' && state.liveSilenceStart) break;
       const item = state.partialQueue.shift();
       if (item.seq !== worker.seq) continue;
       $('transcriptInfo').textContent = `Transcribing queued window ${item.windowId}; ${state.partialQueue.length} waiting.`;

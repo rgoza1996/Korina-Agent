@@ -203,6 +203,52 @@ test('chunks mode continues draining every complete window during endpoint silen
   assert.equal(state.partialQueue.length, 0);
 });
 
+test('a mode edit during chunks finalization cannot strand its queued windows', { timeout: 1000 }, async () => {
+  const requests = [];
+  const messages = [];
+  let fullRequests = 0;
+  let pending;
+  const turns = turnTransport(() => { fullRequests++; }, payload => messages.push(payload.message));
+  globalThis.fetch = (url, options) => {
+    if (url.startsWith('/api/transcribe/partial')) {
+      return new Promise(resolve => requests.push({ resolve, signal: options.signal }));
+    }
+    return turns(url, options);
+  };
+  try {
+    startPartialTranscriptionLoop();
+    await captureWindow(audio('first-'));
+    await captureWindow(audio('second-'));
+    assert.equal(requests.length, 1);
+    assert.equal(state.partialQueue.length, 1);
+    state.liveSilenceStart = performance.now();
+    state.liveBusy = true;
+    pending = handleLiveTurn();
+    await tick();
+    assert.equal(state.partialQueueProcessing, true, 'finalization is awaiting the first window');
+    assert.deepEqual(messages, []);
+
+    element('finalSttMode').value = 'full';
+    requests[0].resolve(json(partial('First window.')));
+    await tick();
+    assert.equal(requests.length, 2, 'the captured chunks policy must drain its second window');
+    assert.equal(state.partialQueueProcessing, true);
+    requests[1].resolve(json(partial('Second window.')));
+    await pending;
+    assert.deepEqual(messages, ['First window. Second window.']);
+    assert.equal(fullRequests, 0, 'this turn keeps its already-started chunks finalization');
+    assert.equal(state.partialQueue.length, 0);
+    assert.equal(state.partialQueueProcessing, false);
+    assert.equal(state.liveBusy, false);
+    assert.equal(element('finalSttMode').value, 'full', 'the new setting remains for the next turn');
+    assert(requests.every(request => !request.signal.aborted));
+  } finally {
+    stopLive();
+    for (const request of requests) request.resolve(json(partial('Retired window.')));
+    await pending;
+  }
+});
+
 test('late final data from an old recorder cannot consume or clear a new recorder window', async () => {
   let uploaded;
   globalThis.fetch = async (url, options) => { uploaded = options.body.get('audio'); return json(partial('Current window.')); };
