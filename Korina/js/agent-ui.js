@@ -172,7 +172,7 @@ export function setAgentInterruptCooldown() {
 }
 
 export function deferAgentInterrupt(message, ev) {
-  state.deferredAgentInterrupt = { message, ev, createdAt: performance.now() };
+  state.deferredAgentInterrupt = { message };
   queueAgentReport(stripTranscriptLabels(ev?.report || ev?.message || message));
   agentDebug('Agent interrupt deferred by cooldown', {
     cooldown_until_audio_time: state.agentInterruptCooldownUntil,
