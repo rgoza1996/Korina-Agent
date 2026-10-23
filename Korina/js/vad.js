@@ -52,8 +52,9 @@ export function resetAdaptiveVad() {
   state.vadIdleNoiseSamples = [];
   state.vadCalibratingUntil = performance.now() + 900;
   state.vadLastIdleRecalibrationAt = performance.now();
-  state.vadSpeechFrames = 0;
-  state.vadSilenceFrames = 0;
+  state.vadSpeechCandidateAt = null;
+  state.vadSilenceCandidateAt = null;
+  state.vadLastObservationAt = null;
   state.vadSpeechThreshold = VAD_BASE_SPEECH_THRESHOLD;
   state.vadSilenceThreshold = VAD_BASE_SILENCE_THRESHOLD;
 }

@@ -1,7 +1,7 @@
 import test, { beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
-import { startLiveRecorder, stopLive } from '../../Korina/js/live.js';
+import { liveMonitor, startLiveRecorder, stopLive } from '../../Korina/js/live.js';
 import { startBargeInCapture } from '../../Korina/js/barge-in.js';
 import { makeRecorder } from '../../Korina/js/recorder.js';
 
@@ -67,7 +67,8 @@ beforeEach(() => {
   Object.assign(state, {
     audioLimits: { max_duration_seconds: 1, max_upload_bytes: 1000000 }, audioLimitsError: '',
     live: true, liveSession: 1, agentSession: 1, liveBusy: false, stream,
-    liveSpeechStart: 0, liveLastVoice: 0, vadSpeechFrames: 0, liveLoopId: null,
+    liveSpeechStart: 0, liveLastVoice: 0, vadSpeechCandidateAt: null, vadSilenceCandidateAt: null,
+    vadLastObservationAt: null, liveLoopId: null,
     mediaRecorder: null, recChunks: [], meterAudioCtx: null, analyser: null, raf: null,
     liveTranscriptionController: null, partialRecorder: null, partialRecorderDone: null,
     partialController: null, partialTimer: null, partialQueue: [], partialCaptureActive: false,
@@ -132,7 +133,7 @@ test('a live speech deadline uploads the intact file through the normal full-tur
   startLiveRecorder();
   const recorder = state.mediaRecorder;
   recorder.emit('h'.repeat(3000)); recorder.finalData = 'tail';
-  state.liveSpeechStart = clock.now() - 100; state.liveLastVoice = clock.now(); state.vadSpeechFrames = 8;
+  state.liveSpeechStart = clock.now() - 100; state.liveLastVoice = clock.now();
   clock.tick(900);
   await recorder.finished;
   const upload = requests.find(request => request.url.startsWith('/api/transcribe/stream'));
@@ -140,6 +141,23 @@ test('a live speech deadline uploads the intact file through the normal full-tur
   assert.match(element('log').children.map(child => child.innerHTML).join(''), /Recording limit reached/);
   assert.equal(state.live, true);
   assert.equal(state.mediaRecorder.state, 'recording');
+});
+
+test('speech awaiting confirmation at the capture deadline retains the complete recording', async () => {
+  const requests = installTurn();
+  startLiveRecorder();
+  const recorder = state.mediaRecorder;
+  recorder.emit('h'.repeat(3000)); recorder.finalData = 'tail';
+  clock.tick(800);
+  state.analyser = { fftSize: 512, getByteTimeDomainData: data => data.fill(160) };
+  liveMonitor();
+  assert.equal(state.liveSpeechStart, 0);
+  assert.equal(state.vadSpeechCandidateAt, clock.now());
+  clock.tick(100);
+  await recorder.finished;
+  const upload = requests.find(request => request.url.startsWith('/api/transcribe/stream'));
+  assert.equal(await upload.options.body.get('audio').text(), 'h'.repeat(3000) + 'tail');
+  assert.equal(state.live, true);
 });
 
 test('failed silent live rotation releases the microphone and exposes the restart failure', async () => {

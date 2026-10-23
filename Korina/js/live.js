@@ -11,9 +11,10 @@ import { stopTtsNow } from "./speech.js";
 import { cancelBargeIn } from "./barge-in.js";
 import { rmsLevel, updateAdaptiveVad } from "./vad.js";
 
-// VAD frame thresholds.
-const VAD_SPEECH_FRAMES = 8;
-const VAD_SILENCE_FRAMES = 10;
+// Match the former confirmation windows at 60 Hz without depending on rendering.
+const VAD_SPEECH_MS = 120;
+const VAD_SILENCE_MS = 150;
+const VAD_MAX_OBSERVATION_GAP_MS = 250;
 
 // Confirm the selected response model, using the server's runtime load block.
 export async function responseLlmPreflight() {
@@ -63,6 +64,9 @@ export async function startLive() {
 export function stopLive() {
   state.liveSession++;
   state.live = false; state.liveBusy = false;
+  state.vadSpeechCandidateAt = null;
+  state.vadSilenceCandidateAt = null;
+  state.vadLastObservationAt = null;
   cancelBargeIn();
   state.liveTurnController?.abort();
   state.liveTurnController = null;
@@ -97,8 +101,9 @@ export function startLiveRecorder() {
   state.liveSpeechStart = 0;
   state.liveSilenceStart = 0;
   state.liveLastVoice = 0;
-  state.vadSpeechFrames = 0;
-  state.vadSilenceFrames = 0;
+  state.vadSpeechCandidateAt = null;
+  state.vadSilenceCandidateAt = null;
+  state.vadLastObservationAt = null;
   state.partialWindowIndex = 0;
   state.latestPartialText = '';
   makeRecorder(async (metadata) => {
@@ -109,7 +114,7 @@ export function startLiveRecorder() {
       return;
     }
     if (metadata.limitReached) {
-      if (!state.liveSpeechStart && !state.vadSpeechFrames) {
+      if (!state.liveSpeechStart && state.vadSpeechCandidateAt === null) {
         // No speech was detected: replace the whole silent file, keeping the mic.
         state.recChunks.length = 0;
         try { startLiveRecorder(); liveMonitor(); }
@@ -140,23 +145,29 @@ export function liveMonitor() {
   if (!state.live || state.liveBusy) return;
   const level = rmsLevel();
   const now = performance.now();
+  if (state.vadLastObservationAt !== null && now - state.vadLastObservationAt > VAD_MAX_OBSERVATION_GAP_MS) {
+    // A stalled renderer provides no evidence of continuous speech or quiet.
+    state.vadSpeechCandidateAt = null;
+    state.vadSilenceCandidateAt = null;
+  }
+  state.vadLastObservationAt = now;
   updateAdaptiveVad(level, now);
   const aboveSpeech = level > state.vadSpeechThreshold;
   const belowSilence = level < state.vadSilenceThreshold;
   if (aboveSpeech) {
-    state.vadSpeechFrames++;
-    state.vadSilenceFrames = 0;
+    state.vadSpeechCandidateAt ??= now;
+    state.vadSilenceCandidateAt = null;
   } else if (belowSilence) {
-    state.vadSilenceFrames++;
-    state.vadSpeechFrames = 0;
+    state.vadSilenceCandidateAt ??= now;
+    state.vadSpeechCandidateAt = null;
   } else {
-    // Between thresholds: hold current state instead of flapping.
-    state.vadSpeechFrames = 0;
-    state.vadSilenceFrames = 0;
+    // Keep the confirmed state, but require a fresh uninterrupted candidate.
+    state.vadSpeechCandidateAt = null;
+    state.vadSilenceCandidateAt = null;
   }
 
   if (!state.liveSpeechStart) {
-    if (state.vadSpeechFrames >= VAD_SPEECH_FRAMES) {
+    if (state.vadSpeechCandidateAt !== null && now - state.vadSpeechCandidateAt >= VAD_SPEECH_MS) {
       state.liveSpeechStart = now;
       state.liveLastVoice = now;
       markActivity('user-speech-start');
@@ -177,7 +188,7 @@ export function liveMonitor() {
     state.liveSilenceStart = 0;
     if (resumed) processPartialQueue();
     status($('sttStatus'), `Listening… level ${level.toFixed(3)} · speech>${state.vadSpeechThreshold.toFixed(3)} silence<${state.vadSilenceThreshold.toFixed(3)}`, 'warn');
-  } else if (state.vadSilenceFrames >= VAD_SILENCE_FRAMES) {
+  } else if (state.vadSilenceCandidateAt !== null && now - state.vadSilenceCandidateAt >= VAD_SILENCE_MS) {
     if (!state.liveSilenceStart) state.liveSilenceStart = now;
     const speechMs = state.liveLastVoice - state.liveSpeechStart;
     const silenceMs = now - state.liveSilenceStart;

@@ -53,8 +53,9 @@ export const state = {
   vadIdleNoiseSamples: [],
   vadCalibratingUntil: 0,
   vadLastIdleRecalibrationAt: 0,
-  vadSpeechFrames: 0,
-  vadSilenceFrames: 0,
+  vadSpeechCandidateAt: null,
+  vadSilenceCandidateAt: null,
+  vadLastObservationAt: null,
   vadSpeechThreshold: 0.035,
   vadSilenceThreshold: 0.022,
 

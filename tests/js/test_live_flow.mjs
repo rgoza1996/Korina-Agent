@@ -5,6 +5,7 @@ import {
   handleLiveTurn, liveMonitor, responseLlmPreflight, startLive, startLiveRecorder, stopLive,
 } from '../../Korina/js/live.js';
 import { makeRecorder, releaseMic, setupMic } from '../../Korina/js/recorder.js';
+import { resetAdaptiveVad } from '../../Korina/js/vad.js';
 
 const elements = new Map();
 function element(id) {
@@ -30,6 +31,7 @@ const frames = new Map();
 let nextFrame = 0;
 const recorders = [];
 const contexts = [];
+const nativePerformance = globalThis.performance;
 
 class AudioContextStub {
   constructor() { this.state = 'running'; this.currentTime = 0; this.destination = {}; contexts.push(this); }
@@ -70,9 +72,152 @@ beforeEach(() => {
     bargeRecorder: null, audioCtx: null, ackSource: null, activeSources: [],
     controller: null, recChunks: [], latestPartialText: '', ackFiles: [], ackBuffersByTag: {},
     pendingImportantAgentMessage: '', awaitingAgentPermission: null,
+    liveSpeechStart: 0, liveSilenceStart: 0, liveLastVoice: 0,
+    vadSpeechCandidateAt: null, vadSilenceCandidateAt: null, vadLastObservationAt: null,
   });
 });
-afterEach(() => { stopLive(); releaseMic(); });
+afterEach(() => {
+  stopLive(); releaseMic();
+  Object.defineProperty(globalThis, 'performance', { configurable: true, value: nativePerformance });
+});
+
+function vadClock() {
+  let now = 1000;
+  let value = 128;
+  let stops = 0;
+  Object.defineProperty(globalThis, 'performance', { configurable: true, value: { now: () => now } });
+  Object.assign(state, { live: true, liveBusy: false, endSilenceMs: 300,
+    lastActivityAt: now, suppressAckUntil: 0,
+    analyser: { fftSize: 512, getByteTimeDomainData: data => data.fill(value) },
+    mediaRecorder: { state: 'recording', stop() { this.state = 'inactive'; stops++; } },
+  });
+  resetAdaptiveVad();
+  state.vadCalibratingUntil = 0;
+  state.vadNoiseFloor = .002;
+  element('ackEnabled').value = 'off';
+  element('minSpeechMs').value = '600';
+  element('finalSttMode').value = 'full';
+  return {
+    sample(offset, level) { now = 1000 + offset; value = level; liveMonitor(); },
+    get stops() { return stops; },
+  };
+}
+
+function sampleVad(clock, gaps, until, levelAt) {
+  for (let offset = 0, index = 0; offset <= until; offset += gaps[index++ % gaps.length]) {
+    clock.sample(offset, levelAt(offset));
+  }
+}
+
+for (const [name, gaps] of [
+  ['60 Hz', [1000 / 60]], ['20 Hz', [50]], ['irregular rendering', [17, 48, 73, 29, 56]],
+]) {
+  test(`live speech bursts reach one final endpoint at ${name}`, () => {
+    const clock = vadClock();
+    // Identical 240 ms speech bursts and 80 ms pauses: slower rendering yields
+    // fewer samples per syllable, while the audible durations stay the same.
+    sampleVad(clock, gaps, 2000, offset => offset < 880 && offset % 320 < 240 ? 160 : 128);
+    assert(state.liveSpeechStart > 0, 'speech lasting over 120 ms must be confirmed');
+    assert.equal(clock.stops, 1, 'the final silence ends exactly one complete turn');
+    assert.equal(state.liveBusy, true);
+  });
+}
+
+test('many samples in a short spike cannot confirm speech', () => {
+  const clock = vadClock();
+  sampleVad(clock, [5], 110, () => 160);
+  clock.sample(115, 128);
+  assert.equal(state.liveSpeechStart, 0);
+  assert.equal(clock.stops, 0);
+});
+
+test('long rendering stalls cannot join isolated spikes but fresh continuous speech still works', () => {
+  const clock = vadClock();
+  clock.sample(0, 160); clock.sample(1000, 160); clock.sample(2000, 160);
+  clock.sample(3000, 128); clock.sample(3200, 128); clock.sample(3600, 128);
+  assert.equal(state.liveSpeechStart, 0, 'unobserved one-second gaps cannot establish continuous speech');
+  assert.equal(clock.stops, 0);
+  for (let offset = 4000; offset <= 5000; offset += 50) clock.sample(offset, 160);
+  assert(state.liveSpeechStart > 0, 'fresh speech remains eligible after an expired candidate');
+  for (let offset = 5050; offset <= 5600; offset += 50) clock.sample(offset, 128);
+  assert.equal(clock.stops, 1);
+});
+
+test('a long observation gap restarts unfinished silence confirmation', () => {
+  const clock = vadClock();
+  sampleVad(clock, [20], 1000, () => 160);
+  clock.sample(1020, 128);
+  clock.sample(1320, 128);
+  assert.equal(state.liveSilenceStart, 0, 'a stale quiet observation cannot start the endpoint timer');
+  clock.sample(1420, 128);
+  assert.equal(state.liveSilenceStart, 0);
+  clock.sample(1470, 128);
+  assert.equal(state.liveSilenceStart, 2470);
+  for (let offset = 1520; offset <= 1770; offset += 50) clock.sample(offset, 128);
+  assert.equal(clock.stops, 0);
+  clock.sample(1780, 128);
+  assert.equal(clock.stops, 1);
+});
+
+for (const gap of [128, 131]) {
+  test(`a ${gap === 128 ? 'quiet' : 'hysteresis-band'} gap restarts speech confirmation`, () => {
+    const clock = vadClock();
+    clock.sample(0, 160); clock.sample(80, 160); clock.sample(90, gap);
+    clock.sample(100, 160); clock.sample(180, 160);
+    assert.equal(state.liveSpeechStart, 0, 'separate short spikes must not accumulate');
+    clock.sample(230, 160);
+    assert(state.liveSpeechStart > 0);
+  });
+}
+
+test('brief silence and hysteresis gaps do not start the endpoint timer', () => {
+  const clock = vadClock();
+  sampleVad(clock, [20], 1000, () => 160);
+  for (let offset = 1020; offset <= 1140; offset += 10) clock.sample(offset, 128);
+  assert.equal(state.liveSilenceStart, 0, 'a 120 ms dip must not pass 150 ms silence confirmation');
+  clock.sample(1150, 131);
+  clock.sample(1160, 128); clock.sample(1290, 128);
+  assert.equal(state.liveSilenceStart, 0, 'the band gap restarts silence confirmation');
+  clock.sample(1320, 128);
+  assert.equal(state.liveSilenceStart, 2320);
+  clock.sample(1500, 160);
+  assert.equal(state.liveSilenceStart, 0, 'speech resumption cancels the endpoint');
+  clock.sample(1510, 128); clock.sample(1670, 128);
+  clock.sample(1810, 128);
+  clock.sample(1960, 128);
+  assert.equal(clock.stops, 0, 'the configured endpoint interval remains in effect');
+  clock.sample(1980, 128);
+  assert.equal(clock.stops, 1);
+});
+
+test('confirmed short speech still obeys the configured minimum utterance duration', () => {
+  const clock = vadClock();
+  sampleVad(clock, [20], 300, () => 160);
+  sampleVad({ sample: (offset, level) => clock.sample(offset + 320, level) }, [50], 1000, () => 128);
+  assert(state.liveSpeechStart > 0);
+  assert(state.liveSilenceStart > 0);
+  assert.equal(clock.stops, 0, 'confirmation must not bypass min_speech_ms');
+});
+
+test('Stop and a fresh recorder discard unfinished VAD confirmation candidates', () => {
+  const clock = vadClock();
+  clock.sample(0, 160); clock.sample(70, 160);
+  assert.equal(state.vadSpeechCandidateAt, 1000);
+  stopLive();
+  assert.equal(state.vadSpeechCandidateAt, null);
+  assert.equal(state.vadSilenceCandidateAt, null);
+  assert.equal(state.vadLastObservationAt, null);
+  state.live = true; state.stream = streamStub();
+  state.vadSpeechCandidateAt = 1000;
+  state.vadSilenceCandidateAt = 1100;
+  state.vadLastObservationAt = 1200;
+  startLiveRecorder();
+  assert.equal(state.vadSpeechCandidateAt, null);
+  assert.equal(state.vadSilenceCandidateAt, null);
+  assert.equal(state.vadLastObservationAt, null);
+  clock.sample(200, 160); clock.sample(280, 160);
+  assert.equal(state.liveSpeechStart, 0);
+});
 
 for (const [name, block, ok] of [
   ['offline endpoint', { ok: false, loaded: false, error: 'connection refused' }, false],
