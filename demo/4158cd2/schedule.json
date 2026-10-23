@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "source_commit": "4158cd2e811ea6d8869e5687204f264ea8ac2caf",
+  "kind": "Allowlisted actual native WebAudio PCM schedule with a clearly DERIVED voice replay",
+  "uncalibrated_video_offset": true,
+  "observed_post_stop_output_gain": 1,
+  "pcm_conversion": "native float32 mono to signed16LE by round(sample*32768), clamped",
+  "capture_errors": [],
+  "chunks": [
+    {
+      "id": 0,
+      "context_id": 0,
+      "phase": "seed",
+      "when": 8.832290249433106,
+      "offset": 0,
+      "requested_duration": null,
+      "frames": 89400,
+      "sample_rate": 24000,
+      "duration": 3.725,
+      "playback_rate": 1,
+      "detune": 0,
+      "ended": true,
+      "rms": 0.04562997252909456,
+      "sha256": "9a4bbf55d0a1c0c54d97f89c7296e8d30e3e51289d492a8c6d0ac51774d05eb0",
+      "file": "01-seed.wav",
+      "start_call": {
+        "performance_ms": 14262.600000023842,
+        "context_seconds": 8.832290249433106,
+        "context_state": "running"
+      },
+      "end": {
+        "performance_ms": 18050.90000000596,
+        "context_seconds": 12.561995464852608,
+        "context_state": "running"
+      }
+    },
+    {
+      "id": 1,
+      "context_id": 0,
+      "phase": "voice",
+      "when": 33.81115646258503,
+      "offset": 0,
+      "requested_duration": null,
+      "frames": 46200,
+      "sample_rate": 24000,
+      "duration": 1.925,
+      "playback_rate": 1,
+      "detune": 0,
+      "ended": true,
+      "rms": 0.04908454597974369,
+      "sha256": "6e80294780a9297d388494be76294d85fa07b7e41607e0cb907acff9756ccfeb",
+      "file": "02-voice.wav",
+      "start_call": {
+        "performance_ms": 40465.30000001192,
+        "context_seconds": 33.81115646258503,
+        "context_state": "running"
+      },
+      "end": {
+        "performance_ms": 42445.10000002384,
+        "context_seconds": 35.74131519274376,
+        "context_state": "running"
+      }
+    },
+    {
+      "id": 2,
+      "context_id": 0,
+      "phase": "voice",
+      "when": 41.67111111111111,
+      "offset": 0,
+      "requested_duration": null,
+      "frames": 73200,
+      "sample_rate": 24000,
+      "duration": 3.05,
+      "playback_rate": 1,
+      "detune": 0,
+      "ended": true,
+      "rms": 0.0453391472083994,
+      "sha256": "b5c492d12dc4e2c3aaa4409fa2c12c9e22e4ea6f04f82d19c55781444ddb22bb",
+      "file": "03-voice.wav",
+      "start_call": {
+        "performance_ms": 48729.20000001788,
+        "context_seconds": 41.67111111111111,
+        "context_state": "running"
+      },
+      "end": {
+        "performance_ms": 51797.5,
+        "context_seconds": 44.72163265306123,
+        "context_state": "running"
+      }
+    }
+  ],
+  "contexts": [
+    {
+      "id": 0,
+      "created": {
+        "performance_ms": 5283,
+        "context_seconds": 0,
+        "context_state": "running"
+      },
+      "states": [
+        {
+          "performance_ms": 5299.300000011921,
+          "context_seconds": 0.020317460317460317,
+          "context_state": "running"
+        }
+      ]
+    }
+  ],
+  "derived_voice_replay": {
+    "file": "voice-answer-replay.wav",
+    "kind": "DERIVED schedule-based replay from actual native PCM",
+    "source_files": [
+      "02-voice.wav",
+      "03-voice.wav"
+    ],
+    "context_id": 0,
+    "origin_context_seconds": 33.81115646258503,
+    "sample_rate": 24000,
+    "channels": 1,
+    "sample_width_bytes": 2,
+    "source_start_sample_frames": [
+      0,
+      188639
+    ],
+    "source_sample_frames": [
+      46200,
+      73200
+    ],
+    "gap_sample_frames": 142439,
+    "recorded_gap_seconds": 5.934954648526078,
+    "represented_gap_seconds": 5.934958333333333,
+    "total_sample_frames": 261839,
+    "duration_seconds": 10.909958333333334,
+    "start_rounding_error_sample_frames": [
+      0.0,
+      0.08843537414213642
+    ],
+    "sha256": "6d4c552d7f13636bbcdcad8c3f0108631cb29b5065059d5769828b3f43cf645d",
+    "method": "Place unchanged signed16LE chunk frames at round((when-first_when)*24000) in zero-initialized mono PCM.",
+    "excludes_latency_before_first_voice_buffer": true,
+    "not_a_speaker_recording": true,
+    "no_video_alignment_claim": true,
+    "no_synthesis_normalization_time_compression_or_mux": true
+  }
+}
