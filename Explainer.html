@@ -1,0 +1,44 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="A ten-minute narrated overview of Korina Converse, the optional agent, providers, channels and local setup."><title>Architecture explainer — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="stylesheet" href="./site.css"></head><body>
+<nav class="site-nav"><div class="wrap">
+<a href="index.html" class="site-logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<rect width="32" height="32" rx="7" fill="#0d1117"/>
+<circle cx="16" cy="16" r="10" fill="none" stroke="#58a6ff" stroke-width="2"/>
+<circle cx="16" cy="16" r="5" fill="#bc8cff"/>
+<path d="M10 16 Q13 11 16 16 Q19 21 22 16" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-linecap="round"/>
+</svg>Korina</a>
+<button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" onclick="document.getElementById('navLinks').classList.toggle('open')"> &#9776;</button>
+ <div class="site-nav-links" id="navLinks">
+<a href="index.html">Home</a><a href="Architecture.html">Architecture</a>
+<a href="Converse.html">Converse</a><a href="Agent.html">Agent</a>
+<a href="Agent-Side-Channel.html">Side Channel</a>
+<a href="Providers.html">Providers</a><a href="Testing.html">Testing</a>
+<a href="Hackathon.html">Hackathon</a>
+<a href="Roadmap.html">Roadmap</a>
+<a href="Issues.html">Issues</a>
+<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
+</div>
+<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
+</div></nav><main class="wrap"><a href="index.html" class="back-link">← Back to Home</a>
+<h1>How Korina fits together</h1>
+<p>A ten-minute narrated architecture overview: Converse, the optional background agent, providers, channel adapters and setup.</p>
+<div class="req-note"><strong>Explainer uploaded 23 October 2026.</strong> This is an illustrated overview, including a sample settings conversation and concept footage. For an actual model interaction, watch the <a href="Demo.html">recorded demo</a>.</div>
+<h2 id="watch">Watch the explainer</h2>
+<p>10 minutes · 1080p · English narration and captions. Use the player’s caption control to change subtitle visibility.</p>
+<video controls playsinline preload="metadata" poster="overview/2026-10-23/poster.jpg" width="1920" height="1080" style="width:100%;height:auto" aria-label="Ten-minute narrated architecture overview of Korina">
+<source src="overview/2026-10-23/explainer.mp4" type="video/mp4">
+<track kind="captions" src="overview/2026-10-23/captions.en.vtt" srclang="en" label="English" default>
+<a href="overview/2026-10-23/explainer.mp4">Download the narrated explainer</a>.
+</video>
+<p><a href="overview/2026-10-23/explainer.mp4">Original MP4 · 59.8 MB</a> · <a href="overview/2026-10-23/captions.en.vtt">English captions (WebVTT)</a> · <a href="Demo.html">Actual voice demo</a></p>
+<h2>What it covers</h2>
+<div class="card-grid">
+<div class="card"><h3>The conversation</h3><p>Capture, voice activity detection, transcription, response context, speech playback and interruption.</p></div>
+<div class="card"><h3>The boundaries</h3><p>Optional agent reports and permissions, provider capabilities, and the channel contract for adapters.</p></div>
+<div class="card"><h3>The local stack</h3><p>Repository structure, settings and the complete microphone-to-playback path.</p></div>
+</div>
+<h2>Overview and current status</h2>
+<p>The narration and slides describe an earlier development snapshot; a verified source revision was not supplied. Later refactoring has added readiness and portability work that the video presents as future directions. Read <a href="Verification.html">current verification</a> and the <a href="Hackathon.html">setup and rehearsal guide</a> for the present implementation and remaining limits.</p>
+<p>The settings conversation is an illustration of information flow, not a recording of the agent editing files. The video uses Ming 3 for its narration; that is a production choice for this explainer, separate from the Kokoro speech service used in the actual voice demo.</p>
+<p>The MP4 is published unchanged. The English WebVTT captions preserve the supplied subtitle text and timings, and the poster is a frame from the video.</p>
+</main><footer><div class="wrap"><p>Korina Agent &amp; Korina Converse — <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Hackathon progress</a></p><p>Documentation preview updated 23 October 2026. Published from <code>gh-pages</code> on <a href="https://rgoza1996.github.io/Korina-Agent/">GitHub Pages</a>.</p></div></footer></body></html>

@@ -1,0 +1,945 @@
+WEBVTT
+
+1
+00:00:00.650 --> 00:00:02.487
+What if working with an AI began with a
+
+2
+00:00:02.487 --> 00:00:05.818
+conversation? You speak, it listens, and an answer comes
+
+3
+00:00:05.818 --> 00:00:08.341
+back as speech. Korina is a local first project
+
+4
+00:00:08.341 --> 00:00:09.189
+that connects those pieces.
+
+5
+00:00:10.098 --> 00:00:13.106
+Its repository brings together a browser interface, a Python
+
+6
+00:00:13.106 --> 00:00:17.062
+backend, speech recognition, a response model, and a configurable
+
+7
+00:00:17.062 --> 00:00:17.607
+speech service.
+
+8
+00:00:18.663 --> 00:00:20.700
+The interesting part is how the work is divided.
+
+9
+00:00:21.466 --> 00:00:24.108
+Korina Converse handles the conversation you experience in the
+
+10
+00:00:24.108 --> 00:00:27.255
+moment. A background agent receives transcript updates and can
+
+11
+00:00:27.255 --> 00:00:29.433
+return context or a higher priority message.
+
+12
+00:00:30.018 --> 00:00:31.954
+The two loops have different jobs, while sharing the
+
+13
+00:00:31.954 --> 00:00:32.962
+same ongoing conversation.
+
+14
+00:00:34.138 --> 00:00:36.195
+Over the next ten minutes, we will follow a
+
+15
+00:00:36.195 --> 00:00:38.392
+spoken turn through that system, look at how the
+
+16
+00:00:38.392 --> 00:00:40.831
+agent contributes, and explore the code that makes the
+
+17
+00:00:40.831 --> 00:00:44.178
+parts replaceable. This explanation follows the repository as it
+
+18
+00:00:44.178 --> 00:00:46.899
+exists today, including the places where the intended design
+
+19
+00:00:46.899 --> 00:00:47.625
+is still developing.
+
+20
+00:00:50.650 --> 00:00:53.651
+Local first describes where the core experience can run.
+
+21
+00:00:54.114 --> 00:00:55.766
+The browser talks to Korina on your machine.
+
+22
+00:00:56.330 --> 00:00:58.908
+A local speech recognizer can turn microphone audio into
+
+23
+00:00:58.908 --> 00:01:01.446
+text, a local language model can generate a response,
+
+24
+00:01:01.909 --> 00:01:03.480
+and a local speech engine can speak it.
+
+25
+00:01:04.125 --> 00:01:07.146
+These are separate services connected into a usable conversation.
+
+26
+00:01:08.321 --> 00:01:10.112
+That separation also gives you choices.
+
+27
+00:01:10.715 --> 00:01:12.405
+The response model may come from a local server
+
+28
+00:01:12.405 --> 00:01:14.015
+or an OpenAI compatible endpoint.
+
+29
+00:01:14.739 --> 00:01:16.027
+Speech settings have their own controls.
+
+30
+00:01:16.570 --> 00:01:18.159
+An agent can use a different model from the
+
+31
+00:01:18.159 --> 00:01:18.944
+one speaking to you.
+
+32
+00:01:19.407 --> 00:01:21.841
+Choosing a remote endpoint changes where that particular request
+
+33
+00:01:21.841 --> 00:01:22.263
+is sent.
+
+34
+00:01:23.156 --> 00:01:25.531
+Think of Korina as the coordinating layer around those
+
+35
+00:01:25.531 --> 00:01:28.429
+components. It helps them agree on configuration, move information
+
+36
+00:01:28.429 --> 00:01:31.126
+between stages, and present the interaction in one place.
+
+37
+00:01:31.870 --> 00:01:33.641
+Local first is a useful starting point for control
+
+38
+00:01:33.641 --> 00:01:36.640
+and experimentation; the actual data path follows the providers
+
+39
+00:01:36.640 --> 00:01:37.646
+and endpoints you configure.
+
+40
+00:01:40.650 --> 00:01:42.514
+Now follow the first stage: listening.
+
+41
+00:01:43.062 --> 00:01:45.493
+The browser captures microphone audio and estimates when speech
+
+42
+00:01:45.493 --> 00:01:48.289
+is happening. Korina uses an adaptive energy based voice
+
+43
+00:01:48.289 --> 00:01:51.121
+activity detector. Its endpointing settings decide how much
+
+44
+00:01:51.121 --> 00:01:52.894
+silence is enough to treat an utterance as finished,
+
+45
+00:01:53.187 --> 00:01:55.416
+with different defaults for conversation and longer dictation.
+
+46
+00:01:56.268 --> 00:01:58.880
+While you are speaking, rolling audio windows can enter
+
+47
+00:01:58.880 --> 00:02:00.067
+a partial transcription queue.
+
+48
+00:02:00.614 --> 00:02:02.824
+Those windows are queued rather than simply discarded when
+
+49
+00:02:02.824 --> 00:02:05.600
+recognition takes longer. The interface can therefore build up
+
+50
+00:02:05.600 --> 00:02:08.303
+a transcript during the turn, while finalization determines what
+
+51
+00:02:08.303 --> 00:02:09.435
+is delivered when you finish speaking.
+
+52
+00:02:10.415 --> 00:02:12.701
+The stable recognition path uses faster whisper.
+
+53
+00:02:13.268 --> 00:02:15.866
+There is also an experimental path for compatible multimodal
+
+54
+00:02:15.866 --> 00:02:19.341
+audio models. This distinction matters: selecting an audio capable
+
+55
+00:02:19.341 --> 00:02:20.640
+model is only part of the problem.
+
+56
+00:02:21.335 --> 00:02:23.640
+The serving endpoint must support the expected audio request
+
+57
+00:02:23.640 --> 00:02:26.320
+as well, which is why capability checks and fallback
+
+58
+00:02:26.320 --> 00:02:27.802
+behavior appear elsewhere in the stack.
+
+59
+00:02:30.650 --> 00:02:33.438
+Once a turn is ready, its transcript reaches the
+
+60
+00:02:33.438 --> 00:02:36.265
+response model. The main chat route sends the conversation
+
+61
+00:02:36.265 --> 00:02:39.053
+to the configured language model endpoint and receives an
+
+62
+00:02:39.053 --> 00:02:42.021
+answer. Korina can work with local serving tools such
+
+63
+00:02:42.021 --> 00:02:46.393
+as llama.cpp, LM Studio, and Ollama, alongside a generic
+
+64
+00:02:46.393 --> 00:02:47.075
+compatible endpoint.
+
+65
+00:02:48.247 --> 00:02:50.970
+Conversation history gives the model context for what you
+
+66
+00:02:50.970 --> 00:02:54.013
+just said. Agent reports can contribute additional context to
+
+67
+00:02:54.013 --> 00:02:55.955
+a later reply, depending on the coordination settings.
+
+68
+00:02:56.535 --> 00:02:58.277
+This lets the speaking model stay focused on the
+
+69
+00:02:58.277 --> 00:03:00.779
+exchange while useful background information arrives through a
+
+70
+00:03:00.779 --> 00:03:01.079
+separate path.
+
+71
+00:03:01.910 --> 00:03:04.537
+The returned text still has to become something suitable
+
+72
+00:03:04.537 --> 00:03:07.845
+for speech. The frontend removes transcript labels and hidden
+
+73
+00:03:07.845 --> 00:03:10.030
+thinking blocks before requesting spoken output.
+
+74
+00:03:10.732 --> 00:03:13.298
+That small boundary has a practical purpose: an internal
+
+75
+00:03:13.298 --> 00:03:16.145
+acknowledgement label or reasoning marker should not become part
+
+76
+00:03:16.145 --> 00:03:17.528
+of the sentence you hear through your speakers.
+
+77
+00:03:20.650 --> 00:03:23.102
+Korina uses a configurable text to speech service to
+
+78
+00:03:23.102 --> 00:03:23.932
+turn the answer into audio.
+
+79
+00:03:24.573 --> 00:03:26.855
+The repository includes a Kokoro streaming server, with a
+
+80
+00:03:26.855 --> 00:03:27.912
+buffered wave file fallback.
+
+81
+00:03:28.346 --> 00:03:29.704
+In the browser, Web Audio handles playback.
+
+82
+00:03:30.552 --> 00:03:32.929
+The engine used to narrate this explainer is Ming 3;
+
+83
+00:03:33.250 --> 00:03:34.777
+that is a production choice for this video.
+
+84
+00:03:35.812 --> 00:03:37.924
+A conversation also needs room for interruption.
+
+85
+00:03:38.546 --> 00:03:40.753
+Korina has browser side barge in logic and controls
+
+86
+00:03:40.753 --> 00:03:43.204
+for deciding when fresh microphone input should count as
+
+87
+00:03:43.204 --> 00:03:45.335
+a real turn. The aim is a responsive exchange
+
+88
+00:03:45.335 --> 00:03:47.786
+where you can continue talking, rather than waiting passively
+
+89
+00:03:47.786 --> 00:03:49.445
+for every generated sentence to finish.
+
+90
+00:03:50.405 --> 00:03:53.653
+Then there are acknowledgement phrases: short cached audio clips
+
+91
+00:03:53.653 --> 00:03:55.617
+that can signal thinking or idle activity.
+
+92
+00:03:56.145 --> 00:03:57.977
+Their manifest holds the source text and tags.
+
+93
+00:03:58.789 --> 00:04:00.073
+Generated audio is treated as cache.
+
+94
+00:04:00.923 --> 00:04:03.302
+The interface labels acknowledgements visibly while keeping those
+
+95
+00:04:03.302 --> 00:04:05.682
+labels out of model history, helping prevent the conversation
+
+96
+00:04:05.682 --> 00:04:07.608
+from feeding its own housekeeping back into itself.
+
+97
+00:04:10.650 --> 00:04:13.035
+The background agent runs alongside the human facing loop.
+
+98
+00:04:13.441 --> 00:04:15.597
+Korina delivers transcript updates through an agent interface.
+
+99
+00:04:16.056 --> 00:04:18.159
+The agent maintains compact state and emits events or
+
+100
+00:04:18.159 --> 00:04:20.544
+reports. Converse then decides how to present those contributions.
+
+101
+00:04:21.551 --> 00:04:24.042
+The current repository emphasizes this reporting and coordination
+
+102
+00:04:24.042 --> 00:04:27.081
+behavior; a broader execution runtime is still a development
+
+103
+00:04:27.081 --> 00:04:27.434
+direction.
+
+104
+00:04:28.414 --> 00:04:30.371
+A normal report can wait as context for the
+
+105
+00:04:30.371 --> 00:04:32.451
+next response. A more important event can become a
+
+106
+00:04:32.451 --> 00:04:34.620
+spoken interruption, according to configurable priority
+
+107
+00:04:34.620 --> 00:04:37.564
+thresholds. There is also a cooldown around interruptions, so
+
+108
+00:04:37.564 --> 00:04:39.768
+repeated reports can be deferred instead of repeatedly talking
+
+109
+00:04:39.768 --> 00:04:40.473
+over the same exchange.
+
+110
+00:04:41.558 --> 00:04:43.660
+Permission questions return through Converse as well.
+
+111
+00:04:44.207 --> 00:04:46.274
+The background worker can request a decision, but the
+
+112
+00:04:46.274 --> 00:04:48.288
+person hears and answers through the conversation interface.
+
+113
+00:04:48.888 --> 00:04:51.485
+This keeps one recognizable place for human interaction while
+
+114
+00:04:51.485 --> 00:04:53.128
+the internal agent loop handles its own state.
+
+115
+00:04:53.746 --> 00:04:55.724
+The useful design idea is a clear boundary between
+
+116
+00:04:55.724 --> 00:04:57.526
+doing background work and managing the conversation.
+
+117
+00:05:00.650 --> 00:05:03.248
+Imagine an example conversation about simplifying a settings
+
+118
+00:05:03.248 --> 00:05:05.433
+screen. You say, let us keep the main controls
+
+119
+00:05:05.433 --> 00:05:07.880
+visible and put advanced options behind a separate panel.
+
+120
+00:05:08.426 --> 00:05:10.723
+Converse transcribes that request and asks the response model
+
+121
+00:05:10.723 --> 00:05:13.341
+for an answer. You hear a suggestion, and you
+
+122
+00:05:13.341 --> 00:05:15.468
+can immediately refine it with another spoken turn.
+
+123
+00:05:16.446 --> 00:05:18.988
+Meanwhile, a transcript update reaches the background agent.
+
+124
+00:05:19.553 --> 00:05:21.700
+A useful state report might capture the emerging decision:
+
+125
+00:05:22.171 --> 00:05:24.431
+keep everyday controls prominent and group advanced settings
+
+126
+00:05:24.431 --> 00:05:26.729
+together. That report can inform the next response.
+
+127
+00:05:27.445 --> 00:05:29.799
+This is an illustration of the information flow, rather
+
+128
+00:05:29.799 --> 00:05:31.607
+than a claim that the agent has already edited
+
+129
+00:05:31.607 --> 00:05:32.059
+a file.
+
+130
+00:05:32.999 --> 00:05:35.221
+If the background loop needs a decision, the question
+
+131
+00:05:35.221 --> 00:05:36.464
+can come back through Converse.
+
+132
+00:05:37.085 --> 00:05:39.438
+If you change direction, the next transcript update carries
+
+133
+00:05:39.438 --> 00:05:42.696
+that change forward. Separating these responsibilities makes the
+
+134
+00:05:42.696 --> 00:05:45.388
+interaction easier to follow: one loop speaks with you,
+
+135
+00:05:45.689 --> 00:05:47.365
+and another keeps track of the context it has
+
+136
+00:05:47.365 --> 00:05:47.665
+been given.
+
+137
+00:05:50.650 --> 00:05:53.572
+Provider flexibility creates a second problem: knowing which
+
+138
+00:05:53.572 --> 00:05:56.622
+choices are valid. Korina centralizes provider metadata in a
+
+139
+00:05:56.622 --> 00:05:59.233
+backend registry and exposes it through a capabilities endpoint.
+
+140
+00:05:59.671 --> 00:06:01.735
+The frontend reads that contract to decide which provider
+
+141
+00:06:01.735 --> 00:06:03.653
+options appear and whether a base address can be
+
+142
+00:06:03.653 --> 00:06:03.953
+edited.
+
+143
+00:06:04.796 --> 00:06:07.502
+For managed local providers, changing the response provider can
+
+144
+00:06:07.502 --> 00:06:09.916
+trigger the appropriate service lifecycle before the model list
+
+145
+00:06:09.916 --> 00:06:13.097
+refreshes. Model capability information also helps filter the
+
+146
+00:06:13.097 --> 00:06:15.620
+audio model picker. A text only model should not
+
+147
+00:06:15.620 --> 00:06:17.961
+quietly appear as an ordinary choice for audio transcription
+
+148
+00:06:17.961 --> 00:06:20.484
+when the system already knows it cannot accept that
+
+149
+00:06:20.484 --> 00:06:20.784
+input.
+
+150
+00:06:21.610 --> 00:06:24.189
+Capability declarations can still meet a different reality at
+
+151
+00:06:24.189 --> 00:06:26.730
+the endpoint. Korina therefore includes an audio probe path
+
+152
+00:06:26.730 --> 00:06:29.089
+that can recognize an unsupported audio request, fall back
+
+153
+00:06:29.089 --> 00:06:30.351
+to whisper, and remember the result.
+
+154
+00:06:31.064 --> 00:06:33.843
+The broader lesson is practical: configuration describes intent,
+
+155
+00:06:34.337 --> 00:06:36.348
+while a real request reveals what the selected model
+
+156
+00:06:36.348 --> 00:06:37.738
+and serving stack can actually do.
+
+157
+00:06:40.650 --> 00:06:43.023
+The repository expresses these responsibilities in its structure.
+
+158
+00:06:43.600 --> 00:06:45.855
+A FastAPI application factory composes route modules.
+
+159
+00:06:46.194 --> 00:06:48.889
+Service modules own speech recognition, model discovery, provider
+
+160
+00:06:48.889 --> 00:06:50.805
+management, response generation, and agent behavior.
+
+161
+00:06:51.348 --> 00:06:53.433
+The browser frontend uses native JavaScript modules for recording,
+
+162
+00:06:53.925 --> 00:06:55.942
+voice activity detection, playback, settings, and coordination.
+
+163
+00:06:57.036 --> 00:06:58.680
+There is also a Converse channel protocol.
+
+164
+00:06:59.409 --> 00:07:02.240
+An adapter implements sending, streaming, cancellation, and health
+
+165
+00:07:02.240 --> 00:07:04.273
+behavior, with common request and response types.
+
+166
+00:07:04.765 --> 00:07:06.053
+A registry selects the active channel.
+
+167
+00:07:06.562 --> 00:07:08.545
+That gives future integrations a defined place to connect
+
+168
+00:07:08.917 --> 00:07:10.968
+instead of requiring every conversation route to know each
+
+169
+00:07:10.968 --> 00:07:11.494
+agent implementation.
+
+170
+00:07:12.740 --> 00:07:14.961
+The distinction between a contract and a complete integration
+
+171
+00:07:14.961 --> 00:07:17.825
+is important here. The repository includes a Hermes stub
+
+172
+00:07:17.825 --> 00:07:19.876
+that demonstrates the channel interface and returns canned
+
+173
+00:07:19.876 --> 00:07:22.605
+responses. A working external agent client still needs real
+
+174
+00:07:22.605 --> 00:07:25.284
+integration code. The architecture creates a path for replacement;
+
+175
+00:07:25.928 --> 00:07:27.809
+each replacement must supply the behavior behind that interface.
+
+176
+00:07:30.650 --> 00:07:32.710
+To run the intended local stack, you need the
+
+177
+00:07:32.710 --> 00:07:35.731
+Korina backend and browser assets, a recognition backend, a
+
+178
+00:07:35.731 --> 00:07:37.373
+response model service, and a speech endpoint.
+
+179
+00:07:38.612 --> 00:07:40.271
+The repository provides startup helpers and user service
+
+180
+00:07:40.271 --> 00:07:42.576
+definitions for the Korina application and Kokoro streaming
+
+181
+00:07:42.576 --> 00:07:45.440
+server. Provider activation manages supported local response
+
+182
+00:07:45.440 --> 00:07:46.208
+services separately.
+
+183
+00:07:47.164 --> 00:07:48.909
+The settings interface ties those parts together.
+
+184
+00:07:49.503 --> 00:07:51.858
+You can select recognition settings, a response provider and
+
+185
+00:07:51.858 --> 00:07:53.970
+model, a speech endpoint and voice, and the background
+
+186
+00:07:53.970 --> 00:07:57.110
+agent configuration. Runtime settings are stored locally, while a
+
+187
+00:07:57.110 --> 00:07:59.658
+tracked example configuration documents the shape without bundling
+
+188
+00:07:59.658 --> 00:08:01.124
+your own runtime state into the source tree.
+
+189
+00:08:02.010 --> 00:08:04.577
+For a useful first session, verify the entire path:
+
+190
+00:08:04.926 --> 00:08:07.772
+microphone input, a readable transcript, an actual model reply,
+
+191
+00:08:08.209 --> 00:08:10.706
+and audible playback. A backend process being alive proves
+
+192
+00:08:10.706 --> 00:08:11.754
+only one part of that chain.
+
+193
+00:08:12.487 --> 00:08:14.915
+Korina has health and regression tooling, and composite readiness
+
+194
+00:08:14.915 --> 00:08:17.167
+across the full stack remains an explicit area for
+
+195
+00:08:17.167 --> 00:08:17.674
+further improvement.
+
+196
+00:08:20.650 --> 00:08:22.643
+Korina already contains the pieces for a local voice
+
+197
+00:08:22.643 --> 00:08:25.795
+conversation, modular backend and frontend code, provider rules,
+
+198
+00:08:26.203 --> 00:08:28.343
+audio capability handling, and an agent reporting path.
+
+199
+00:08:28.784 --> 00:08:30.972
+The repository also contains automated checks and separate live
+
+200
+00:08:30.972 --> 00:08:33.292
+regression tooling. Those are useful engineering foundations,
+
+201
+00:08:33.667 --> 00:08:35.121
+while the quality of a session still depends on
+
+202
+00:08:35.121 --> 00:08:36.395
+the actual models and hardware you choose.
+
+203
+00:08:37.351 --> 00:08:39.916
+The documentation names several remaining directions: a fuller
+
+204
+00:08:39.916 --> 00:08:42.709
+execution runtime, stronger readiness across services, portable
+
+205
+00:08:42.709 --> 00:08:44.947
+installation paths, and richer model capability evidence.
+
+206
+00:08:45.469 --> 00:08:47.691
+External agent support also needs concrete clients behind the
+
+207
+00:08:47.691 --> 00:08:50.173
+shared channel contract. These are useful distinctions when
+
+208
+00:08:50.173 --> 00:08:52.084
+evaluating what the project does today and what its
+
+209
+00:08:52.084 --> 00:08:53.260
+architecture is intended to support.
+
+210
+00:08:54.135 --> 00:08:56.762
+For a contributor, the boundaries suggest focused places to
+
+211
+00:08:56.762 --> 00:08:58.867
+work. Improve recognition without rewriting playback.
+
+212
+00:08:59.455 --> 00:09:00.760
+Add an agent adapter behind the protocol.
+
+213
+00:09:01.315 --> 00:09:03.648
+Make provider discovery more accurate, or make setup easier
+
+214
+00:09:03.648 --> 00:09:05.917
+to reproduce. Each improvement can strengthen the whole
+
+215
+00:09:05.917 --> 00:09:07.809
+conversation when its inputs and outputs stay clear.
+
+216
+00:09:10.650 --> 00:09:12.779
+The central idea of Korina is a conversation layer
+
+217
+00:09:12.779 --> 00:09:14.551
+that can stay useful as the components around it
+
+218
+00:09:14.551 --> 00:09:16.268
+change. Your microphone becomes text.
+
+219
+00:09:16.716 --> 00:09:18.469
+A response model turns that text into an answer.
+
+220
+00:09:18.791 --> 00:09:20.240
+A speech service makes the answer audible.
+
+221
+00:09:20.992 --> 00:09:23.712
+Alongside it, the background agent receives context and returns
+
+222
+00:09:23.712 --> 00:09:25.751
+information through a separate coordination path.
+
+223
+00:09:26.667 --> 00:09:29.656
+Keeping those responsibilities explicit helps explain the project.
+
+224
+00:09:30.211 --> 00:09:31.410
+Converse owns the human interaction.
+
+225
+00:09:31.983 --> 00:09:33.612
+The agent owns its background state and reports.
+
+226
+00:09:34.507 --> 00:09:36.798
+Provider contracts describe the available connections, and
+
+227
+00:09:36.798 --> 00:09:38.928
+adapters define where another implementation can fit.
+
+228
+00:09:39.555 --> 00:09:41.739
+Together, they form a foundation for experimenting with voice
+
+229
+00:09:41.739 --> 00:09:42.777
+driven work on your own machine.
+
+230
+00:09:43.764 --> 00:09:46.107
+If you explore the repository, start with the readme
+
+231
+00:09:46.107 --> 00:09:48.503
+and architecture pages, then follow one spoken turn through
+
+232
+00:09:48.503 --> 00:09:49.827
+the browser modules and backend routes.
+
+233
+00:09:50.417 --> 00:09:51.704
+That path connects the code to the experience.
+
+234
+00:09:52.563 --> 00:09:54.423
+Korina is a project about making those parts work
+
+235
+00:09:54.423 --> 00:09:56.748
+together, so a natural conversation can become a practical
+
+236
+00:09:56.748 --> 00:09:57.713
+way to work with an agent.
