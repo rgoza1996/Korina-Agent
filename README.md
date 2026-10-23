@@ -42,11 +42,22 @@ Compatible services must also obey the browser audio budgets: replies last at mo
 
 Select **Meta Model API** (`meta`) as the response provider. This named profile uses the fixed base `https://api.meta.ai/v1` and defaults to Bearer authentication from `MODEL_API_KEY` in the API process environment. A configured `llm_api_key_env` overrides that default. Keep the key private, using the service environment instructions below when applicable. A generic/custom provider does not gain Meta credentials merely by using the same hostname.
 
+For a foreground Bash session, stop the API if it is already running, then enter the key without echoing it or putting its value in shell history:
+
+```bash
+read -r -s -p 'Meta API key: ' MODEL_API_KEY
+printf '\n'
+export MODEL_API_KEY
+python -m korina.app
+```
+
+The running API must inherit the variable when it starts. The Settings credential field expects an environment-variable **name**, not the key itself; leave it blank to use the named Meta profile's default. Installed services use their private EnvironmentFile instead, as described below.
+
 Load models through authenticated discovery and choose an ID actually available to the team; Korina does not hardcode a Meta model selection. The Meta response path leaves reasoning to the model default and sends neither the local/generic `reasoning` field nor `reasoning_effort`. Keep Whisper for STT and Kokoro for TTS. The same named profile is available independently for built-in agent reports, with the existing credential scope; the agent remains optional for this demo.
 
-Set **Response token budget** in response settings for the selected model (1–8192, default 180). Meta reasoning can use that budget before a visible answer. Rehearse the limit deliberately; an empty answer caused by budget exhaustion is reported as an error. Agent reports retain their separate budget.
+Set **Response token budget** in response settings for the selected model (1–8192, default 180). The October 23 synthetic `muse-spark-1.3-contributor` rehearsal used **2048** with model-default reasoning and produced useful context-dependent text. Use that as a measured starting point for this model, then rehearse your actual interaction. Meta reasoning shares the output budget; exhaustion is reported as an error, with no automatic increase or retry. Agent reports retain their separate budget.
 
-The focused hackathon goal is one useful voice interaction using conversational context and a fact retained in the current session. The API receives the relevant context; this is not durable memory across restarts. The profile is pre-event preparation. At kickoff, record the actual starting SHA and track event additions in the [demo guide's ledger](docs/hackathon.md). Mocked integration checks establish no live authenticated Meta call, presentation quality, or prompt-cache hit; rehearse those separately.
+The focused hackathon goal is one useful voice interaction using conversational context and a fact retained in the current session. An [authenticated synthetic rehearsal](docs/verification.md#authenticated-meta-rehearsal-at-637e43c) recalled the earlier Cedar/Friday fact through real Whisper, Meta, Kokoro and native browser playback. It used a generated fake microphone; physical headset and human interruption checks remain. The API receives the relevant context; this is not durable memory across restarts. All work before kickoff is preparation. Record the actual event starting SHA and later additions in the [demo guide's ledger](docs/hackathon.md).
 
 ## Install a built wheel
 

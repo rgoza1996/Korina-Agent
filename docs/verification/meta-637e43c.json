@@ -1,0 +1,1110 @@
+{
+  "date_utc": "2026-10-23",
+  "browser_server_source_sha": "637e43c60169b624c9e1c99da2553d3ac5c593e8",
+  "runtime_versions": {
+    "api": {
+      "python": "3.12.3",
+      "packages": {
+        "fastapi": "0.159.1",
+        "starlette": "1.9.0",
+        "uvicorn": "0.54.0",
+        "pydantic": "2.14.1",
+        "python-multipart": "0.0.32",
+        "numpy": "2.5.4",
+        "soundfile": "0.14.0",
+        "anyio": "4.15.1",
+        "httpx": "0.28.1",
+        "pytest": "9.1.1",
+        "pytest-cov": "7.1.0",
+        "sniffio": "1.3.1",
+        "faster-whisper": "1.2.1",
+        "av": "18.1.0"
+      }
+    },
+    "node": "v22.23.4",
+    "playwright": "1.64.1",
+    "chromium": "Google Chrome for Testing 156.0.8078.4",
+    "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "speech_service": {
+      "python": "3.12.3",
+      "torch": "2.14.1+cpu",
+      "kokoro": "0.9.4",
+      "numpy": "2.5.4",
+      "soundfile": "0.14.0",
+      "cpu_threads": 4
+    }
+  },
+  "pre_event_preparation": true,
+  "model": "muse-spark-1.3-contributor",
+  "api_base": "https://api.meta.ai/v1",
+  "request_contract": {
+    "max_tokens": 2048,
+    "reasoning": "model default; no reasoning or reasoning_effort parameter",
+    "tools": false,
+    "automatic_retry": false
+  },
+  "account_discovery": {
+    "meta_models_http_status": 200,
+    "selected_model_returned": true,
+    "openrouter_key_check_http_status": 200,
+    "openrouter_generation_calls": 0
+  },
+  "text_function_source": {
+    "note": "Response/config/schema/HTTP modules used for the earlier direct function calls are unchanged from verified code 69f7965.",
+    "files_sha256": {
+      "korina/services/response_llm.py": "2072b4ff6c1251d297d2c9ecebf027ec1d8bff44e54c525120126c7a7eb7d40c",
+      "korina/config.py": "3c1f28f1a1248d3f184be96f5415219aa9f64d47166b067b81d5772b14328cac",
+      "korina/schemas.py": "3a534b1bbee438749c7b0c985589b1600266344cb3863ff8882683f5c2a76e1f",
+      "korina/runtime/json_http.py": "89e774c0b9d67e3c9fab907a787a4f9dc3dd271dcd013eada4c34fe1ed38b91b",
+      "korina/runtime/http.py": "cd32953c00379f75ac3df7c925c1582a623a31d6f146f4129620b71db43f10b0"
+    }
+  },
+  "direct_context": {
+    "model": "muse-spark-1.3-contributor",
+    "through": "actual Korina response_llm_chat with current-session history",
+    "turns": [
+      {
+        "message": "For this demo, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence.",
+        "reply": "Got it, I'll remember Cedar rehearsal is Friday at ten in the morning.",
+        "wall_seconds": 4.04
+      },
+      {
+        "message": "Which project are we rehearsing, and when?",
+        "reply": "Your project is Cedar.\nRehearsal is Friday at ten in the morning.",
+        "wall_seconds": 3.472
+      }
+    ]
+  },
+  "whisper_warmup": {
+    "text": "What is my project called and when is our practice?",
+    "seconds": 5.829147577285767,
+    "samples": 65257,
+    "sample_rate": 16000,
+    "duration": 4.0785625,
+    "model": "base.en",
+    "backend": "faster-whisper",
+    "device": "cpu",
+    "requested_device": "cpu",
+    "compute_type": "int8",
+    "language": "en",
+    "language_probability": 1,
+    "segments": [
+      {
+        "start": 0.0,
+        "end": 4.0,
+        "text": "What is my project called and when is our practice?"
+      }
+    ]
+  },
+  "whisper_model_revision": "3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+  "earlier_voice_attempt": "Stopped: looping fake microphone caused unintended interruptions; tiny.en misrecognized the question. Not a passing voice rehearsal; its API usage remains included in the total.",
+  "separate_prefix_experiment": {
+    "purpose": "separate synthetic stable-prefix experiment; not the short voice scenario",
+    "system_characters": 7148,
+    "turns": [
+      {
+        "question": "What are the code and room for synthetic project 042?",
+        "reply": "Synthetic project 042 has code Cedar-042 and room 242.",
+        "wall_seconds": 4.928
+      },
+      {
+        "question": "What are the code and room for synthetic project 042?",
+        "reply": "Synthetic project 042 has code Cedar-042 and room 242.",
+        "wall_seconds": 3.785
+      },
+      {
+        "question": "What are the code and room for synthetic project 043?",
+        "reply": "Synthetic project 043 has code Cedar-043 and room 243.",
+        "wall_seconds": 4.729
+      }
+    ]
+  },
+  "browser_voice": {
+    "seed": {
+      "message": "For this demo, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence.",
+      "reply": "Got it, Cedar rehearsal is Friday at ten in the morning.",
+      "entry": "exported askAndSpeak in actual browser"
+    },
+    "input": "espeak-ng generated question through Chromium fake microphone; native MediaRecorder/VAD",
+    "intended_question": "What is my project called, and when is our practice?",
+    "microphone_wav_sha256": "19c802848199572187acfc79d3bd45908ae22bf0170a075313a20ce8fea8a1e9",
+    "actual_final_transcription": {
+      "text": "What is my project called and when is our practice?",
+      "seconds": 9.190913915634155,
+      "samples": 103680,
+      "sample_rate": 16000,
+      "duration": 6.48,
+      "model": "base.en",
+      "backend": "faster-whisper",
+      "device": "cpu",
+      "requested_device": "cpu",
+      "compute_type": "int8",
+      "language": "en",
+      "language_probability": 1,
+      "segments": 1
+    },
+    "voice_request_prior_history": [
+      {
+        "role": "user",
+        "content": "For this demo, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence."
+      },
+      {
+        "role": "assistant",
+        "content": "Got it, Cedar rehearsal is Friday at ten in the morning."
+      }
+    ],
+    "voice_request_message": "What is my project called and when is our practice?",
+    "reply": "Your project is called Cedar.\nYour practice is Friday at ten in the morning.",
+    "click_to_all_native_audio_ended_seconds": 37.654,
+    "tts": {
+      "provider": "Kokoro 0.9.4",
+      "voice": "af_heart",
+      "device": "CPU",
+      "samples": 124800,
+      "sample_rates": [
+        24000
+      ],
+      "chunks": 2
+    },
+    "native_playback": {
+      "buffers": 2,
+      "frames": 124800,
+      "all_ended": true,
+      "some_nonzero_pcm": true
+    },
+    "checks": {
+      "seed_reply": {
+        "ok": true
+      },
+      "seed_native_playback": {
+        "ok": true
+      },
+      "seed_chat": {
+        "ok": true
+      },
+      "one_final_stt": {
+        "ok": true,
+        "detail": {
+          "requests": 1
+        }
+      },
+      "real_whisper_final": {
+        "ok": true,
+        "detail": [
+          {
+            "text": "What is my project called and when is our practice?",
+            "seconds": 9.190913915634155,
+            "samples": 103680,
+            "sample_rate": 16000,
+            "duration": 6.48,
+            "model": "base.en",
+            "backend": "faster-whisper",
+            "device": "cpu",
+            "requested_device": "cpu",
+            "compute_type": "int8",
+            "language": "en",
+            "language_probability": 1,
+            "segments": 1
+          }
+        ]
+      },
+      "question_does_not_restate_seed_fact": {
+        "ok": true,
+        "detail": "What is my project called and when is our practice?"
+      },
+      "one_voice_chat": {
+        "ok": true,
+        "detail": {
+          "requests": 1
+        }
+      },
+      "seed_history_and_question_once": {
+        "ok": true,
+        "detail": {
+          "message": "What is my project called and when is our practice?",
+          "history": [
+            {
+              "role": "user",
+              "content": "For this demo, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence."
+            },
+            {
+              "role": "assistant",
+              "content": "Got it, Cedar rehearsal is Friday at ten in the morning."
+            }
+          ],
+          "max_tokens": 2048,
+          "temperature": 0.7,
+          "model": "muse-spark-1.3-contributor",
+          "reasoning": "off"
+        }
+      },
+      "voice_fact_recalled": {
+        "ok": true
+      },
+      "voice_tts_completed": {
+        "ok": true,
+        "detail": {
+          "requests": 1,
+          "status": "Done \u00b7 2 chunks"
+        }
+      },
+      "post_seed_native_pcm": {
+        "ok": true,
+        "detail": [
+          {
+            "at": 46665.90000000596,
+            "contextState": "running",
+            "when": 39.60163265306122,
+            "frames": 55200,
+            "sampleRate": 24000,
+            "duration": 2.3,
+            "rms": 0.047983820751487626,
+            "ended": true,
+            "endedAt": 48977.20000000298
+          },
+          {
+            "at": 53362,
+            "contextState": "running",
+            "when": 46.172879818594105,
+            "frames": 69600,
+            "sampleRate": 24000,
+            "duration": 2.9,
+            "rms": 0.047276147966852,
+            "ended": true,
+            "endedAt": 56263
+          }
+        ]
+      },
+      "stop_releases_capture": {
+        "ok": true,
+        "detail": {
+          "live": false,
+          "stream": null,
+          "sttStatus": "Live mode stopped."
+        }
+      },
+      "agent_report_available": {
+        "ok": true,
+        "detail": {
+          "pendingReport": "Intent: User asked recall of project name and practice time for demo check.\nFacts: Project=Cedar; rehearsal/practice=Friday at ten in the morning.\nOpen: None; last query already answered correctly.\nEmotion: Neutral, demo testing memory.\nInjection: No injection needed; retain Cedar + Friday 10am for continuity.",
+          "permission": null
+        }
+      },
+      "one_agent_report_injection": {
+        "ok": true,
+        "detail": {
+          "requests": 1
+        }
+      },
+      "no_page_errors": {
+        "ok": true,
+        "detail": []
+      }
+    },
+    "stop_released_capture": true,
+    "page_errors": 0,
+    "console_warnings_or_errors": 0
+  },
+  "optional_agent": {
+    "report": "Priority: low\nIntent: User asked recall of project name and practice time for demo check.\nFacts: Project=Cedar; rehearsal/practice=Friday at ten in the morning.\nOpen: None; last query already answered correctly.\nEmotion: Neutral, demo testing memory.\nInjection: No injection needed; retain Cedar + Friday 10am for continuity.",
+    "wall_seconds": 6.83,
+    "report_injections": 1,
+    "followup": "Speech test acknowledged.",
+    "pending_report_consumed": true
+  },
+  "buffered_tts": {
+    "status": 200,
+    "wall_seconds": 5.774131001002388,
+    "frames": 64200,
+    "sample_rate": 24000,
+    "channels": 1,
+    "sample_width": 2,
+    "rms": 0.04792044536506179
+  },
+  "python_channel": {
+    "wall_seconds": 8.602185859999736,
+    "text": "Priority: normal\nIntent: Record short observation about Meta test and Cedar rehearsal\nFacts: Meta voice test completed; Cedar rehearsal Friday at 10am\nOpen: Confirm observation stored; no date disambiguation yet for Friday\nEmotion: Neutral, task-oriented, brief request\nInjection: Acknowledge logging of both items for next reply",
+    "finished": true,
+    "error": null,
+    "metadata": {
+      "status": "idle",
+      "events_scanned": 2,
+      "next_cursor": 2
+    }
+  },
+  "readiness_smoke": {
+    "ok": true,
+    "base": "http://127.0.0.1:8870",
+    "allow_degraded": false,
+    "checks": [
+      {
+        "path": "/",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/styles.css",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/js/app.js",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/api/capabilities",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/api/health",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/api/ready",
+        "ok": true,
+        "http_status": 200,
+        "readiness": {
+          "ready": true,
+          "checks": {
+            "audio_limits": true,
+            "frontend": true,
+            "response_llm": true,
+            "stt": true,
+            "tts": true,
+            "agent": true
+          }
+        }
+      }
+    ]
+  },
+  "api_requests": [
+    {
+      "number": 1,
+      "utc": "2026-10-23T06:10:51.515033+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0009362",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 4.037,
+      "usage": {
+        "completion_tokens": 431,
+        "prompt_tokens": 211,
+        "total_tokens": 642,
+        "completion_tokens_details": {
+          "reasoning_tokens": 406
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001073"
+    },
+    {
+      "number": 2,
+      "utc": "2026-10-23T06:10:55.556762+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0009545",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        70,
+        42
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 3.471,
+      "usage": {
+        "completion_tokens": 341,
+        "prompt_tokens": 247,
+        "total_tokens": 588,
+        "completion_tokens_details": {
+          "reasoning_tokens": 315
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0000929"
+    },
+    {
+      "number": 3,
+      "utc": "2026-10-23T06:12:17.094599+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0015626",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        7148,
+        53
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 4.923,
+      "usage": {
+        "completion_tokens": 427,
+        "prompt_tokens": 1806,
+        "total_tokens": 2233,
+        "completion_tokens_details": {
+          "reasoning_tokens": 403
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000266"
+    },
+    {
+      "number": 4,
+      "utc": "2026-10-23T06:12:22.025321+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0015626",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        7148,
+        53
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 3.781,
+      "usage": {
+        "completion_tokens": 316,
+        "prompt_tokens": 1806,
+        "total_tokens": 2122,
+        "completion_tokens_details": {
+          "reasoning_tokens": 292
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1777
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000069654"
+    },
+    {
+      "number": 5,
+      "utc": "2026-10-23T06:12:25.808014+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0015626",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        7148,
+        53
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 4.727,
+      "usage": {
+        "completion_tokens": 499,
+        "prompt_tokens": 1806,
+        "total_tokens": 2305,
+        "completion_tokens_details": {
+          "reasoning_tokens": 475
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 1777
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000106254"
+    },
+    {
+      "number": 6,
+      "utc": "2026-10-23T06:34:36.589162+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0009362",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 3.104,
+      "usage": {
+        "completion_tokens": 302,
+        "prompt_tokens": 211,
+        "total_tokens": 513,
+        "completion_tokens_details": {
+          "reasoning_tokens": 280
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0000815"
+    },
+    {
+      "number": 7,
+      "utc": "2026-10-23T06:35:14.549753+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0009523",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        53,
+        37
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 5.597,
+      "usage": {
+        "completion_tokens": 707,
+        "prompt_tokens": 241,
+        "total_tokens": 948,
+        "completion_tokens_details": {
+          "reasoning_tokens": 686
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001655"
+    },
+    {
+      "number": 8,
+      "utc": "2026-10-23T06:35:31.105281+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0009901",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        53,
+        37,
+        51,
+        250
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 7.277,
+      "usage": {
+        "completion_tokens": 894,
+        "prompt_tokens": 315,
+        "total_tokens": 1209,
+        "completion_tokens_details": {
+          "reasoning_tokens": 872
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 113
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000199226"
+    },
+    {
+      "number": 9,
+      "utc": "2026-10-23T06:35:47.313381+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0010078",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        53,
+        37,
+        51,
+        40,
+        58,
+        257
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 6.854,
+      "usage": {
+        "completion_tokens": 956,
+        "prompt_tokens": 346,
+        "total_tokens": 1302,
+        "completion_tokens_details": {
+          "reasoning_tokens": 934
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 241
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000202182"
+    },
+    {
+      "number": 10,
+      "utc": "2026-10-23T06:36:02.872890+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0010248",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        53,
+        37,
+        51,
+        40,
+        58,
+        40,
+        58,
+        257
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 6.145,
+      "usage": {
+        "completion_tokens": 769,
+        "prompt_tokens": 377,
+        "total_tokens": 1146,
+        "completion_tokens_details": {
+          "reasoning_tokens": 747
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 241
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000167882"
+    },
+    {
+      "number": 11,
+      "utc": "2026-10-23T06:36:18.797035+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0010418",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        53,
+        37,
+        51,
+        40,
+        58,
+        40,
+        58,
+        40,
+        58,
+        257
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 6.37,
+      "usage": {
+        "completion_tokens": 996,
+        "prompt_tokens": 408,
+        "total_tokens": 1404,
+        "completion_tokens_details": {
+          "reasoning_tokens": 974
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 241
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000216382"
+    },
+    {
+      "number": 12,
+      "utc": "2026-10-23T06:41:14.471698+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0009362",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 4.568,
+      "usage": {
+        "completion_tokens": 417,
+        "prompt_tokens": 211,
+        "total_tokens": 628,
+        "completion_tokens_details": {
+          "reasoning_tokens": 394
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001045"
+    },
+    {
+      "number": 13,
+      "utc": "2026-10-23T06:41:47.567134+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.000954",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        56,
+        51
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 6.024,
+      "usage": {
+        "completion_tokens": 759,
+        "prompt_tokens": 246,
+        "total_tokens": 1005,
+        "completion_tokens_details": {
+          "reasoning_tokens": 734
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001764"
+    },
+    {
+      "number": 14,
+      "utc": "2026-10-23T06:42:09.700593+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0010641",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        1709,
+        513
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 6.678,
+      "usage": {
+        "completion_tokens": 879,
+        "prompt_tokens": 488,
+        "total_tokens": 1367,
+        "completion_tokens_details": {
+          "reasoning_tokens": 798
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0002246"
+    },
+    {
+      "number": 15,
+      "utc": "2026-10-23T06:42:16.480728+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0010125",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        56,
+        51,
+        76,
+        430
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 8.216,
+      "usage": {
+        "completion_tokens": 1101,
+        "prompt_tokens": 364,
+        "total_tokens": 1465,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1088
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 241
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000232982"
+    },
+    {
+      "number": 16,
+      "utc": "2026-10-23T06:42:31.696371+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reserved_usd": "0.0010277",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        1709,
+        174
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 8.568,
+      "usage": {
+        "completion_tokens": 1105,
+        "prompt_tokens": 401,
+        "total_tokens": 1506,
+        "completion_tokens_details": {
+          "reasoning_tokens": 1025
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0002611"
+    }
+  ],
+  "estimated_token_cost_usd": "0.002674362",
+  "cost_basis": {
+    "source": "https://dev.meta.ai/docs/pricing-rate-limits",
+    "usd_per_million_tokens": {
+      "input": 0.1,
+      "cached_input": 0.002,
+      "output": 0.2
+    },
+    "note": "Estimate from returned usage, including reasoning in completion tokens; not an invoice, account spend limit, or unrelated account traffic."
+  },
+  "cleanup": {
+    "disposable_ports_closed": {
+      "8870": true,
+      "8872": true
+    },
+    "python_worker_shutdown": true
+  },
+  "limits": [
+    "Synthetic content only; contributor mode may use content for model training.",
+    "One local observation, not a latency or accuracy benchmark.",
+    "Generated fake microphone and native audio completion do not establish physical headset capture, speaker audibility, echo cancellation or human interruption.",
+    "Current-session context, not durable memory or tool execution.",
+    "Prefix-cache observations do not guarantee cache hits on short voice prompts.",
+    "Hosted CI, final event rules/artifacts and actual kickoff SHA remain separate acceptance items."
+  ]
+}

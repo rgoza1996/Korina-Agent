@@ -1,6 +1,6 @@
 # Meta hackathon preparation and rehearsal
 
-Updated 2026-10-22 for the [Meta Global AI Developer Hackathon](https://dev.meta.ai/events/global-hackathon), organized with [Cerebral Valley](https://cerebralvalley.ai/e/meta-ai-developer-hackathon). Preparation is tracked in [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) and [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24).
+Updated 2026-10-23 for the [Meta Global AI Developer Hackathon](https://dev.meta.ai/events/global-hackathon), organized with [Cerebral Valley](https://cerebralvalley.ai/e/meta-ai-developer-hackathon). Preparation is tracked in [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) and [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24).
 
 ## Agreed prototype
 
@@ -31,10 +31,10 @@ This ledger does not claim any future implementation or submission is complete.
 ## Configure the focused demo
 
 1. Install from the [README](../README.md), including FFmpeg, Whisper, and Kokoro.
-2. Select the explicit **Meta Model API** response provider. Its canonical API base is `https://api.meta.ai/v1`; authentication uses a Bearer key from `MODEL_API_KEY` by default. Configure that variable privately in the API process environment or existing service environment file. Explicit role credentials retain their normal scope.
+2. Select the explicit **Meta Model API** response provider. Its canonical API base is `https://api.meta.ai/v1`; authentication uses a Bearer key from `MODEL_API_KEY` by default. Configure that variable privately in the API process environment before starting/restarting it, or in the existing service environment file. The [README](../README.md#meta-model-api-rehearsal) includes a hidden foreground key prompt. The UI expects the variable name, not the key value. Explicit role credentials retain their normal scope.
 3. Load models through authenticated discovery and select a model actually enabled for the team. Documentation examples do not prove account access. Keep Whisper for STT and Kokoro for TTS; the Meta text-model demonstration does not require Meta audio output.
 4. Leave Meta reasoning to its model default. Korina's local-provider `reasoning` field is not Meta's documented `reasoning_effort`, and Muse Spark does not accept `reasoning_effort: "none"`.
-5. Set **Response token budget** deliberately for the selected model. The default is 180; the supported range is 1–8192. Meta reasoning can consume this budget before a visible answer, so rehearse a useful spoken reply before choosing the final limit. The optional agent has its own budget.
+5. Set **Response token budget** deliberately for the selected model. The default is 180; the supported range is 1–8192. Meta reasoning can consume this budget before a visible answer, so rehearse a useful spoken reply before choosing the final limit. The October 23 synthetic `muse-spark-1.3-contributor` rehearsal used **2048** successfully with model-default reasoning. The optional agent used its separate 2048-token budget; its default remains 512. These are measured starting points, not automatic increases.
 6. Warm Whisper/Kokoro, make a real Meta response request, then run `python scripts/check_stack.py`. Resolve failed readiness checks. Model access, useful output, and live API compatibility require this authenticated rehearsal.
 
 See [API reference](https://dev.meta.ai/docs/api-reference), [Chat Completions](https://dev.meta.ai/docs/protocols/chat-completions), and [available models](https://dev.meta.ai/docs/models). The API accepts the existing `max_tokens` alias. An empty answer with `finish_reason: "length"` is reported as an exhausted-budget error; it is not spoken or recorded as a successful assistant answer.
@@ -43,9 +43,9 @@ See [API reference](https://dev.meta.ai/docs/api-reference), [Chat Completions](
 
 The [suggested practice outline](demo-script.md) helps rehearse the interaction and record actual evidence; its pacing is not an official submission requirement.
 
-1. Start a clean conversation and say: “Remember that this demo uses a headset, and I want answers in two sentences.”
-2. Ask: “Given what I told you, what should I rehearse first?”
-3. Verify the actual Meta request includes the earlier fact and current question once. Hear a useful answer that respects both constraints.
+1. Start a clean conversation and provide a synthetic fact: “My project is called Cedar and its rehearsal is Friday at ten in the morning.” The accepted automated run entered its seed through the actual browser text/speech path; repeat by voice on the presentation headset.
+2. Ask by voice: “What is my project called, and when is our practice?”
+3. Verify the actual Meta request includes the earlier fact and current question once. Hear a useful answer that recalls the project and time.
 4. Show the selected Meta model and explain which context Korina supplied. If demonstrating an agent report, show that it enters the next response once.
 5. Stop Live and verify capture/playback release. Repeat once on the presentation headset without a page reload.
 
@@ -55,6 +55,8 @@ Record first/warm turn timings, model ID, browser, device, recognition errors, a
 
 Meta documents automatic prefix caching. Keep stable instructions/context first and changing input last. Measure actual hits using `usage.prompt_tokens_details.cached_tokens`; the current Korina response UI does not expose that provider usage field. Optional `prompt_cache_key` and additional cache observability are possible event additions, not existing demonstrated features. Do not infer a cache hit or latency saving from repeated text or one faster run. [Prompt caching](https://dev.meta.ai/docs/prompt-caching).
 
-The [verification record](verification.md) contains local software checks and real CPU Whisper/SmolLM2/Kokoro integration. Those observations do not establish authenticated Meta access or presentation quality. A final demo should include an actual Meta call and useful context-dependent speech, with the pre-event baseline and event additions visible.
+The [authenticated October 23 rehearsal](verification.md#authenticated-meta-rehearsal-at-637e43c) used a typed synthetic seed fact followed by one generated microphone question. Real Whisper base.en, direct Meta `muse-spark-1.3-contributor`, Kokoro and native playback recalled Cedar/Friday at ten; Stop released capture. The voice turn took 37.654 seconds on this CPU setup. A separate stable-prefix experiment observed 1777 cached tokens on two follow-ups; short voice prompts had zero hits. This verifies that narrow synthetic interaction, not physical headset behavior or a general latency benefit. All 16 generation calls, including the stopped initial attempt, have an estimated token cost of $0.002674362. See the [redacted evidence](verification/meta-637e43c.json) for usage, boundaries and the earlier failed attempt.
+
+Use only appropriate demonstration data with Contributor models: their content may train Meta models. [Pricing and mode details](https://dev.meta.ai/docs/pricing-rate-limits). Keep the pre-event baseline and event additions visible in the final demonstration.
 
 Submit through the [organizer portal](https://cerebralvalley.ai/e/meta-ai-developer-hackathon/hackathon/submit) only after checking its current requirements and final rules. The current public material does not establish a required video length or a mandatory public-repository format.
