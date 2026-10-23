@@ -60,7 +60,7 @@ def test_agent_state_report_does_not_block_status_route(client, monkeypatch):
     started = threading.Event()
     release = threading.Event()
 
-    def slow_report(req):
+    def slow_report(req, *, config):
         started.set()
         assert release.wait(3)
         return 'Priority: normal\nReady.'

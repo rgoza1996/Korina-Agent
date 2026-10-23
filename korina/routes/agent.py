@@ -138,14 +138,15 @@ router.add_api_route('/api/agent/models', agent_candidate_models, methods=['POST
 @router.post('/api/agent/state-report')
 def agent_state_report(req: AgentStateRequest):
     """Generate a stateless built-in report independently of the registered adapter."""
-    if str(load_config().get('agent_enabled') or 'on') == 'off':
+    config = load_config()
+    if str(config.get('agent_enabled') or 'on') == 'off':
         return {'ok': True, 'state_report': '', 'disabled': True}
     try:
-        report = generate_agent_state_report(req)
+        report = generate_agent_state_report(req, config=config)
         return {
             'ok': True,
             'state_report': report,
-            'model': req.model or _default_model(),
+            'model': (req.model or _default_model(config)).strip(),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
