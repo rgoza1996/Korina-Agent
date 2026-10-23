@@ -81,6 +81,7 @@ def _whisper_fallback_payload(wav: Path, *, device, model_id, started, metadata,
     # Keep VAD off for fallback: filtering can erase quiet or clipped speech.
     parts, info = transcribe_wav_segments(
         wav, vad_filter=False, device=device, model_id=model_id,
+        is_current=is_current,
     )
     return whisper_payload(
         parts, info, metadata=metadata, started=started, device=device,
@@ -180,6 +181,7 @@ def _stream_events(audio_file, *, device, model, backend, llm_model,
             else:
                 parts, info = transcribe_wav_segments(
                     wav, vad_filter=True, device=device, model_id=model,
+                    is_current=is_current,
                 )
                 yield from _emit_whisper_sse(
                     parts, info, metadata=metadata, started=started,

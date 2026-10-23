@@ -103,10 +103,11 @@ def get_asr(device: Optional[str] = None, model_id: Optional[str] = None):
 class _WhisperSegments:
     """Own an inference iterator/model lease across pool-thread boundaries."""
 
-    def __init__(self, iterator, model, owner):
+    def __init__(self, iterator, model, owner, is_current=None):
         self._iterator = iterator
         self._model = model
         self._owner = owner
+        self._is_current = is_current
         self._closed = False
         self._operation = threading.Lock()
 
@@ -119,6 +120,7 @@ class _WhisperSegments:
                 raise StopIteration
             try:
                 with self._owner.infer_lock:
+                    check_current(self._is_current)
                     return next(self._iterator)
             except BaseException:
                 self._close_locked()
@@ -162,21 +164,27 @@ class WhisperInferenceInfo:
         return getattr(self.result, name)
 
 
-def transcribe_wav_segments(wav: Path, *, vad_filter: bool = True, device: Optional[str] = None, model_id: Optional[str] = None):
+def transcribe_wav_segments(wav: Path, *, vad_filter: bool = True, device: Optional[str] = None, model_id: Optional[str] = None,
+                            is_current: Callable[[], bool] | None = None):
     """Return lazy segments, serializing each model operation off the event loop.
 
     StreamingResponse may advance its iterator on different pool threads, so
     never hold an RLock across a yield. Each inference step acquires/releases
     the lock in the same thread; callers can emit the first segment promptly.
+    Recheck ownership after waiting for native admission, without interrupting
+    a native operation that already started.
     """
+    check_current(is_current)
     resolved_device = normalize_device(device, default_env=WHISPER_DEVICE)
     selected_model = (model_id or WHISPER_MODEL_ID).strip() or WHISPER_MODEL_ID
     owner = state.asr
     with owner.lock:
+        check_current(is_current)
         asr = get_asr(resolved_device, selected_model)
         owner.model_users += 1
     try:
         with owner.infer_lock:
+            check_current(is_current)
             segments, info = asr.transcribe(
                 str(wav),
                 beam_size=WHISPER_BEAM_SIZE,
@@ -184,7 +192,7 @@ def transcribe_wav_segments(wav: Path, *, vad_filter: bool = True, device: Optio
                 language='en',
                 condition_on_previous_text=False,
             )
-        parts = _WhisperSegments(iter(segments), asr, owner)
+        parts = _WhisperSegments(iter(segments), asr, owner, is_current)
     except BaseException:
         with owner.lock:
             owner.model_users -= 1
@@ -272,7 +280,8 @@ def transcribe_upload_file(audio_file, *, vad_filter: bool = True, device: Optio
 
             def whisper_fallback() -> dict:
                 started = time.time()
-                parts, info = transcribe_wav_segments(wav, vad_filter=False, device=device, model_id=model_id)
+                parts, info = transcribe_wav_segments(wav, vad_filter=False, device=device, model_id=model_id,
+                                                       is_current=is_current)
                 return whisper_payload(
                     parts, info, metadata=metadata, started=started,
                     device=device, model_id=model_id or config.get('stt_model'),
@@ -289,7 +298,8 @@ def transcribe_upload_file(audio_file, *, vad_filter: bool = True, device: Optio
 
         check_current(is_current)
         started = time.time()
-        parts, info = transcribe_wav_segments(wav, vad_filter=vad_filter, device=device, model_id=model_id)
+        parts, info = transcribe_wav_segments(wav, vad_filter=vad_filter, device=device, model_id=model_id,
+                                               is_current=is_current)
         return whisper_payload(
             parts, info, metadata=metadata, started=started,
             device=device, model_id=model_id,

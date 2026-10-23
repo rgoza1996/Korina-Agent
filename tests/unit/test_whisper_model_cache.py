@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from korina.runtime.state import AsrState
+from korina.runtime.json_http import RequestCancelledError
 from korina.services import whisper_service as whisper
 
 
@@ -135,4 +136,138 @@ def test_discarded_unconsumed_iterator_releases_its_lease(factory):
     assert factory.owner.model_users == 1
     del parts
     gc.collect()
+    assert factory.owner.model_users == 0
+
+
+@pytest.mark.parametrize('stage', ['cache', 'factory', 'next'])
+def test_retired_inference_waiter_skips_native_admission_and_reuses_cache_worker(factory, stage):
+    class ObservedLock:
+        def __init__(self):
+            self.lock = threading.RLock()
+            self.waiting = threading.Event()
+
+        def __enter__(self):
+            self.waiting.set()
+            self.lock.acquire()
+            return self
+
+        def __exit__(self, *args):
+            self.lock.release()
+
+    calls, workers = [], []
+    retired = threading.Event()
+    current = lambda: not retired.is_set()
+
+    def transcribe(*args, **kwargs):
+        calls.append('transcribe')
+
+        def segments():
+            calls.append('next')
+            yield SimpleNamespace(text='fresh', start=0, end=1)
+
+        return segments(), SimpleNamespace(language='en')
+
+    factory.behavior.transcribe = transcribe
+    whisper.get_asr('cpu', 'same')
+    cached = factory.owner.models.copy()
+    lock = ObservedLock()
+    if stage == 'cache':
+        factory.owner.lock = lock
+    else:
+        factory.owner.infer_lock = lock
+    parts = None
+    if stage == 'next':
+        parts, _ = whisper.transcribe_wav_segments(Path('fake.wav'), device='cpu', model_id='same',
+                                                   is_current=current)
+    before = calls.copy()
+    lock.waiting.clear()
+
+    def consume(parts=None):
+        workers.append(threading.get_ident())
+        if parts is None:
+            parts, _ = whisper.transcribe_wav_segments(Path('fake.wav'), device='cpu', model_id='same',
+                                                       is_current=current)
+        return list(whisper.owned_whisper_segments(parts, is_current=current))
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        # Signal actual lock admission, then retire the waiter while the lock
+        # remains held. No clock deadline or sleep decides the interleaving.
+        with lock.lock:
+            pending = pool.submit(consume, parts)
+            assert lock.waiting.wait(2)
+            retired.set()
+            assert calls == before
+        with pytest.raises(RequestCancelledError):
+            pending.result(timeout=2)
+        assert calls == before
+        assert factory.owner.model_users == 0
+        assert factory.owner.models == cached
+        retired.clear()
+        fresh = pool.submit(consume).result(timeout=2)
+    assert [segment.text for segment in fresh] == ['fresh']
+    assert calls == [*before, 'transcribe', 'next']
+    assert len(set(workers)) == 1
+    assert len(factory.created) == 1
+    assert factory.owner.model_users == 0
+
+
+@pytest.mark.parametrize('stage', ['factory', 'next'])
+def test_retirement_drains_active_native_work_before_releasing_lease(factory, stage):
+    entered, release, retired = threading.Event(), threading.Event(), threading.Event()
+    closed, workers = [], []
+    current = lambda: not retired.is_set()
+
+    def native_step():
+        entered.set()
+        assert release.wait(2)
+
+    class Segments:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            if stage == 'next':
+                native_step()
+            return SimpleNamespace(text='late', start=0, end=1)
+
+        def close(self):
+            closed.append(True)
+
+    def transcribe(*args, **kwargs):
+        if stage == 'factory':
+            native_step()
+        return Segments(), SimpleNamespace(language='en')
+
+    factory.behavior.transcribe = transcribe
+
+    def consume():
+        workers.append(threading.get_ident())
+        parts, _ = whisper.transcribe_wav_segments(Path('fake.wav'), device='cpu', model_id='same',
+                                                   is_current=current)
+        return list(whisper.owned_whisper_segments(parts, is_current=current))
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(consume)
+        try:
+            assert entered.wait(2)
+            retired.set()
+            assert not pending.done()
+            assert factory.owner.model_users == 1
+            with pytest.raises(whisper.WhisperBusyError):
+                whisper.get_asr('cpu', 'replacement')
+            assert len(factory.created) == 1
+        finally:
+            release.set()
+        with pytest.raises(RequestCancelledError):
+            pending.result(timeout=2)
+        assert closed == [True]
+        assert factory.owner.model_users == 0
+        retired.clear()
+        factory.behavior.transcribe = lambda *args, **kwargs: (
+            iter([SimpleNamespace(text='fresh', start=0, end=1)]), SimpleNamespace(language='en'),
+        )
+        fresh = pool.submit(consume).result(timeout=2)
+    assert [segment.text for segment in fresh] == ['fresh']
+    assert len(set(workers)) == 1
+    assert len(factory.created) == 1
     assert factory.owner.model_users == 0
