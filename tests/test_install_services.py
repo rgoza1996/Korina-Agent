@@ -36,6 +36,62 @@ def unit_command(unit):
     return [arg.replace('%%', '%').replace('$$', '$') for arg in shlex.split(line.partition('=')[2])]
 
 
+@pytest.mark.parametrize('arguments,status', [
+    (['--help'], 0), (['-h'], 0), (['--dry-run'], 2), (['--unknown'], 2),
+    (['--start', 'extra'], 2), (['--help', '--start'], 2),
+])
+def test_help_and_invalid_arguments_do_not_install_services(tmp_path, arguments, status):
+    env = service_environment(tmp_path)
+    unit_dir = Path(env['XDG_CONFIG_HOME']) / 'systemd/user'
+    unit_dir.mkdir(parents=True)
+    originals = {}
+    for name in ('korina-voice-lab.service', 'kokoro-streaming-server.service'):
+        unit = unit_dir / name
+        unit.write_text('customized sentinel ' + name)
+        originals[unit] = unit.read_bytes()
+    runtime = tmp_path / 'runtime'
+    runtime.mkdir()
+    config = runtime / 'config.json'
+    config.write_text('{"voice":"sentinel","ack_enabled":"off"}')
+    env['KORINA_APP_DIR'] = str(runtime)
+    before = config.read_bytes()
+    result = subprocess.run(['bash', str(REPO / 'Korina/install-services.sh'), *arguments], env=env,
+                            capture_output=True, text=True)
+    assert result.returncode == status
+    assert 'Usage:' in result.stdout + result.stderr
+    assert all(unit.read_bytes() == original for unit, original in originals.items())
+    assert config.read_bytes() == before
+    assert not Path(env['FAKE_SYSTEMCTL_LOG']).exists()
+
+
+@pytest.mark.parametrize('arguments,status', [
+    (['--help'], 0), (['--unknown'], 2), (['--start', 'extra'], 2),
+])
+def test_argument_handling_precedes_interpreter_and_path_setup(tmp_path, arguments, status):
+    env = service_environment(tmp_path)
+    env.update(KORINA_PYTHON=str(tmp_path / 'missing-python'),
+               KORINA_TTS_PYTHON=str(tmp_path / 'missing-tts-python'),
+               KORINA_APP_DIR='invalid\nruntime')
+    result = subprocess.run(['bash', str(REPO / 'Korina/install-services.sh'), *arguments], env=env,
+                            capture_output=True, text=True)
+    assert result.returncode == status
+    assert 'Usage:' in result.stdout + result.stderr
+    assert 'must name an executable' not in result.stderr
+    assert not Path(env['XDG_CONFIG_HOME']).exists()
+    assert not Path(env['FAKE_SYSTEMCTL_LOG']).exists()
+
+
+def test_explicit_start_installs_then_restarts_both_fake_units(tmp_path):
+    env = service_environment(tmp_path)
+    subprocess.run(['bash', str(REPO / 'Korina/install-services.sh'), '--start'], env=env,
+                   capture_output=True, text=True, check=True)
+    assert Path(env['FAKE_SYSTEMCTL_LOG']).read_text().splitlines() == [
+        '--user daemon-reload', '--user enable korina-voice-lab.service',
+        '--user enable kokoro-streaming-server.service',
+        '--user restart kokoro-streaming-server.service', '--user restart korina-voice-lab.service',
+    ]
+
+
 def test_install_services_renders_checkout_and_interpreter(tmp_path):
     env = service_environment(tmp_path)
     config_home = tmp_path / 'config home'

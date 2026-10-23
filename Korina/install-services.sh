@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+usage() { echo "Usage: $0 [--start]"; }
+START_SERVICES=0
+if [[ "$#" -gt 1 ]]; then
+  echo "ERROR: expected at most one argument." >&2
+  usage >&2
+  exit 2
+fi
+if [[ "$#" -eq 1 ]]; then
+  case "$1" in
+    --start) START_SERVICES=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown arg: $1" >&2; usage >&2; exit 2 ;;
+  esac
+fi
+
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO_ROOT/Korina/service-common.sh"
 UNIT_SRC="$REPO_ROOT/deploy/systemd"
@@ -82,7 +97,7 @@ echo "Logs:"
 echo "  journalctl --user -u korina-voice-lab.service -f"
 echo "  journalctl --user -u kokoro-streaming-server.service -f"
 
-if [[ "${1:-}" == "--start" ]]; then
+if [[ "$START_SERVICES" -eq 1 ]]; then
   systemctl --user restart kokoro-streaming-server.service
   systemctl --user restart korina-voice-lab.service
 fi
