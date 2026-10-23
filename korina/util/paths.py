@@ -47,7 +47,6 @@ WHISPER_COMPUTE_TYPE = os.environ.get('WHISPER_COMPUTE_TYPE')
 WHISPER_CPU_THREADS = int(os.environ.get('WHISPER_CPU_THREADS', '4'))
 WHISPER_BEAM_SIZE = int(os.environ.get('WHISPER_BEAM_SIZE', '1'))
 PARTIAL_MIN_SECONDS = float(os.environ.get('PARTIAL_MIN_SECONDS', '0.6'))
-LMSTUDIO_URL = os.environ.get('LMSTUDIO_URL', 'http://127.0.0.1:8080/v1/chat/completions')
 LMSTUDIO_MODEL = os.environ.get('LMSTUDIO_MODEL', '')
 WHISPER_MODEL_CHOICES = ['tiny.en', 'base.en', 'small.en', 'turbo', 'distil-large-v3']
 LOCAL_MODEL_ROOTS = [

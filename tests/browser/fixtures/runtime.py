@@ -59,7 +59,7 @@ def browser_runtime(*, source: Path = SOURCE_ASSETS):
             'KORINA_LMS_CLI_BIN': str(root / 'bin/lms'),
             'KORINA_LLAMA_SERVER_USER_UNIT': str(root / 'units/browser-fixture-llama.service'),
             'KORINA_LLAMA_SERVER_MEDIA_PATH': '',
-            'LMSTUDIO_URL': closed + '/v1/chat/completions', 'LMSTUDIO_MODEL': '',
+            'LMSTUDIO_MODEL': '',
             'KOKORO_URL': closed, 'WHISPER_MODEL_ID': 'base.en', 'WHISPER_DEVICE': 'cpu',
             'WHISPER_COMPUTE_TYPE': '', 'WHISPER_CPU_THREADS': '4', 'WHISPER_BEAM_SIZE': '1',
             'PARTIAL_MIN_SECONDS': '0.6', 'ACK_DEFAULT_VOICE': 'af_heart',

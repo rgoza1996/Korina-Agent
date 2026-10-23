@@ -124,18 +124,6 @@ def provider_default_api_key_env(provider: str, base_url: str) -> str:
     return str(cap.get("default_api_key_env") or "")
 
 
-def is_local_provider_base_url(base_url: str, provider: str = "") -> bool:
-    base = str(base_url or "").strip().rstrip("/")
-    provider = str(provider or "").strip().lower()
-    cap = PROVIDER_CAPABILITIES.get(provider, {})
-    if cap.get("is_local"):
-        return True
-    for cap in PROVIDER_CAPABILITIES.values():
-        if cap.get("is_local") and base == str(cap.get("default_base_url") or "").rstrip("/"):
-            return True
-    return False
-
-
 def capabilities_for_section(section: str) -> dict[str, dict[str, Any]]:
     """Return the subset of PROVIDER_CAPABILITIES valid for section."""
     section = str(section or "").strip().lower()

@@ -59,25 +59,18 @@ def generate_agent_state_report(
     )
     provider = agent_provider(config)
     headers = {'Content-Type': 'application/json'} | agent_auth_headers(config)
+    payload: dict = {
+        'model': selected_model,
+        'temperature': 0.2,
+        'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
+    }
+    user_message = {'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)}
     if provider == 'anthropic':
-        payload = {
-            'model': selected_model,
-            'system': system,
-            'messages': [{'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)}],
-            'temperature': 0.2,
-            'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
-        }
+        payload['system'] = system
+        payload['messages'] = [user_message]
     else:
-        payload = {
-            'model': selected_model,
-            'messages': [
-                {'role': 'system', 'content': system},
-                {'role': 'user', 'content': json.dumps(user_payload, ensure_ascii=False)},
-            ],
-            'temperature': 0.2,
-            'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
-            'stream': False,
-        }
+        payload['messages'] = [{'role': 'system', 'content': system}, user_message]
+        payload['stream'] = False
         if provider == 'meta':
             effort = config_agent_reasoning_effort(config)
             if effort:

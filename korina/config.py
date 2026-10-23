@@ -339,11 +339,6 @@ def set_local_model_roots(roots) -> list[str]:
     return normalized
 
 
-@_config_transaction
-def clear_local_model_roots() -> list[str]:
-    return set_local_model_roots([])
-
-
 def _check_model_root_limits(roots: list[str]) -> None:
     if len(roots) > MAX_MODEL_ROOTS:
         raise ValueError(f'at most {MAX_MODEL_ROOTS} model roots are allowed')
@@ -716,19 +711,3 @@ def clear_audio_unsupported(provider: str, base_url: str, model: str, *,
     check_current(is_current)
     save_config(cfg)
     return True
-
-
-@_config_transaction
-def clear_audio_unsupported_for_provider(provider: str) -> int:
-    """Remove all entries for a given provider. Returns count removed."""
-    cfg = load_config()
-    cache = cfg.get("audio_unsupported") or {}
-    if not isinstance(cache, dict):
-        return 0
-    prefix = f"{str(provider or '').strip()}::"
-    kept = {k: v for k, v in cache.items() if not k.startswith(prefix)}
-    removed = len(cache) - len(kept)
-    if removed > 0:
-        cfg["audio_unsupported"] = kept
-        save_config(cfg)
-    return removed
