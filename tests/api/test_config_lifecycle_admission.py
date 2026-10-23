@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from korina import config
-from korina.routes import model_roots
+from korina.routes import model_roots, providers
 from korina.services.provider_manager import provider_activation_lock
 
 
@@ -98,6 +98,83 @@ def test_busy_lifecycle_accepts_equivalent_inherited_settings_and_unrelated_chan
         assert response.json()['voice'] == 'af_bella'
         assert config.config_stt_llm_model(response.json()) == 'demo'
         assert response.json()['agent_model'] == 'demo'
+    finally:
+        provider_activation_lock.release()
+
+
+@pytest.mark.parametrize('operation', ['activation', 'refresh'])
+@pytest.mark.parametrize('previous_env,next_env', [('', 'MODEL_API_KEY'), ('MODEL_API_KEY', '')])
+def test_held_lifecycle_accepts_equivalent_meta_environment_names(
+    monkeypatch, client, operation, previous_env, next_env,
+):
+    monkeypatch.setenv('MODEL_API_KEY', 'synthetic-fixture-only')
+    saved = config.update_config_values({
+        'llm_provider': 'meta', 'llm_api_key_env': previous_env, 'lm_model': 'fixture-model',
+        'stt_backend': 'llm', 'stt_llm_provider': '', 'stt_llm_base_url': '', 'stt_llm_model': '',
+        'stt_llm_api_key_env': '', 'agent_enabled': 'off', 'agent_provider': 'openai-compatible',
+        'agent_base_url': 'https://api.meta.ai/v1', 'agent_api_key': '',
+    })
+    assert config.config_llm_api_env(saved) == config.config_stt_llm_api_env(saved) == 'MODEL_API_KEY'
+    original_headers = config.agent_auth_headers(saved)
+    assert original_headers == {'Authorization': 'Bearer synthetic-fixture-only'}
+    entered, release = threading.Event(), threading.Event()
+
+    def hold(*args, **kwargs):
+        entered.set()
+        assert release.wait(5)
+        return {'provider': 'meta'} if operation == 'activation' else []
+
+    if operation == 'activation':
+        monkeypatch.setattr(providers, 'activate_llm_provider', hold)
+        endpoint, arguments = '/api/llm/provider/activate', {'json': {'provider': 'meta', 'model': 'fixture-model'}}
+    else:
+        monkeypatch.setattr(model_roots, '_resolve_llama_cpp_model_id', lambda model: model)
+        monkeypatch.setattr(model_roots, 'discover_local_gguf_models', hold)
+        endpoint, arguments = '/api/llm/llama/refresh', {}
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=client.app), base_url='http://korina.test') as http:
+            pending = asyncio.create_task(http.post(endpoint, **arguments))
+            try:
+                assert await asyncio.to_thread(entered.wait, 2)
+                response = await http.post('/api/config', json={'llm_api_key_env': next_env, 'voice': 'af_bella'})
+                assert response.status_code == 200, response.text
+                current = response.json()
+                assert current['llm_api_key_env'] == next_env
+                assert current['voice'] == 'af_bella'
+                assert config.config_llm_api_env(current) == config.config_stt_llm_api_env(current) == 'MODEL_API_KEY'
+                assert config.agent_auth_headers(current) == original_headers
+                assert not provider_activation_lock.acquire(blocking=False)
+            finally:
+                release.set()
+                assert (await pending).status_code == 200
+            assert config.load_config()['llm_api_key_env'] == next_env
+
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize('provider,base,previous_env,next_env', [
+    ('meta', 'https://api.meta.ai/v1', '', 'CUSTOM_ENV'),
+    ('meta', 'https://api.meta.ai/v1', 'CUSTOM_ENV', ''),
+    ('openai-compatible', 'https://api.meta.ai/v1', '', 'MODEL_API_KEY'),
+    ('openai-compatible', 'https://api.meta.ai/v1', 'MODEL_API_KEY', ''),
+    ('openai-compatible', 'https://custom.test/v1', '', 'MODEL_API_KEY'),
+])
+def test_busy_lifecycle_rejects_different_effective_credential_names(
+    client, provider, base, previous_env, next_env,
+):
+    saved = config.update_config_values({
+        'llm_provider': provider, 'llm_base_url': base, 'llm_api_key_env': previous_env,
+        'agent_enabled': 'off',
+    })
+    candidate = {**saved, 'llm_api_key_env': next_env}
+    assert config.config_llm_api_env(saved) != config.config_llm_api_env(candidate)
+    before = config.CONFIG_PATH.read_bytes()
+    assert provider_activation_lock.acquire(blocking=False)
+    try:
+        response = client.post('/api/config', json={'llm_api_key_env': next_env, 'voice': 'af_bella'})
+        assert response.status_code == 409
+        assert config.CONFIG_PATH.read_bytes() == before
     finally:
         provider_activation_lock.release()
 

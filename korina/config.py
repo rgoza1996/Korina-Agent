@@ -192,7 +192,7 @@ def _provider_role_settings(config: dict) -> dict:
         'llm_base_url': config_llm_chat_url(config),
         'lm_model': str(config.get('lm_model') or LMSTUDIO_MODEL).strip(),
         'llm_reasoning': config_llm_reasoning(config),
-        'llm_api_key_env': str(config.get('llm_api_key_env') or '').strip(),
+        'llm_api_key_env': config_llm_api_env(config),
         'stt_backend': str(config.get('stt_backend') or 'whisper').strip(),
         'stt_llm_provider': config_stt_llm_provider(config),
         'stt_llm_base_url': config_stt_llm_chat_url(config),
@@ -472,10 +472,7 @@ def config_llm_chat_url(config: Optional[dict] = None) -> str:
 
 
 def config_llm_models_url(config: Optional[dict] = None) -> str:
-    base = config_llm_base_url(config)
-    if base.endswith('/chat/completions'):
-        base = base.rsplit('/chat/completions', 1)[0]
-    return f'{base}/models'
+    return f'{normalize_api_base_url(config_llm_base_url(config))}/models'
 
 
 def config_stt_llm_provider(config: Optional[dict] = None) -> str:
@@ -497,10 +494,7 @@ def config_stt_llm_chat_url(config: Optional[dict] = None) -> str:
 
 
 def config_stt_llm_models_url(config: Optional[dict] = None) -> str:
-    base = config_stt_llm_base_url(config)
-    if base.endswith('/chat/completions'):
-        base = base.rsplit('/chat/completions', 1)[0]
-    return f'{base}/models'
+    return f'{normalize_api_base_url(config_stt_llm_base_url(config))}/models'
 
 
 def config_stt_llm_api_env(config: Optional[dict] = None) -> str:
