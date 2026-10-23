@@ -56,8 +56,10 @@ async function interruptionPage(page, { holdFollowup = false } = {}) {
   await expect.poll(() => page.evaluate(() => window.state.mediaRecorder?.state)).toBe('recording');
   await expect.poll(() => page.evaluate(() => performance.now() > window.state.vadCalibratingUntil)).toBe(true);
   await page.evaluate(() => { window.__inputLevel = 160; });
+  // Confirm observed speech duration, not wall time while a Live callback may
+  // not have sampled the synthetic input. Otherwise min_speech_ms can reject it.
   await expect.poll(() => page.evaluate(() => window.state.liveSpeechStart > 0
-    && performance.now() - window.state.liveSpeechStart > 450)).toBe(true);
+    && window.state.liveLastVoice - window.state.liveSpeechStart > 450)).toBe(true);
   await page.evaluate(() => { window.__inputLevel = 128; });
   await expect.poll(() => page.evaluate(() => window.state.ttsSpeaking
     && !document.getElementById('audio').paused && window.state.bargeRecorder?.state === 'recording')).toBe(true);
