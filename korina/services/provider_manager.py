@@ -5,12 +5,14 @@ import logging
 import re
 import os
 import shutil
+import stat
 import subprocess
 import threading
 import time
 import ipaddress
 from dataclasses import asdict, dataclass, field
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from korina.config import (
     config_llm_reasoning,
@@ -349,6 +351,42 @@ def _systemd_argument(value: str) -> str:
     return f'"{escaped}"' if re.search(r'[\s"\\%$]', value) else value
 
 
+def _atomic_write_unit(path: Path, content: str) -> None:
+    """Publish a complete unit, following existing links and preserving mode."""
+    target = path.resolve()
+    try:
+        mode = stat.S_IMODE(target.stat().st_mode)
+    except FileNotFoundError:
+        mode = None
+    temporary = target.with_name(f'.korina-unit-{uuid4().hex}.tmp')
+    # Exclusive creation both owns this name and applies the caller's umask.
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+    descriptor_owned = True
+    stream = None
+    try:
+        stream = os.fdopen(descriptor, 'w', encoding='utf-8')
+        descriptor_owned = False
+        stream.write(content)
+        stream.flush()
+        stream.close()
+        if mode is not None:
+            temporary.chmod(mode)
+        temporary.replace(target)
+    finally:
+        # Cleanup must not replace a write/flush/close/publish exception.
+        try:
+            if stream is not None and not stream.closed:
+                stream.close()
+            if descriptor_owned:
+                os.close(descriptor)
+        except Exception:
+            logger.warning('Could not close temporary provider unit', exc_info=True)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            logger.warning('Could not remove temporary provider unit %s', temporary, exc_info=True)
+
+
 def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> None:
     config = dict(config or load_config())
     model = Path(str(model_path or '').strip())
@@ -381,7 +419,7 @@ def write_llama_server_unit(model_path: str, config: Optional[dict] = None) -> N
     if service_path.suffix != '.service':
         raise ValueError('KORINA_LLAMA_SERVER_USER_UNIT must name a .service file')
     service_path.parent.mkdir(parents=True, exist_ok=True)
-    service_path.write_text('\n'.join(unit))
+    _atomic_write_unit(service_path, '\n'.join(unit))
 
 def wait_for_llama_server_ready(timeout_seconds: float = 90.0) -> None:
     _wait_for_models('http://127.0.0.1:8080/v1/models', 'llama-server', timeout_seconds)
