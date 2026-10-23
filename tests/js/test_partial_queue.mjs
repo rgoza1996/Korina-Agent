@@ -6,7 +6,7 @@ import {
   startPartialTranscriptionLoop, startPartialWindowRecorder,
   stopPartialTranscriptionLoop, waitForPartialQueueIdle,
 } from '../../Korina/js/partial-queue.js';
-import { handleLiveTurn, stopLive } from '../../Korina/js/live.js';
+import { handleLiveTurn, liveMonitor, stopLive } from '../../Korina/js/live.js';
 import { transcribeBlob, transcribePartialBlob } from '../../Korina/js/recorder.js';
 
 const elements = new Map();
@@ -48,6 +48,7 @@ beforeEach(() => {
     partialCaptureActive: false, partialNeedsFullPass: false, partialFallbackReason: '',
     partialWindowMs: 60_000, partialTimer: null, latestPartialText: '',
     liveSpeechStart: performance.now() - 1000, liveLastVoice: performance.now(),
+    liveSilenceStart: 0,
     recChunks: [audio('whole-utterance-')], liveTranscriptionController: null,
     pendingAgentStateReport: '', pendingImportantAgentMessage: '',
   });
@@ -141,6 +142,65 @@ test('a cancelled old worker cannot consume a new queue or clear its controller 
   await waitForPartialQueueIdle();
   assert.equal(state.latestPartialText, 'New first. New second.');
   assert.doesNotMatch(element('transcript').value, /Old text/);
+});
+
+test('full-final partial feedback holds queued work during endpoint silence and resumes when speech returns', async () => {
+  element('finalSttMode').value = 'full';
+  const requests = [];
+  globalThis.fetch = (url, options) => new Promise(resolve => { requests.push({ resolve, signal: options.signal }); });
+  startPartialTranscriptionLoop();
+  await captureWindow(audio('first-'));
+  await captureWindow(audio('deferred-'));
+  assert.equal(requests.length, 1);
+  state.liveSilenceStart = performance.now();
+  requests[0].resolve(json(partial('First feedback.')));
+  await tick();
+  assert.equal(requests.length, 1, 'endpoint silence must not start another native request');
+  assert.equal(state.latestPartialText, 'First feedback.', 'already admitted feedback still completes');
+  assert.equal(state.partialQueue.length, 1, 'keep the complete deferred window for resumed speech');
+  assert.equal(state.partialQueueProcessing, false);
+  assert.equal(requests[0].signal.aborted, false);
+
+  state.analyser = { fftSize: 512, getByteTimeDomainData: data => data.fill(200) };
+  liveMonitor();
+  assert.equal(state.liveSilenceStart, 0);
+  assert.equal(requests.length, 2, 'speech resumption admits the held window without waiting for another recording');
+  requests[1].resolve(json(partial('Resumed feedback.')));
+  await waitForPartialQueueIdle();
+  assert.equal(state.latestPartialText, 'First feedback. Resumed feedback.');
+  assert.equal(state.partialQueue.length, 0);
+});
+
+test('full-final endpoint silence leaves new queued feedback untouched until Stop retires it', async () => {
+  element('finalSttMode').value = 'full';
+  state.liveSilenceStart = performance.now();
+  const blob = audio('complete-deferred-window-');
+  state.partialQueue = [{ seq: state.partialSeq, windowId: 1, blob }];
+  await processPartialQueue();
+  assert.equal(state.partialQueue.length, 1);
+  assert.equal(state.partialQueue[0].blob, blob);
+  assert.equal(state.partialController, null);
+  assert.equal(state.partialQueueProcessing, false);
+  stopLive();
+  assert.equal(state.partialQueue.length, 0);
+  assert.equal(state.partialController, null);
+});
+
+test('chunks mode continues draining every complete window during endpoint silence', async () => {
+  const uploaded = [];
+  globalThis.fetch = async (url, options) => {
+    uploaded.push(await options.body.get('audio').text());
+    return json(partial(`Feedback ${uploaded.length}.`));
+  };
+  state.liveSilenceStart = performance.now();
+  state.partialQueue = [
+    { seq: state.partialSeq, windowId: 1, blob: audio('first-') },
+    { seq: state.partialSeq, windowId: 2, blob: audio('second-') },
+  ];
+  await processPartialQueue();
+  assert.deepEqual(uploaded, ['first-'.repeat(3000), 'second-'.repeat(3000)]);
+  assert.equal(state.latestPartialText, 'Feedback 1. Feedback 2.');
+  assert.equal(state.partialQueue.length, 0);
 });
 
 test('late final data from an old recorder cannot consume or clear a new recorder window', async () => {

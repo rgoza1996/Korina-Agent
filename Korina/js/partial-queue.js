@@ -3,6 +3,7 @@
 import { state } from "./state.js";
 import { $ } from "./dom.js";
 import { transcribePartialBlob } from "./recorder.js";
+import { finalSttMode } from "./settings-ui.js";
 
 export const MAX_PARTIAL_QUEUE_WINDOWS = 4;
 export const MAX_PARTIAL_WINDOW_BYTES = 2 * 1024 * 1024;
@@ -102,6 +103,10 @@ export async function processPartialQueue() {
   const current = () => activeWorker === worker && worker.seq === state.partialSeq;
   try {
     while (current() && state.partialQueue.length) {
+      // Full-final mode will replace partial feedback at the endpoint. Hold
+      // queued work during its silence timer rather than start another native
+      // step that cannot be interrupted when the full recording is submitted.
+      if (finalSttMode() === 'full' && state.liveSilenceStart) break;
       const item = state.partialQueue.shift();
       if (item.seq !== worker.seq) continue;
       $('transcriptInfo').textContent = `Transcribing queued window ${item.windowId}; ${state.partialQueue.length} waiting.`;

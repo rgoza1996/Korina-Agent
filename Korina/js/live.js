@@ -6,7 +6,7 @@ import { $, status, log } from "./dom.js";
 import { markActivity, nextIdleDelayMs, minSpeechMs, finalSttMode, endpointMode } from "./settings-ui.js";
 import { cancelAckPlayback, preloadAckBuffers, playRandomAck } from "./acks.js";
 import { setupMic, releaseMic, makeRecorder, transcribeBlob } from "./recorder.js";
-import { startPartialTranscriptionLoop, stopPartialTranscriptionLoop, waitForPartialQueueIdle } from "./partial-queue.js";
+import { startPartialTranscriptionLoop, stopPartialTranscriptionLoop, waitForPartialQueueIdle, processPartialQueue } from "./partial-queue.js";
 import { stopTtsNow } from "./speech.js";
 import { cancelBargeIn } from "./barge-in.js";
 import { rmsLevel, updateAdaptiveVad } from "./vad.js";
@@ -171,9 +171,11 @@ export function liveMonitor() {
       }
     }
   } else if (aboveSpeech) {
+    const resumed = Boolean(state.liveSilenceStart);
     state.liveLastVoice = now;
     markActivity('user-speaking');
     state.liveSilenceStart = 0;
+    if (resumed) processPartialQueue();
     status($('sttStatus'), `Listening… level ${level.toFixed(3)} · speech>${state.vadSpeechThreshold.toFixed(3)} silence<${state.vadSilenceThreshold.toFixed(3)}`, 'warn');
   } else if (state.vadSilenceFrames >= VAD_SILENCE_FRAMES) {
     if (!state.liveSilenceStart) state.liveSilenceStart = now;
