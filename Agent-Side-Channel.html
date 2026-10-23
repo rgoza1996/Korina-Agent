@@ -18,10 +18,12 @@
 <a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
 </div>
 <div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
-</div></nav><div style='max-width:900px;margin:3rem auto;padding:0 1.5rem'><a href='index.html' style='display:inline-block;margin-bottom:1.5rem;color:var(--ink-soft)'>&#8592; Back to Home</a><h1 style='border-bottom:1px solid var(--rule);padding-bottom:.5rem;margin-top:0'>Agent Side Channel</h1><p style='color:var(--ink-soft);font-size:1.05em;margin-top:1rem;white-space:pre-wrap'>The agent side channel connects Korina Agent (and external agents) to Korina Converse over HTTP endpoints under /api/agent/.
+</div></nav><div style='max-width:900px;margin:3rem auto;padding:0 1.5rem'><a href='index.html' style='display:inline-block;margin-bottom:1.5rem;color:var(--ink-soft)'>&#8592; Back to Home</a><h1 style='border-bottom:1px solid var(--rule);padding-bottom:.5rem;margin-top:0'>Agent Side Channel</h1><p style='color:var(--ink-soft);font-size:1.05em;margin-top:1rem;white-space:pre-wrap'>The version 1 agent HTTP surface lives under <code>/api/agent/</code>. An external agent integrates through a compatible <code>AgentAdapter</code> registered on the server. OpenAI-compatible model access alone does not implement that adapter contract; Hermes remains a stub.
 
-Endpoints handle: transcript delivery, state reports, permission requests/answers, context injection, and model listing.
+Read <code>GET /api/agent/capabilities</code> for the selected adapter’s supported operations. Status, cursor-based events, reset, and prompt transcript delivery use the selected adapter. Full transcript injection requires its optional legacy HTTP extension; permission answers require the declared permission operation. Permission requests arrive as events, and the browser posts the human answer to <code>/api/agent/permission-answer</code>.
 
-The side channel is designed to be provider-agnostic: Hermes Agent, OpenClaw, or any OpenAI-compatible agent can attach to Converse using the same contract.
+Model discovery at <code>/api/agent/models</code> and synchronous <code>/api/agent/state-report</code> remain built-in service utilities, independent of replacement-adapter registration. They do not discover or invoke an arbitrary external agent.
 
-See Issue #3 for the formal protocol definition.</p></div></body></html>
+The Python <code>ConverseChannel</code> interface is separate. Selecting a registered Python channel does not reroute the browser’s <code>/api/chat</code> voice response.
+
+See the <a href="Protocol.html">current protocol summary</a>, <a href="Agent.html">agent lifecycle and delivery settings</a>, and <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/docs/agent-protocol.md">complete wire and adapter contract</a>.</p></div></body></html>

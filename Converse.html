@@ -28,93 +28,65 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 </p>
 
 <div class="req-note">
-<strong>Design principle:</strong> Korina is local-first — it is designed to keep your voice data and inference on your own hardware. However, it can fall back to cloud providers when your local hardware cannot fit the selected model. For example, running Qwen3-27B at Q8 (requires ~32GB VRAM) or GPT-OSS-120B at MXFP4 (requires ~64GB VRAM) is not realistic on typical consumer hardware.
+<strong>Runtime choice:</strong> Whisper and Kokoro can run locally, while response and agent models use their configured endpoints. A remote endpoint receives the transcript and context Korina supplies; the focused Meta rehearsal explicitly used Meta Model API. Korina does not automatically choose a cloud response provider when a local model fails to fit.
 </div>
 
-<h2>Minimum System Requirements (Korina Converse)</h2>
-<p style="color:var(--ink-soft);margin-bottom:1rem">Estimates based on <code>faster-whisper base</code> + <code>Qwen3.5-0.5B</code> as the lightweight STT + LLM baseline.</p>
-
+<h2>Measured preparation environment</h2>
+<p style="color:var(--ink-soft);margin-bottom:1rem">The accepted <a href="Verification.html#meta-voice"><code>637e43c</code> rehearsal</a> is a single Linux aarch64 observation with synthetic input. It does not establish minimum RAM, VRAM, storage, or performance tiers.</p>
 <table class="req-table">
 <thead>
-<tr><th>Tier</th><th>VRAM</th><th>System RAM</th><th>Storage</th><th>Notes</th></tr>
+<tr><th>Component</th><th>Observed configuration and result</th></tr>
 </thead>
 <tbody>
-<tr>
-<td>
-<span class="tier-label minimal">Minimal</span>basic functionality
-</td>
-<td>—</td>
-<td>4 GB</td>
-<td>2 GB</td>
-<td>CPU inference. whisper base (~74M) + Qwen3.5-0.5B Q8 (~1GB). Slow but functional. STT may hit CPU bottlenecks on older CPUs.</td>
-</tr>
-<tr>
-<td>
-<span class="tier-label basic" style="background:#003b10">Basic</span>acceptable experience
-</td>
-<td>2–4 GB</td>
-<td>8 GB</td>
-<td>5 GB</td>
-<td>GPU-assisted STT (faster-whisper with CUDA). whisper base + Qwen3.5-0.5B Q8 loaded simultaneously. Single-turn latency in the 3–8s range on a mid-range GPU (e.g. RX 580, GTX 1080).</td>
-</tr>
-<tr>
-<td>
-<span class="tier-label good">Good</span>good experience
-</td>
-<td>6–8 GB</td>
-<td>16 GB</td>
-<td>10 GB</td>
-<td>GPU-heavy. whisper base + Qwen3.5-4B Q8 (~4.5GB) or medium whisper model. Smooth multi-turn conversation with sub-3s perceived latency on modern GPUs (e.g. RTX 3060, RX 6600 XT).</td>
-</tr>
+<tr><td>API and browser</td><td>Python 3.12.3, Node 22.23.4, Playwright 1.64.1, Chromium 156.0.8078.4</td></tr>
+<tr><td>Capture and STT</td><td>Generated fake microphone through native MediaRecorder/VAD; faster-whisper 1.2.1 <code>base.en</code>, CPU/int8, recognized the project/practice question correctly</td></tr>
+<tr><td>Response model</td><td>Actual <code>muse-spark-1.3-contributor</code> through Meta Model API, 2048-token budget and model-default reasoning; recalled Cedar and Friday at ten from prior history</td></tr>
+<tr><td>Speech output</td><td>Kokoro 0.9.4, Torch 2.14.1+cpu with four threads, <code>af_heart</code>; two native PCM buffers totaling 124,800 samples at 24 kHz reached ended</td></tr>
+<tr><td>Complete turn</td><td>37.654 seconds from Live click to all native audio ended; Stop released capture and disposable services closed</td></tr>
 </tbody>
 </table>
-
-<p style="color:var(--ink-soft);font-size:0.85em;margin-top:0.75rem">
-<strong>STT models:</strong> faster-whisper base.en (~74M params, ~150MB INT8) is the minimum. Larger models (medium.en ~418M, large-v3 ~1.5B) improve accuracy at the cost of VRAM/speed.
-</p>
-<p style="color:var(--ink-soft);font-size:0.85em">
-<strong>LLM models:</strong> Qwen3.5-0.5B Q8 (~1GB) is the minimum viable for basic conversational quality. Qwen3.5-4B Q8 (~4.5GB) is the practical floor for decent response quality. Larger models (7B, 13B+) dramatically improve output quality but require corresponding VRAM headroom.
-</p>
-<p style="color:var(--ink-soft);font-size:0.85em">
-<strong>Kokoro TTS:</strong> TTS runs on CPU (omnivoice is lightweight, ~100MB RAM). No discrete GPU needed for TTS.
-</p>
+<p>These results include recording, endpoint silence, conversion, model requests, synthesis, and playback. They are not neural-only measurements or a GPU benchmark. Physical headset capture, speaker audibility, echo cancellation, human interruption, and presentation-machine performance still require rehearsal. See <a href="Hackathon.html">setup and remaining acceptance checks</a>.</p>
 
 <h2>Core Features</h2>
 <div class="card-grid">
 <div class="card"><h3> Live VAD</h3><p>Browser-side adaptive energy voice activity detection with configurable endpointing thresholds: 3200ms silence for reading/dictation, 950ms for conversation mode.</p></div>
-<div class="card"><h3> Partial Transcription</h3><p>Rolling partial transcription windows (~1.8s each) are queued rather than dropped, so slower STT inference catches up gracefully without losing audio.</p></div>
-<div class="card"><h3> Response LLM</h3><p>Browser sends transcript to the configured OpenAI-compatible response LLM endpoint. Provider-agnostic: llama.cpp, LM Studio, Ollama, or any custom endpoint.</p></div>
-<div class="card"><h3> Kokoro TTS</h3><p>Kokoro/OpenAI-compatible TTS with Web Audio SSE streaming. Voices selectable in the UI. Acknowledgement phrases generated and cached per voice on startup.</p></div>
+<div class="card"><h3> Partial Transcription</h3><p>Complete rolling windows (~1.8s each) provide feedback through a bounded queue. Overflow or a failed window falls back to the untouched complete recording.</p></div>
+<div class="card"><h3> Response LLM</h3><p>The browser calls <code>/api/chat</code>; the backend forwards supplied context to the selected llama.cpp, LM Studio, Ollama, Meta, or generic OpenAI-compatible endpoint.</p></div>
+<div class="card"><h3> Kokoro TTS</h3><p>Kokoro-compatible PCM SSE or buffered WAV playback, with selectable voices. Optional acknowledgement clips are cached per voice and generated when enabled.</p></div>
 <div class="card"><h3>⏸️ Barge-in &amp; Interrupts</h3><p>Speak during playback to interrupt. Agent interrupts use a configurable cooldown (default 3000ms padding) to prevent recursive interruption.</p></div>
 <div class="card"><h3> Permission UX</h3><p>Permission requests from the agent are spoken by Converse and answered through the agent permission endpoint. Converse is always the human-facing permission surface.</p></div>
 </div>
 
-<h2>Converse Channel Protocol (Phase 5 Commit 1 — Shipped)</h2>
-<p>Converse talks to any agent implementation through a stable async protocol (<code>ConverseChannel</code>) rather than reaching into the agent service directly. The protocol layer lives in <code>korina.converse</code> and was added on top of the existing HTTP routes — chat/STT/TTS pipelines are unchanged.</p>
+<h2>Full-final capture and request ownership</h2>
+<p>In full-utterance final mode, pending endpoint silence holds new queued partial dispatches until speech resumes. Already admitted partial feedback can finish; resumed speech makes held windows eligible immediately. At the endpoint, the complete main recording supplies the final transcript. Chunks mode still drains its complete windows, and Stop retains its epoch, abort, and microphone-release behavior. This follow-up at <code>10a844a</code> has no measured latency-saving claim.</p>
+<p>Whisper rechecks request ownership after waiting for model/cache and inference locks, including before advancing a lazy native segment. A retired waiter starts no new native step. Work already inside model loading or inference still drains before serialized close and model-lease release; cancellation does not forcibly interrupt native computation. See the <a href="Providers.html">transcription and speech boundaries</a>.</p>
+
+<h2>Python Converse channel interface</h2>
+<p><code>korina.converse</code> exposes an independent Python interface for registered channel implementations. The browser voice loop continues to use <code>/api/chat</code>, transcription, TTS, and agent HTTP routes. Selecting a Python channel does not reroute that voice loop, and there is no public HTTP send/stream endpoint for this interface.</p>
 
 <div class="card-grid">
-<div class="card"><h3>ConverseChannel Protocol</h3><p>Abstract base class with <code>send()</code>, <code>stream()</code>, <code>cancel()</code>, and <code>health()</code>. Adapters must implement <code>name</code> (a short id used by the registry) and the four async methods. The protocol is <code>@runtime_checkable</code> so <code>isinstance(ch, ConverseChannel)</code> works without explicit inheritance.</p></div>
+<div class="card"><h3>ConverseChannel interface</h3><p>An abstract base class. Registered objects must be <code>ConverseChannel</code> instances with a channel name. Implement async <code>send()</code> and <code>cancel()</code>, plus <code>stream()</code> returning an async iterator. The default async <code>health()</code> can be overridden.</p></div>
 <div class="card"><h3>Thread-safe Registry</h3><p><code>register_converse_channel()</code>, <code>unregister_converse_channel()</code>, <code>get_converse_channel()</code>, <code>set_active_converse_channel()</code>, <code>list_channels()</code>, <code>get_active_channel_name()</code>. The active channel is process-global; <code>reset_for_testing()</code> clears it.</p></div>
-<div class="card"><h3>KorinaConverseChannel (default)</h3><p>Bridges the protocol to the in-process <code>agent_gateway()</code> singleton. Flattens the request transcript into a <code>UserTurn</code> (the adapter protocol's <code>text: str</code> contract), submits via <code>adapter.submit_turn()</code>, and polls <code>agent_state.last_report</code> for completion. Registered at startup via <code>ensure_default_registered()</code>.</p></div>
-<div class="card"><h3>Adapter Author Path</h3><p>Hermes Agent, OpenClaw, or any other local/OpenAI-compatible agent can ship its own adapter by subclassing <code>ConverseChannel</code> and calling <code>register_converse_channel()</code> at startup. The active channel is swapped via <code>set_active_converse_channel(name)</code> (consumer API today; UI selector is Phase 5 Commit 4).</p></div>
+<div class="card"><h3>KorinaConverseChannel (default)</h3><p>Captures the current <code>agent_gateway()</code> adapter, flattens non-assistant transcript text into one <code>UserTurn</code>, submits once, and polls fresh completion events after its admission cursor. Built-in admission requires an idle worker; an old <code>last_report</code> cannot complete a new send. Event-retention gaps and uncertain completion require explicit recovery.</p></div>
+<div class="card"><h3>Adapter author path and selection</h3><p>Register a working <code>ConverseChannel</code> implementation at startup. The existing browser Channel picker saves a registered selection before publishing it; a failed save preserves the previous selection. Python callers can select in memory or provide a persistence callback. External integrations need their own implementation; Hermes remains an opt-in stub.</p></div>
 </div>
 
 <h2>Public Surface — <code>korina.converse</code></h2>
 <table>
 <thead><tr><th>Export</th><th>Purpose</th></tr></thead>
 <tbody>
-<tr><td><code>ConverseChannel</code></td><td>Abstract protocol adapter authors implement</td></tr>
+<tr><td><code>ConverseChannel</code></td><td>Abstract base class channel authors implement</td></tr>
 <tr><td><code>ConverseRequest</code></td><td>Inbound dataclass: transcript, delivery_mode, reason, metadata</td></tr>
 <tr><td><code>ConverseResponse</code></td><td>Outbound dataclass: text, finished, error, metadata</td></tr>
 <tr><td><code>register_converse_channel(ch)</code></td><td>Register or replace a channel under <code>ch.name</code></td></tr>
 <tr><td><code>unregister_converse_channel(name)</code></td><td>Remove a channel; active falls back to the next registered</td></tr>
 <tr><td><code>get_converse_channel(name=None)</code></td><td>Resolve the active channel (or a named one)</td></tr>
-<tr><td><code>set_active_converse_channel(name)</code></td><td>Swap the active channel; raises <code>KeyError</code> on miss</td></tr>
+<tr><td><code>set_active_converse_channel(name, *, persist=None)</code></td><td>Select a registered channel; an optional keyword callback saves before publication; raises <code>KeyError</code> on miss</td></tr>
 <tr><td><code>get_active_channel_name()</code></td><td>Returns the active channel name or <code>None</code></td></tr>
 <tr><td><code>list_channels()</code></td><td>All registered names in registration order</td></tr>
-<tr><td><code>reset_for_testing()</code></td><td>Drop all registrations and active selection</td></tr>
+<tr><td><code>reset_for_testing()</code></td><td>Test-only helper: drop registrations and active selection</td></tr>
 <tr><td><code>KorinaConverseChannel</code></td><td>Default in-process adapter (bridges to <code>agent_gateway()</code>)</td></tr>
-<tr><td><code>ensure_default_registered()</code></td><td>Idempotent startup hook; called from <code>app_factory._startup()</code></td></tr>
+<tr><td><code>ensure_default_registered()</code></td><td>Idempotent default registration, called by the application lifespan startup</td></tr>
 <tr><td><code>reset_default_registered()</code></td><td>Test-isolation helper; clears the module-level <code>_DEFAULT_REGISTERED</code> guard</td></tr>
 </tbody>
 </table>
@@ -123,16 +95,17 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <table>
 <thead><tr><th>Component</th><th>Implementation</th></tr></thead>
 <tbody>
-<tr><td>Frontend</td><td>Native ES modules under <code>Korina/js/</code> (17 modules)</td></tr>
+<tr><td>Frontend</td><td>26 native ES modules under <code>Korina/js/</code>; the canonical manifest defines 28 required UI files and 30 bundled assets</td></tr>
 <tr><td>Backend</td><td>FastAPI on port 8001, Python package under <code>korina/</code></td></tr>
-<tr><td>Converse channel layer</td><td><code>korina/converse/</code> — <code>ConverseChannel</code> Protocol + registry + default adapter (Phase 5 Commit 1)</td></tr>
+<tr><td>Converse channel layer</td><td><code>korina/converse/</code> — abstract channel interface, registry, and default gateway-backed implementation</td></tr>
 <tr><td>Agent gateway</td><td><code>korina/agents/gateway.py</code> — <code>agent_gateway()</code> singleton with <code>KorinaAgentAdapter</code> default</td></tr>
 <tr><td>STT</td><td>faster-whisper (CPU/CUDA) or multimodal LLM via OpenAI-compatible <code>input_audio</code></td></tr>
 <tr><td>Response LLM</td><td>OpenAI-compatible <code>/v1/chat/completions</code>, configurable provider</td></tr>
-<tr><td>TTS</td><td>Kokoro streaming server on port 8880 (separate systemd unit)</td></tr>
-<tr><td>ACK phrases</td><td>Manifest-driven, WAV cached per voice, generated on startup or on-demand</td></tr>
+<tr><td>TTS</td><td>Optional separate Kokoro service, default port 8880; foreground or user-service launch</td></tr>
+<tr><td>ACK phrases</td><td>Optional manifest-driven WAV cache per voice; startup and ordinary GET do not generate while off; an explicit rebuild may generate</td></tr>
 </tbody>
 </table>
+<p><a href="Protocol.html">Protocol summary</a> · <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/docs/agent-protocol.md">Complete channel and event contract</a> · <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/korina/asset_manifest.py">Canonical asset filenames</a></p>
 </div>
 <footer><div class="wrap">
 <p>Korina Agent &amp; Korina Converse &mdash; <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a></p>

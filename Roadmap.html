@@ -68,7 +68,7 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
  <li><strong>Streamability is a constraint, not a serving optimization.</strong> A system designed around offline encoders or round-based dialogue cannot recover true low-latency full-duplex behavior by engineering alone.</li>
  <li><strong>Full-duplex is not alternating turns.</strong> While the agent responds, it must still perceive user feedback for interruption and adaptation.</li>
  <li><strong>Commit generated units back into history.</strong> If a reply is interrupted, what was actually spoken is what context should anchor on — not what the model intended to say.</li>
- <li><strong>Overlap independent work</strong> (thinker/performer): current STT processes while prior TTS plays; LLM streams while Kokoro synthesizes the first sentence.</li>
+ <li><strong>Proposed overlap of independent work</strong> (thinker/performer): a future pipeline could process STT while prior speech plays and stream LLM output into sentence synthesis. Today the response request uses <code>stream: false</code>, and the browser waits for that complete reply before starting TTS.</li>
  <li><strong>Measure the right latency boundary.</strong> Model-internal, first-packet, first-token, endpointing, and API TTFB are useful but not equivalent to user-perceived latency. Korina needs signal-to-signal timing in its debug strip.</li>
 </ul>
 
@@ -92,7 +92,7 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
 <h2>DAG Memory System (Post-v2)</h2>
 <p style="margin-top:.5rem"><strong>Status:</strong> <span class="issue-tag priority-low">parked</span></p>
 <p><strong>Target release:</strong> Korina Converse release 2 or 3.</p>
-<p><strong>Source spec:</strong> <code>Korina Memory.txt</code> (engineering spec, v1.0, 782 lines). 782-line engineering spec, v1.0. Will move into the repo as <code>docs/specs/korina-memory-v1.md</code> when implementation starts.</p>
+<p><strong>Source status:</strong> The memory design below is a proposal. Its referenced external engineering document is not included in the tracked repository; a published implementation specification remains future work.</p>
 
 <h3>What it is</h3>
 <p>A causal DAG of event nodes (assertions, observations, tool calls, inferences, hypotheses, invalidations) connected by hard and soft edges, with built-in truth retraction, hypothesis generation for conflicts, and a confidence decay model. It is the substrate Korina Agent uses to remember what it has seen, decided, and been told &mdash; without losing information to context-window compression.</p>
@@ -131,7 +131,7 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
 <p>Releases 2 and 3 are the right place. By then Korina Converse will have live sessions producing real events, so phases 1&ndash;3 can be designed against actual data shapes instead of guesses, and the confidence model has real signals to calibrate against (lambda is a tunable that should not be locked in at 0.08 before live data exists).</p>
 
 <h3>Why this is parked</h3>
-<p>A verified voice demo and clear runtime boundaries are the gating event for this sprint. These proposals should be revisited after that evidence is available. The full plan lives in the repo at <code>docs/plans/korina-converse-duplex-post-v1.md</code> and is rendered on this page so it stays discoverable.</p>
+<p>A verified voice demo and clear runtime boundaries are the gating event for this sprint. These proposals should be revisited after that evidence is available. This page preserves the design outline; it does not promise a currently tracked plan/specification file or an implementation location.</p>
 
 <div class="req-note" style="margin-top:2rem">
 <strong>Note:</strong> Roadmap items are proposals, not commitments. Scope, ordering, and even the inclusion of an item can change as the v1 release and post-v1 feedback arrive. The Wan-Streamer plan in particular is a starting point for discussion — the duplex rollout will likely be split across multiple post-v1 milestones, not one big push.
