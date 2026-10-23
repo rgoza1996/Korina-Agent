@@ -28,10 +28,16 @@ def register_converse_channel(channel: ConverseChannel) -> None:
     Replacing the active channel does NOT change which channel is active;
     use set_active_converse_channel() for that.
     """
+    _register_converse_channel(channel, replace=True)
+
+
+def _register_converse_channel(channel: ConverseChannel, *, replace: bool) -> None:
+    """Publish under the shared lock; only explicit registration replaces."""
     if not isinstance(channel, ConverseChannel):
         raise TypeError(f"expected ConverseChannel, got {type(channel).__name__}")
     with _lock:
-        _channels[channel.name] = channel
+        if replace or channel.name not in _channels:
+            _channels[channel.name] = channel
         global _active
         if _active is None:
             _active = channel.name

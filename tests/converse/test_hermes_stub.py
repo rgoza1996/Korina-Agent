@@ -4,8 +4,8 @@ Scope: ONE round-trip test. Verifies the ConverseChannel protocol
 shape against an external-agent-style adapter: register, send,
 inspect the canned reply, unregister.
 
-Autouse fixture mirrors ``test_routes.py``: reset registry +
-``_DEFAULT_REGISTERED`` guard, then re-ensure the default so reads
+Autouse fixture mirrors ``test_routes.py``: reset the registry,
+then re-ensure the default so reads
 of the registry look like the post-startup state.
 """
 from __future__ import annotations
@@ -20,18 +20,15 @@ def _clean_registry():
     """Reset the global ConverseChannel registry between tests."""
     from korina.converse import (
         ensure_default_registered,
-        reset_default_registered,
         reset_for_testing,
     )
     from korina.adapters.hermes_stub import register_hermes_stub
 
     reset_for_testing()
-    reset_default_registered()
     ensure_default_registered()
     yield
     register_hermes_stub(register=False)
     reset_for_testing()
-    reset_default_registered()
 
 
 def test_hermes_stub_round_trip_send():

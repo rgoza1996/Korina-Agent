@@ -61,12 +61,9 @@ class _OtherChannel(ConverseChannel):
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
-    from korina.converse.korina_channel import reset_default_registered
     reset_for_testing()
-    reset_default_registered()
     yield
     reset_for_testing()
-    reset_default_registered()
 
 
 def test_register_sets_active_if_empty():

@@ -28,7 +28,7 @@ from korina.agents.base import AgentAdmissionRejected
 from korina.schemas import UserTurn
 
 from .protocol import ConverseChannel, ConverseRequest, ConverseResponse
-from .registry import register_converse_channel
+from .registry import _register_converse_channel, get_converse_channel
 
 
 _MAX_POLL_SECONDS = 30.0
@@ -353,29 +353,23 @@ class KorinaConverseChannel(ConverseChannel):
             return {"ok": False, "channel": self.name, "error": str(e)}
 
 
-_DEFAULT_REGISTERED = False
-
-
 def reset_default_registered() -> None:
-    """Reset the module-level _DEFAULT_REGISTERED flag.
+    """Compatibility no-op: reset_for_testing() alone resets registration.
 
-    Tests that call reset_for_testing() must also call this so the
-    next ensure_default_registered() actually re-registers.
+    Registry membership is authoritative; no separate default flag remains.
     """
-    global _DEFAULT_REGISTERED
-    _DEFAULT_REGISTERED = False
 
 
 def ensure_default_registered() -> None:
-    """Register the built-in channel once, preserving an existing selection.
+    """Ensure a default exists without replacing a registered channel.
 
-    Startup calls this before restoring the saved active channel.
+    Construct outside the registry lock, then publish only if still missing.
+    Explicit registration and an existing active selection take precedence.
     """
-    global _DEFAULT_REGISTERED
-    if _DEFAULT_REGISTERED:
-        return
-    register_converse_channel(KorinaConverseChannel())
-    _DEFAULT_REGISTERED = True
+    try:
+        get_converse_channel('korina')
+    except KeyError:
+        _register_converse_channel(KorinaConverseChannel(), replace=False)
 
 
 __all__ = ["KorinaConverseChannel", "ensure_default_registered", "reset_default_registered"]

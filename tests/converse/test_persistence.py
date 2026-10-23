@@ -17,7 +17,6 @@ from korina.converse import (
     ConverseRequest,
     ConverseResponse,
     register_converse_channel,
-    reset_default_registered,
     reset_for_testing,
     get_active_channel_name,
 )
@@ -40,11 +39,9 @@ class _TestChannel(ConverseChannel):
 def test_channel():
     """Opt-in: register a non-default channel for tests that need it."""
     reset_for_testing()
-    reset_default_registered()
     register_converse_channel(_TestChannel())
     yield _TestChannel
     reset_for_testing()
-    reset_default_registered()
 
 
 @pytest.fixture(autouse=True)
@@ -52,10 +49,8 @@ def _clean_registry():
     """Autouse but minimal: just reset between tests so test-channel
     registrations don't leak."""
     reset_for_testing()
-    reset_default_registered()
     yield
     reset_for_testing()
-    reset_default_registered()
 
 
 def test_startup_restores_saved_nondefault_channel(monkeypatch, test_channel):
