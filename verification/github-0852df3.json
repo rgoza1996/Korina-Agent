@@ -1,0 +1,86 @@
+{
+  "kind": "github-actions-checkpoint",
+  "observed_at_utc": "2026-10-23 17:25:41 UTC",
+  "head_revision": "0852df3493e84c57804c23b754295c0ac0bbe33e",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "all_nine_passed": true,
+  "pre_event_preparation": true,
+  "checks": [
+    {
+      "id": 120554260463,
+      "name": "pytest (3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554260463",
+      "annotations_count": 0
+    },
+    {
+      "id": 120554260449,
+      "name": "minimum-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554260449",
+      "annotations_count": 0
+    },
+    {
+      "id": 120554260156,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554260156",
+      "annotations_count": 0
+    },
+    {
+      "id": 120554260115,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554260115",
+      "annotations_count": 0
+    },
+    {
+      "id": 120554260091,
+      "name": "pytest (3.10)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554260091",
+      "annotations_count": 0
+    },
+    {
+      "id": 120554260083,
+      "name": "speech-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554260083",
+      "annotations_count": 0
+    },
+    {
+      "id": 120554260048,
+      "name": "pytest (3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554260048",
+      "annotations_count": 0
+    },
+    {
+      "id": 120554259896,
+      "name": "pytest (3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554259896",
+      "annotations_count": 0
+    },
+    {
+      "id": 120554259644,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39994405950/job/120554259644",
+      "annotations_count": 0
+    }
+  ],
+  "annotations_count": 0,
+  "source_change_scope": "Product code remains unchanged from 410336c. Test-only e4f66f3 adds one held-background-transcript/status/events regression; 0852df3 reconciles documentation with the acceptance audit.",
+  "workflow_context": "The standard pull_request workflow checks the proposed merge with alpha. This record identifies the reported check headRevision; it does not archive a separately observed checkout merge SHA.",
+  "local_and_actual_evidence": "The earlier 410/58 incremental local phases and actual model/media evidence at 4158cd2 retain their own immutable source identities. Hosted success does not replace earlier failed attempts or physical device rehearsal."
+}
