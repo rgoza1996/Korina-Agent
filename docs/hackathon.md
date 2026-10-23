@@ -2,7 +2,7 @@
 
 Updated 2026-10-23 for the [Meta Global AI Developer Hackathon](https://dev.meta.ai/events/global-hackathon), organized with [Cerebral Valley](https://cerebralvalley.ai/e/meta-ai-developer-hackathon). Preparation is tracked in [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23) and [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24).
 
-[Watch the accepted pre-event recording at `4158cd2`](https://rgoza1996.github.io/Korina-Agent/Demo.html): a typed synthetic fact and generated-microphone question through actual local Whisper, Meta Model API and local Kokoro. The player includes actual browser audio and English captions, with waiting retained. This does not replace the presentation-headset rehearsal.
+[Watch the accepted pre-event recording at `4158cd2`](https://rgoza1996.github.io/Korina-Agent/Meta-Demo.html): a typed synthetic fact and generated-microphone question through actual local Whisper, Meta Model API and local Kokoro. The player includes actual browser audio and English captions, with waiting retained. This does not replace the presentation-headset rehearsal.
 
 ## Agreed prototype
 
@@ -63,7 +63,7 @@ Meta documents automatic prefix caching. Keep stable instructions/context first 
 
 ### Latest audiovisual interaction: 4158cd2
 
-[Watch and hear the pre-event demo](https://rgoza1996.github.io/Korina-Agent/Demo.html). A new recording of the archived UI supplies a typed Cedar/Friday-at-ten seed and one generated-microphone question. Actual Whisper `base.en` CPU/int8, direct Meta `muse-spark-1.3-contributor` with minimal effort / 2048 tokens, and local Kokoro `af_heart` CPU complete the interaction. Agent and ACKs are off. Meta answered: “Your project is called Cedar. Your rehearsal is Friday at ten in the morning.” The prior fact and current question each appeared once in the supplied request context. This demonstrates current-session context, not durable memory.
+[Watch and hear the pre-event demo](https://rgoza1996.github.io/Korina-Agent/Meta-Demo.html). A new recording of the archived UI supplies a typed Cedar/Friday-at-ten seed and one generated-microphone question. Actual Whisper `base.en` CPU/int8, direct Meta `muse-spark-1.3-contributor` with minimal effort / 2048 tokens, and local Kokoro `af_heart` CPU complete the interaction. Agent and ACKs are off. Meta answered: “Your project is called Cedar. Your rehearsal is Friday at ten in the morning.” The prior fact and current question each appeared once in the supplied request context. This demonstrates current-session context, not durable memory.
 
 One native browser capture recorded screen and actual tab audio together; the MP4 and WebM convert that same audiovisual file, rendering native audio timestamp gaps as silence for consistent browser timing. Both retain waiting, with three English captions for the actual spoken replies. The generated microphone feeds capture directly and is not played through the tab speakers; its recognized question appears on screen. Physical microphone, speaker and human interruption checks remain separate. The [ten-minute explainer](https://rgoza1996.github.io/Korina-Agent/Explainer.html) is an illustrated architecture overview, labelled separately from this actual interaction.
 

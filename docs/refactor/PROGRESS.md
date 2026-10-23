@@ -2,6 +2,9 @@
 
 ## Active hackathon refactor — 2026-10-23
 
+- Owner-requested follow-up after the usage stop: the primary Pages demo now records Whistle CPU → Qwen3.5-2B Q8 GPU → Kokoro GPU on the idle-comfy PC. Immutable source `9448ac9`, 20 browser checks, readiness before/after and cleanup pass; the voice turn is 12.115 instrumented seconds. The earlier Meta recording remains separate. [New source/model/media evidence](../verification/local-gpu-9448ac9.json).
+- Whistle is an optional real buffered/partial/SSE backend with offline assets, serialized native ownership, readiness and truthful UI labels. Local checks: 1477 Python, 475 Node, 86 Chromium, mypy 68. Hosted fixture failures at `9448ac9` are preserved; test-only `fb2ba3f` fixes dependency/timing assumptions and has nine successful hosted jobs. [Verification and boundaries](../verification.md#fully-local-pc-gpu-recording-at-9448ac9).
+
 - Acceptance audit refreshed issue implementation status while preserving actual scope and review/merge gates. At `e4f66f3`, the missing combined background-transcript/status/events regression passes 8/8 focused cases on current and minimum dependencies; product code is unchanged. The July verdict is labelled historical. Hosted `393f08e` has nine successes/zero annotations; newer heads require their own observation. [Current evidence and limits](../verification.md#acceptance-audit-follow-up).
 - Homepage now has a prominent keyboard-accessible demo button and embeds the original narrated explainer with all 236 English captions. Live mobile/desktop navigation, media and caption checks passed; all 40 served files at Pages `0fbcbf1` matched anonymously over HTTPS.
 

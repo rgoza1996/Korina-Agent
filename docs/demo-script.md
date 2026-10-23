@@ -1,6 +1,6 @@
 # Suggested two-minute practice
 
-This is a physical rehearsal template, not an official video-length requirement or completed submission. [Watch the pre-event recording](https://rgoza1996.github.io/Korina-Agent/Demo.html) of a typed seed and generated-microphone follow-up through actual Whisper, Meta and Kokoro. Its screen and actual tab audio retain the observed waiting, with English captions. [Exact evidence at `4158cd2`](verification.md#actual-tab-audio-and-video-at-4158cd2) does not replace the presentation-headset check. Adjust the pacing to actual inference time; record delays and failures honestly.
+This is a physical rehearsal template, not an official video-length requirement or completed submission. [Watch the pre-event recording](https://rgoza1996.github.io/Korina-Agent/Meta-Demo.html) of a typed seed and generated-microphone follow-up through actual Whisper, Meta and Kokoro. Its screen and actual tab audio retain the observed waiting, with English captions. [Exact evidence at `4158cd2`](verification.md#actual-tab-audio-and-video-at-4158cd2) does not replace the presentation-headset check. Adjust the pacing to actual inference time; record delays and failures honestly.
 
 The **Last response usage** panel can show the completed request’s model, budget, reasoning and provider-reported cache count. Explain a missing count as unavailable and zero as zero; neither promises future cache hits or latency savings. Counts stay outside the spoken answer.
 
