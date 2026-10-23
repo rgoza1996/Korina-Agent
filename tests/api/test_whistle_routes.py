@@ -3,7 +3,7 @@ import json
 import pytest
 
 from korina.services import whistle_service, whisper_service
-from korina.routes import stt
+from korina.routes import stt, health
 
 
 @pytest.mark.parametrize('endpoint', ['/api/transcribe', '/api/transcribe/partial', '/api/transcribe/stream'])
@@ -36,9 +36,13 @@ def test_whistle_uses_shared_decode_without_whisper_or_cloud(client, monkeypatch
 
 def test_whistle_readiness_does_not_depend_on_whisper(client, config_module, monkeypatch):
     config_module.update_config_values({'stt_backend': 'whistle'})
+    monkeypatch.setattr(health.shutil, 'which', lambda name: '/fixture/ffmpeg' if name == 'ffmpeg' else None)
     monkeypatch.setattr(whistle_service, 'status', lambda: {'available': True, 'loaded': False})
     assert client.get('/api/health').json()['readiness']['checks']['stt'] is True
     monkeypatch.setattr(whistle_service, 'status', lambda: {'available': False, 'loaded': False})
+    assert client.get('/api/health').json()['readiness']['checks']['stt'] is False
+    monkeypatch.setattr(whistle_service, 'status', lambda: {'available': True, 'loaded': False})
+    monkeypatch.setattr(health.shutil, 'which', lambda _: None)
     assert client.get('/api/health').json()['readiness']['checks']['stt'] is False
 
 

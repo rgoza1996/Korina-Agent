@@ -1,0 +1,101 @@
+{
+  "kind": "github-actions-incomplete-checkpoint",
+  "recorded_at_utc": "2026-10-23T18:59:01.745Z",
+  "head_revision": "9448ac92d6524eec418361b10cfb615dcae77d70",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "all_nine_passed": false,
+  "checks": [
+    {
+      "id": 120597209328,
+      "name": "minimum-dependencies",
+      "status": "completed",
+      "conclusion": "failure",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597209328",
+      "annotations_count": 1
+    },
+    {
+      "id": 120597209143,
+      "name": "speech-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597209143",
+      "annotations_count": 0
+    },
+    {
+      "id": 120597209079,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597209079",
+      "annotations_count": 0
+    },
+    {
+      "id": 120597209062,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "failure",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597209062",
+      "annotations_count": 1
+    },
+    {
+      "id": 120597209040,
+      "name": "pytest (3.13)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597209040",
+      "annotations_count": 2
+    },
+    {
+      "id": 120597209039,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597209039",
+      "annotations_count": 0
+    },
+    {
+      "id": 120597209008,
+      "name": "pytest (3.10)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597209008",
+      "annotations_count": 2
+    },
+    {
+      "id": 120597209002,
+      "name": "pytest (3.12)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597209002",
+      "annotations_count": 2
+    },
+    {
+      "id": 120597208847,
+      "name": "pytest (3.11)",
+      "status": "completed",
+      "conclusion": "failure",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40006961072/job/120597208847",
+      "annotations_count": 1
+    }
+  ],
+  "findings": [
+    {
+      "jobs": [
+        "pytest (3.11)",
+        "minimum-dependencies"
+      ],
+      "failure": "The new Whistle readiness fixture assumed an installed FFmpeg executable. The production gate correctly remained false without it.",
+      "reported_result": "1 failed, 1468 passed, 8 skipped in each job."
+    },
+    {
+      "jobs": [
+        "browser"
+      ],
+      "failure": "Stop Live leaves a current typed Ask connected asserted speech dispatch immediately after the text field changed; the asynchronous request was not yet observed.",
+      "reported_result": "85 passed, 1 failed."
+    }
+  ],
+  "matrix_cancellations": "The remaining Python matrix jobs were cancelled after a peer failure; they are not passing evidence.",
+  "independent_local_evidence": "At this product source, 1477 Python tests, 475 Node tests and all86Chromium cases passed locally. This does not erase hosted failures.",
+  "fix_scope": "The subsequent fixture-only change explicitly supplies/checks FFmpeg availability and waits for the existing exact speech assertion. No product behavior or timeout is weakened."
+}

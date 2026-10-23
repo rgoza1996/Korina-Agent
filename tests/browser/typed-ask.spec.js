@@ -174,7 +174,7 @@ test('Stop Live leaves a current typed Ask connected', async ({ page }) => {
     await page.evaluate(() => window.stopLive());
     release();
     await expect(page.locator('#text')).toHaveValue('Typed reply after Stop Live.');
-    expect(fixture.speech).toEqual(['Typed reply after Stop Live.']);
+    await expect.poll(() => fixture.speech).toEqual(['Typed reply after Stop Live.']);
     await page.locator('#stopBtn').click();
     expect(fixture.errors).toEqual([]);
   } finally { release(); }
