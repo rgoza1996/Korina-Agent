@@ -51,6 +51,24 @@ def test_invalid_local_path_returns_bounded_400_without_writes_or_service_action
     assert commands == []
 
 
+@pytest.mark.parametrize('model', ['/tmp/' + 'x' * 300 + '.gguf', '/tmp/invalid\x00.gguf'])
+def test_omitted_activation_model_rejects_invalid_saved_path_before_mutation(
+    client, monkeypatch, tmp_path, model,
+):
+    _, commands = _unchanged_runtime(monkeypatch, tmp_path)
+    saved = client.post('/api/config', json={'lm_model': model})
+    assert saved.status_code == 200, saved.text
+    before = config.CONFIG_PATH.read_bytes()
+
+    response = client.post('/api/llm/provider/activate', json={'provider': 'llama.cpp'})
+
+    assert response.status_code == 400, response.text
+    assert response.json()['detail'] == 'Invalid or unreadable local model path'
+    assert len(response.content) < 1024
+    assert config.CONFIG_PATH.read_bytes() == before
+    assert commands == []
+
+
 @pytest.mark.parametrize('operation', ['activate', 'refresh'])
 @pytest.mark.parametrize('failure', ['inspect', 'resolve'])
 def test_candidate_inspection_and_resolution_errors_are_admission_failures(

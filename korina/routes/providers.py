@@ -15,6 +15,7 @@ from korina.schemas import ProviderActivateRequest
 from korina.runtime.json_http import RequestCancelledError
 from korina.runtime.request_owner import RequestOwner, check_current
 from korina.services.provider_manager import (
+    InvalidLocalModelPath,
     ProviderRoleConflict,
     _llama_selection,
     activate_llm_provider,
@@ -62,7 +63,7 @@ def _activate_provider(req: ProviderActivateRequest):
         # Keep projector scans out of the shared per-option display validator.
         try:
             _llama_selection(req.model, config)
-        except AmbiguousProjectorError as exc:
+        except (InvalidLocalModelPath, AmbiguousProjectorError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     saved = select_response_provider(provider, req.model)
     try:
