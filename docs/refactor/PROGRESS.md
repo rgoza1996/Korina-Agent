@@ -2,6 +2,8 @@
 
 ## Active hackathon refactor — 2026-10-23
 
+- A new screen-recording attempt at `5ef3c9d` stopped after the seed response/playback, with no generated-microphone transcription; it is unaccepted as voice proof. The paid call and failed artifacts are retained, and unpaid capture calibration is in progress. Task testing through this attempt is 39 calls / estimated $0.005633806 of $3. [Failure record](../verification/meta-recording-5ef3c9d.json).
+- At documentation revision `a6a0465`, eight hosted jobs passed and the floor job timed out during FFmpeg installation before pytest began. The floor now avoids that redundant download while Python 3.12 retains the seven optional CLI integration cases. [Incomplete hosted record](../verification/github-a6a0465.json).
 - Branch: `codex/hackathon-refactor`, based on `alpha` at `2cca809`.
 - Review: [PR #24](https://github.com/rgoza1996/Korina-Agent/pull/24).
 - Tracker: [issue #23](https://github.com/rgoza1996/Korina-Agent/issues/23).

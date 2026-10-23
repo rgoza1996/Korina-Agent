@@ -1,0 +1,37 @@
+{
+  "kind": "github-actions-incomplete-checkpoint",
+  "observed_on": "2026-10-23",
+  "pre_event_preparation": true,
+  "head_revision": "a6a0465dcf7ff355309d4005385512eb690fd17a",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "all_nine_passed": false,
+  "successful_checks": [
+    "pytest (3.10)",
+    "pytest (3.12)",
+    "pytest (3.13)",
+    "speech-dependencies",
+    "lint",
+    "pytest (3.11)",
+    "browser",
+    "frontend"
+  ],
+  "incomplete_check": {
+    "id": 120465234941,
+    "name": "minimum-dependencies",
+    "status": "completed",
+    "conclusion": "cancelled",
+    "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39968681234/job/120465234941",
+    "annotations": [
+      "The job has exceeded the maximum execution time of 15m0s",
+      "No files were found with the provided path: minimum-dependencies.xml. No artifacts will be uploaded.",
+      "The operation was canceled."
+    ],
+    "observed_stage": "Downloading FFmpeg and dependency packages from the Ubuntu mirror during installation; the Python test step did not start.",
+    "scope": "The complete job log was inspected through the Code Review backend. This is an installation timeout, not a passing floor suite or a reproduced Python failure."
+  },
+  "scope": [
+    "Eight jobs passed at this documentation revision; it is not a complete passing hosted checkpoint.",
+    "All nine jobs at the earlier 5ef3c9d revision passed and retain their own evidence.",
+    "Follow-up removes the floor tier's redundant unconditional FFmpeg installation while retaining the explicit Python 3.12 CLI integration tier."
+  ]
+}

@@ -58,6 +58,14 @@ Every call reported 761 input tokens. Each measured effort group reported 753 ca
 
 The study cost an estimated **$0.002049636**. Through this observation, task testing totals **38 generation calls / estimated $0.005595506** of the authorized $3, including priming and both earlier stopped attempts; zero paid OpenRouter generations were used. These are returned-usage estimates, not an invoice or account-enforced cap. All content was fictional; Contributor content may train Meta models. [Exact inputs, order, per-call token counts, ranges, costs and limitations](verification/meta-context-f6e655f.json).
 
+The later documentation revision `a6a0465` had eight hosted successes, but its minimum-dependency job exhausted the 15-minute budget while downloading FFmpeg packages; the Python step never started. [The incomplete hosted record](verification/github-a6a0465.json) preserves that outcome. The floor workflow now avoids that unconditional installation; Python 3.12 retains explicit coverage of the seven optional CLI integration cases. [Dependency coverage](testing.md).
+
+## Unaccepted screen-recording attempt at `5ef3c9d`
+
+A new pre-event recording completed one real Contributor seed reply and Kokoro playback, then timed out after Live was armed without a transcription or second chat request. The native seed-playback wait passed; the planned voice interaction did not. Its silent video and failed attempt remain preserved privately, with no reconstructed output or automatic paid retry. Unpaid capture calibration follows separately; the cause is not established by this attempt. [Versioned failure record](verification/meta-recording-5ef3c9d.json).
+
+The one returned call reported **211 input / 86 output / 63 reasoning / 0 cached tokens**, costing an estimated **$0.0000383**. Task testing through this attempt totals **39 generation calls / estimated $0.005633806** of the authorized $3, including all priming and stopped attempts. Earlier accepted voice evidence retains its original `bc7c8c5` identity. Both owned services logged graceful shutdown and their ports closed; a successful Stop-button observation was not reached.
+
 ## Authenticated usage display at `06026b1`
 
 Archive `06026b1` added the **Last response usage** panel. Backend parsing preserves missing/zero counts and valid replies with malformed optional statistics. Original provider/model/budget/reasoning labels survive a held real settings save. Executable and native browser cases verify latest-dispatch/session ownership, Clear before abort, completed counts retained after playback Stop, older-server compatibility, and separation from speech/history/agent context.
