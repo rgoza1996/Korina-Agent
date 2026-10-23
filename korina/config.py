@@ -161,7 +161,9 @@ def load_config() -> dict:
         data = json.loads(CONFIG_PATH.read_text())
         if not isinstance(data, dict):
             data = {}
-    except Exception:
+    except (ValueError, RecursionError):
+        # Invalid historical JSON keeps its fallback. A filesystem read error
+        # must stop read/modify/write callers before they can persist defaults.
         data = {}
     merged = dict(DEFAULT_CONFIG)
     for key, value in data.items():

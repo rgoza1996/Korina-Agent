@@ -70,6 +70,87 @@ def test_first_launch_seed_save_error_propagates_without_retrying_defaults(confi
     assert mode(config_module.CONFIG_PATH) == 0o600
 
 
+@pytest.mark.parametrize('operation', ['settings', 'replace_roots', 'append_roots', 'delete_root'])
+@pytest.mark.parametrize('failure', [OSError(errno.EIO, 'controlled config read failure'),
+                                    PermissionError(errno.EACCES, 'controlled config read denied')])
+@pytest.mark.parametrize('permissions', [0o600, 0o640])
+def test_existing_config_read_error_blocks_api_mutation_and_allows_explicit_retry(
+    config_module, client, tmp_path, monkeypatch, operation, failure, permissions,
+):
+    old_root, new_root = tmp_path / 'existing-models', tmp_path / 'new-models'
+    old_root.mkdir()
+    new_root.mkdir()
+    saved = config_module.save_config({
+        **config_module.load_config(), 'voice': 'af_bella', 'speed': 1.0,
+        'agent_enabled': 'off', 'ack_enabled': 'off', 'lm_model': 'retained-model',
+        'llm_max_tokens': 2048, 'final_stt_mode': 'full', 'endpoint_mode': 'conversation',
+        'local_model_roots': [str(old_root)], 'local_model_roots_explicit': True,
+    })
+    path = config_module.CONFIG_PATH
+    path.chmod(permissions)
+    before, entries = path.read_bytes(), set(path.parent.iterdir())
+    read_text, write_config = Path.read_text, config_module._write_config_text
+    reads, writes = 0, []
+
+    def read(candidate, *args, **kwargs):
+        nonlocal reads
+        if candidate == path:
+            reads += 1
+            if reads == 1:
+                raise failure
+        return read_text(candidate, *args, **kwargs)
+
+    def write(content):
+        writes.append(content)
+        return write_config(content)
+
+    def mutate():
+        if operation == 'settings':
+            return client.post('/api/config', json={'speed': 1.25})
+        if operation == 'delete_root':
+            return client.delete('/api/models/roots', params={'path': str(old_root)})
+        return client.post('/api/models/roots', json={
+            'roots': [str(new_root)], 'append': operation == 'append_roots',
+        })
+
+    monkeypatch.setattr(Path, 'read_text', read)
+    monkeypatch.setattr(config_module, '_write_config_text', write)
+    # TestClient propagates the unhandled filesystem error from the actual route.
+    with pytest.raises(type(failure)) as caught:
+        mutate()
+    assert caught.value is failure
+    assert reads == 1 and writes == []
+    assert path.read_bytes() == before and mode(path) == permissions
+    assert set(path.parent.iterdir()) == entries
+
+    # Retry is a new, deliberate request after the one-shot read failure.
+    response = mutate()
+    assert response.status_code == 200, response.text
+    assert len(writes) == 1
+    expected = dict(saved)
+    if operation == 'settings':
+        expected['speed'] = 1.25
+    else:
+        expected['local_model_roots'] = {
+            'replace_roots': [str(new_root)],
+            'append_roots': [str(old_root), str(new_root)],
+            'delete_root': [],
+        }[operation]
+    assert config_module.load_config() == expected
+    assert json.loads(path.read_bytes()) == expected
+    assert mode(path) == permissions and set(path.parent.iterdir()) == entries
+
+
+@pytest.mark.parametrize('contents', [b'{invalid JSON', b'[]', b'\xff', b'[' * 2000 + b']' * 2000])
+def test_existing_invalid_config_keeps_read_only_default_fallback(config_module, contents):
+    config_module.load_config()
+    path = config_module.CONFIG_PATH
+    path.write_bytes(contents)
+    path.chmod(0o600)
+    assert config_module.load_config() == config_module.DEFAULT_CONFIG
+    assert path.read_bytes() == contents and mode(path) == 0o600
+
+
 @pytest.mark.parametrize('operation', ['settings', 'model_roots'])
 @pytest.mark.parametrize('permissions', [0o600, 0o640])
 def test_settings_and_model_root_saves_preserve_existing_permissions(
