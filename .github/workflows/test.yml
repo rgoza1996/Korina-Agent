@@ -20,8 +20,8 @@ jobs:
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install FFmpeg for real decode-bound regression
@@ -33,7 +33,7 @@ jobs:
           python -m pip install -e '.[test]'
       - name: Run pytest
         run: python -m pytest --cov=korina --cov-report=term-missing --cov-report=xml -q
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage-python-${{ matrix.python-version }}
           path: coverage.xml
@@ -42,8 +42,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.10'
       - name: Install FFmpeg and declared dependency floors
@@ -53,7 +53,7 @@ jobs:
           python -m pip check
       - name: Run minimum-dependency tests
         run: python -m pytest -q --junitxml=minimum-dependencies.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: minimum-dependencies
@@ -62,8 +62,8 @@ jobs:
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - run: python -m pip install -e '.[dev]'
@@ -81,8 +81,8 @@ jobs:
   speech-dependencies:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install actual Whisper runtime (no model weights)
@@ -95,8 +95,8 @@ jobs:
   frontend:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -107,11 +107,11 @@ jobs:
   browser:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -119,7 +119,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: browser-failures

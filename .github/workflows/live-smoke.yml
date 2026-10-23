@@ -16,7 +16,7 @@ jobs:
     runs-on: [self-hosted, korina-demo]
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check live demo readiness (read-only)
         # urllib's socket timeout measures inactivity, not total response time.
         # Leave a minute of the job budget for publishing the report.
@@ -24,7 +24,7 @@ jobs:
         env:
           KORINA_SMOKE_BASE: ${{ inputs.base_url }}
         run: python3 scripts/check_stack.py --base "$KORINA_SMOKE_BASE" > readiness.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: live-readiness
