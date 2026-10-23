@@ -19,6 +19,9 @@ from korina.schemas import (
     UserTurn,
 )
 
+# Built-in report transport allowance; the channel adds completion grace.
+AGENT_REPORT_TIMEOUT_SECONDS = 90.0
+
 
 class AgentAdmissionRejected(RuntimeError):
     """The adapter guarantees this request admitted no background work.

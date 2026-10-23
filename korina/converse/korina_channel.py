@@ -24,15 +24,15 @@ import time
 from typing import AsyncIterator, List
 
 from korina.agents import AgentAdapter, AgentHttpBridge
-from korina.agents.base import AgentAdmissionRejected
+from korina.agents.base import AGENT_REPORT_TIMEOUT_SECONDS, AgentAdmissionRejected
 from korina.schemas import UserTurn
 
 from .protocol import ConverseChannel, ConverseRequest, ConverseResponse
 from .registry import _register_converse_channel, get_converse_channel
 
 
-_MAX_POLL_SECONDS = 30.0
-_POLL_INTERVAL = 0.1  # 100ms; caps at ~300 polls/send for 30s ceiling
+_MAX_POLL_SECONDS = AGENT_REPORT_TIMEOUT_SECONDS + 5.0
+_POLL_INTERVAL = 0.1  # 100ms; caps at ~950 polls/send for the 95s ceiling.
 
 
 class _RecoveryRequired(RuntimeError):

@@ -16,6 +16,7 @@ from korina.config import (
 )
 
 from korina.agents.state import agent_state, expected_builtin_generation, record_builtin_admission_cursor
+from korina.agents.base import AGENT_REPORT_TIMEOUT_SECONDS
 from korina.runtime.json_http import HTTPStatusError, RequestCancelledError, request_json
 from korina.runtime.completion import anthropic_text_completion, openai_text_completion
 from korina.services.agent_priority import PERMISSION_REQUEST, classify_agent_priority
@@ -76,7 +77,7 @@ def generate_agent_state_report(
             if effort:
                 payload['reasoning_effort'] = effort
     try:
-        body = request_json(agent_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90, is_current=is_current)
+        body = request_json(agent_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=AGENT_REPORT_TIMEOUT_SECONDS, is_current=is_current)
     except RequestCancelledError:
         raise
     except HTTPStatusError as e:
