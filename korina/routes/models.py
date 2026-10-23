@@ -62,7 +62,7 @@ def _looks_like_mmproj_sidecar(model_id: str) -> bool:
 
 def _has_catalog_mmproj_sibling(model_id: str, all_models: list[str]) -> bool:
     mid = str(model_id or '').strip()
-    if not mid.endswith('.gguf') or _looks_like_mmproj_sidecar(mid):
+    if not mid.lower().endswith('.gguf') or _looks_like_mmproj_sidecar(mid):
         return False
     parent = mid.rsplit('/', 1)[0] if '/' in mid else ''
     for other in all_models:
@@ -93,7 +93,7 @@ def _status_for_model(
         reasons.append('mmproj sidecar, not a runnable model')
     if require_audio and provider == 'lmstudio' and _has_catalog_mmproj_sibling(mid, all_models):
         reasons.append('paired mmproj sidecar exists for this GGUF')
-    if require_audio and mid.endswith('.gguf') and not capability.get('has_mmproj'):
+    if require_audio and mid.lower().endswith('.gguf') and not capability.get('has_mmproj'):
         reasons.append('mmproj estimate incomplete (discovery limit or filesystem error)'
                        if capability.get('mmproj_estimate_incomplete') else 'missing mmproj for multimodal audio')
 

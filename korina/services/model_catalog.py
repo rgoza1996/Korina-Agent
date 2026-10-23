@@ -72,7 +72,7 @@ def discover_local_gguf_models(*, pinned: Iterable[object] = ()) -> list[str]:
     # budget. Activation validates its selected file independently.
     for value in pinned:
         mid = normalize_model_id(value)
-        if mid is None or not mid.endswith('.gguf'):
+        if mid is None or not mid.lower().endswith('.gguf'):
             continue
         try:
             if Path(mid).is_absolute() and Path(mid).is_file():
@@ -245,7 +245,8 @@ def find_mmproj_for_model(model_path: str) -> str:
     path = Path(str(model_path or '').strip())
     if not path.exists():
         return ''
-    matches = sorted(path.parent.glob('*mmproj*.gguf'))
+    matches = sorted(candidate for candidate in path.parent.glob('*')
+                     if 'mmproj' in candidate.name.lower() and candidate.suffix.lower() == '.gguf')
     return str(matches[0]) if matches else ''
 
 

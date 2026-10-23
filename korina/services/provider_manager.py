@@ -704,7 +704,7 @@ def provider_supports_model(provider: str, model: str) -> tuple[bool, str]:
     if pid == "llama.cpp":
         if not mid:
             return (False, "llama.cpp requires a model id (local GGUF path)")
-        if not mid.endswith(".gguf"):
+        if not mid.lower().endswith(".gguf"):
             return (False, f"llama.cpp does not support endpoint-loaded ids; got '{mid}'")
         try:
             model_file = _local_model_file(mid)

@@ -80,7 +80,7 @@ def _heuristic_capability(model_id: str, mmproj_lookup: Callable[[str], bool] | 
             }
 
     # Positive signal 1: model has a real mmproj file on disk.
-    if model_id.endswith(".gguf") and _has_mmproj(model_id, mmproj_lookup):
+    if needle.endswith(".gguf") and _has_mmproj(model_id, mmproj_lookup):
         return {
             "supports_audio_input": True,
             "source": "local_gguf",
@@ -94,7 +94,7 @@ def _heuristic_capability(model_id: str, mmproj_lookup: Callable[[str], bool] | 
         if allowed in needle:
             return {
                 "supports_audio_input": True,
-                "source": "local_gguf" if model_id.endswith(".gguf") else "endpoint_loaded",
+                "source": "local_gguf" if needle.endswith(".gguf") else "endpoint_loaded",
                 "has_mmproj": False,
                 "approx_vram_gb": None,
                 "_inference": f"allowlist:{allowed}",
@@ -105,7 +105,7 @@ def _heuristic_capability(model_id: str, mmproj_lookup: Callable[[str], bool] | 
         if hint in needle or hint in name:
             return {
                 "supports_audio_input": True,
-                "source": "local_gguf" if model_id.endswith(".gguf") else "endpoint_loaded",
+                "source": "local_gguf" if needle.endswith(".gguf") else "endpoint_loaded",
                 "has_mmproj": False,
                 "approx_vram_gb": None,
                 "_inference": f"name_hint:{hint}",
