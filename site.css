@@ -19,16 +19,16 @@
  --mono:"Courier New","Liberation Mono",ui-monospace,monospace;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:soft;font-size:16px;background:var(--paper)}
+html{font-size:16px;background:var(--paper)}
 body{background:var(--paper);color:var(--ink);font:var(--font);line-height:1.55;min-height:100vh}
 a{color:var(--link);text-decoration:underline;text-underline-offset:2px}
 a:visited{color:var(--link-visited)}
 a:hover{color:var(--ink)}
 img{max-width:100%;display:block;border:1px solid var(--rule);margin:1rem 0}
 pre,code{font-family:var(--mono);font-size:.92em;color:var(--ink-soft)}
-code{background:var(--code-bg);padding:.1em .35em;border:1px solid var(--rule-soft)}
+code{background:var(--code-bg);padding:.1em .35em;border:1px solid var(--rule-soft);overflow-wrap:anywhere}
 pre{background:var(--code-bg);padding:1rem 1.25rem;border:1px solid var(--rule);overflow-x:auto;line-height:1.45;margin:1rem 0}
-pre code{background:none;border:none;padding:0;font-size:1em}
+pre code{background:none;border:none;padding:0;font-size:1em;overflow-wrap:normal}
 blockquote{border-left:3px solid var(--rule);padding:.25rem 1rem;color:var(--ink-soft);margin:1rem 0;background:var(--paper-2)}
 table{width:100%;border-collapse:collapse;font-size:.92em;margin:1rem 0;border:1px solid var(--rule)}
 th,td{border:1px solid var(--rule);padding:.5rem .75rem;text-align:left;vertical-align:top}
@@ -46,7 +46,7 @@ li{margin:.2rem 0}
 
 .wrap{max-width:980px;margin:0 auto;padding:0 1.5rem}
 .hero-svg{width:100%;border:1px solid var(--rule);margin:1.25rem 0;background:var(--paper-2)}
-.chart-img{width:100%;border:1px solid var(--rule);margin:1.25rem 0;background:var(--paper-2)}
+.chart-img{width:100%;height:auto;border:1px solid var(--rule);margin:1.25rem 0;background:var(--paper-2)}
 
 .card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1rem;margin:1.25rem 0}
 .card{background:#fbf7ee;border:1px solid var(--rule);padding:1rem 1.1rem}
