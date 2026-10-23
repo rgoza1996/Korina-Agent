@@ -23,11 +23,11 @@ def test_explicit_credential_override_requires_intent_before_any_discovery(monke
     assert 'access-control-allow-origin' not in response.headers
 
 
-@pytest.mark.parametrize('params', [
-    {}, {'llm_api_key_env': '', 'stt_llm_api_key_env': '  '},
-    {'llm_base_url': 'https://candidate.test/v1', 'stt_llm_base_url': 'https://audio.test/v1'},
+@pytest.mark.parametrize('params,attempts', [
+    ({}, 1), ({'llm_api_key_env': '', 'stt_llm_api_key_env': '  '}, 1),
+    ({'llm_base_url': 'https://candidate.test/v1', 'stt_llm_base_url': 'https://audio.test/v1'}, 2),
 ])
-def test_noncredential_overrides_and_saved_discovery_keep_get_compatibility(monkeypatch, client, params):
+def test_noncredential_overrides_and_saved_discovery_keep_get_compatibility(monkeypatch, client, params, attempts):
     from korina.routes import models
 
     calls = []
@@ -35,7 +35,7 @@ def test_noncredential_overrides_and_saved_discovery_keep_get_compatibility(monk
     monkeypatch.setattr(models, 'discover_local_gguf_models', lambda **kwargs: [])
     monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda **kwargs: [])
     assert client.get('/api/models', params=params).status_code == 200
-    assert len(calls) == 2
+    assert len(calls) == attempts
     if 'llm_base_url' in params:
         assert calls == [(params['llm_base_url'], ''), (params['stt_llm_base_url'], '')]
 

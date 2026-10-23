@@ -159,29 +159,33 @@ def models(
         stt_llm_provider or config.get('stt_llm_provider') or config.get('llm_provider') or 'llama.cpp'
     ).strip()
 
-    llm_error = None
     selected_llm = str(config.get('lm_model') or '')
     selected_stt = config_stt_llm_model(config)
     selected = [selected_llm, selected_stt]
-    llm_models: list[str] = []
-    stt_llm_error = None
-    stt_llm_models: list[str] = []
-    try:
-        llm_models = llm_models_for(llm_base, llm_api_env_name, pinned=[selected_llm])
-    except Exception as e:
-        llm_error = str(e)
-    try:
-        stt_llm_models = llm_models_for(stt_base, stt_api_env_name, pinned=[selected_stt])
-    except Exception as e:
-        stt_llm_error = str(e)
-
     llama_cpp_local_models = discover_local_gguf_models(pinned=selected)
     lmstudio_catalog_models = discover_lmstudio_catalog_models(pinned=selected)
+    discoveries: dict[tuple[str, str, str], tuple[list[str], str | None]] = {}
 
-    if llm_base == 'http://127.0.0.1:8080/v1':
-        llm_models = limit_model_ids([*llm_models, *llama_cpp_local_models], pinned=[selected_llm], sources=[llm_models, llama_cpp_local_models])
-    if stt_base == 'http://127.0.0.1:8080/v1':
-        stt_llm_models = limit_model_ids([*stt_llm_models, *llama_cpp_local_models], pinned=[selected_stt], sources=[stt_llm_models, llama_cpp_local_models])
+    def discover(base: str, env: str, pin: str) -> tuple[list[str], str | None]:
+        canonical = normalize_api_base_url(base)
+        key = (canonical, env, pin)
+        if key not in discoveries:
+            choices: list[str] = []
+            error = None
+            try:
+                # This route owns the local snapshot and merges it once,
+                # including when provider discovery fails.
+                choices = llm_models_for(base, env, pinned=[pin], local_models=[])
+            except Exception as exc:
+                error = str(exc)
+            if canonical == 'http://127.0.0.1:8080/v1':
+                choices = limit_model_ids([*choices, *llama_cpp_local_models], pinned=[pin],
+                                          sources=[choices, llama_cpp_local_models])
+            discoveries[key] = (choices, error)
+        return discoveries[key]
+
+    llm_models, llm_error = discover(llm_base, llm_api_env_name, selected_llm)
+    stt_llm_models, stt_llm_error = discover(stt_base, stt_api_env_name, selected_stt)
 
     # Apply the final bound even when an older/custom discovery helper returns
     # an ordinary list. Metadata below covers only options actually returned.

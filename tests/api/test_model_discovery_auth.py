@@ -60,4 +60,4 @@ def test_default_stt_discovery_still_inherits_saved_response_auth(monkeypatch, c
     monkeypatch.setattr(models, 'discover_local_gguf_models', lambda **kwargs: [])
     monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda **kwargs: [])
     assert client.get('/api/models').status_code == 200
-    assert calls == [('https://saved.test/v1', 'RESPONSE_KEY')] * 2
+    assert calls == [('https://saved.test/v1', 'RESPONSE_KEY')]

@@ -268,7 +268,9 @@ def find_mmproj_for_model(model_path: str) -> str:
 # --- Phase 1.5 helper moved from korina.config ---
 
 def llm_models_for(base_url: str, api_env: str, *, pinned: Iterable[object] = (),
-                   is_current: Callable[[], bool] | None = None) -> list:
+                   is_current: Callable[[], bool] | None = None,
+                   local_models: list[str] | None = None) -> list:
+    """Discover provider IDs, optionally reusing an explicit local snapshot."""
     base = str(base_url or "").strip().rstrip("/")
     if not base:
         return []
@@ -285,7 +287,7 @@ def llm_models_for(base_url: str, api_env: str, *, pinned: Iterable[object] = ()
     models = limit_model_ids((item.get('id') if isinstance(item, dict) else item for item in body.get('data', [])), pinned=pinned)
     check_current(is_current)
     if base == "http://127.0.0.1:8080/v1":
-        local = discover_local_gguf_models(pinned=pinned)
+        local = discover_local_gguf_models(pinned=pinned) if local_models is None else local_models
         models = limit_model_ids([*models, *local], pinned=pinned, sources=[models, local])
     check_current(is_current)
     return models
