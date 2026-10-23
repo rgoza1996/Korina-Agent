@@ -56,6 +56,10 @@ from korina.util.paths import (
 router = APIRouter()
 
 
+def _tts_probe_url(base_url, health_url=None):
+    return health_url or base_url.rstrip('/') + '/health'
+
+
 def _probe_tts_backend(base_url, timeout=2.0, health_url=None):
     """Probe the TTS backend's /health endpoint with a short timeout.
 
@@ -69,18 +73,19 @@ def _probe_tts_backend(base_url, timeout=2.0, health_url=None):
 
     if not base_url:
         return (False, {}, "no base_url configured")
+    probe_url = _tts_probe_url(base_url, health_url)
     try:
         try:
-            body = request_json(health_url or base_url.rstrip('/') + '/health', timeout=timeout)
+            body = request_json(probe_url, timeout=timeout)
         except _json.JSONDecodeError:
-            return (False, {}, f'non-JSON response from {base_url}/health')
+            return (False, {}, f'non-JSON response from {probe_url}')
         if not isinstance(body, dict):
-            return (False, {}, f'invalid health response from {base_url}/health')
+            return (False, {}, f'invalid health response from {probe_url}')
         return (True, body, None)
     except socket.timeout:
-        return (False, {}, f'timeout after {timeout}s probing {base_url}/health')
+        return (False, {}, f'timeout after {timeout}s probing {probe_url}')
     except HTTPStatusError as e:
-        return (False, {}, f'HTTP {e.status_code} from {base_url}/health')
+        return (False, {}, f'HTTP {e.status_code} from {probe_url}')
     except (ConnectionRefusedError, ConnectionResetError) as e:
         return (False, {}, f'{type(e).__name__}: {e}')
     except (OSError, ValueError) as e:
@@ -194,11 +199,12 @@ def _aggregate_tts(config):
     if provider != 'kokoro' and not health_url:
         return {
             'ok': False, 'loaded': False, 'device': None, 'cuda_available': False,
-            'provider': provider, 'base_url': base_url, 'status': 'unverified',
+            'provider': provider, 'base_url': base_url, 'health_url': None, 'status': 'unverified',
             'probe_supported': False,
             'error': 'Configure tts_health_url or verify speech manually; this provider has no standard health endpoint',
         }
     kwargs = {'health_url': health_url} if health_url else {}
+    probe_url = _tts_probe_url(base_url, health_url)
     ok, body, error = _probe_tts_backend(base_url, timeout=2.0, **kwargs)
     if ok:
         try:
@@ -217,6 +223,7 @@ def _aggregate_tts(config):
             'cuda_available': False,
             'provider': provider,
             'base_url': base_url,
+            'health_url': probe_url,
             'error': error,
         }
     loaded = bool(body.get('loaded'))
@@ -229,6 +236,7 @@ def _aggregate_tts(config):
         'cuda_available': cuda,
         'provider': provider,
         'base_url': base_url,
+        'health_url': probe_url,
         'error': None,
     }
 
@@ -335,7 +343,7 @@ async def health(request: Request):
     for name, (provider, base, models_url, model, headers) in roles.items():
         loads[name] = {
             **await probes[(models_url, model, tuple(sorted(headers.items())))],
-            'provider': provider, 'base_url': base,
+            'provider': provider, 'base_url': base, 'models_url': models_url,
         }
     whisper_available = importlib.util.find_spec('faster_whisper') is not None
     ack_count, acknowledgements = await asyncio.to_thread(_aggregate_ack, config)

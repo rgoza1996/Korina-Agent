@@ -39,7 +39,7 @@ Explicit probe batches and ordinary STT fallback carry request ownership through
 
 ## Health and readiness
 
-`GET /api/health` remains HTTP 200 for a live backend with unavailable models. Independent provider probes run concurrently; matching endpoint/model/credentials reuse a probe within that request. Runtime blocks describe response LLM, audio-model STT, agent, TTS, Whisper, and ACK state.
+`GET /api/health` remains HTTP 200 for a live backend with unavailable models. Independent provider probes run concurrently; matching endpoint/model/credentials reuse a probe within that request. Runtime blocks describe response LLM, audio-model STT, agent, TTS, Whisper, and ACK state. The three model-role blocks include the actual `models_url` used by their probe, and TTS reports its resolved `health_url` (null when no health contract is configured for a custom service). The Endpoints panel uses these URLs directly, preserving display bases without guessing suffixes.
 
 `GET /api/ready` returns a check map for frontend assets, response LLM, selected STT dependencies, TTS, and enabled agent. It returns 503 when a required check fails. A reachable lazy Kokoro pipeline counts as available; rehearsal must warm actual models.
 
