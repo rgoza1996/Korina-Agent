@@ -1,4 +1,4 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Home — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="stylesheet" href="./site.css"></head><body>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Korina Agent — Local-first voice AI"><title>Home — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="stylesheet" href="./site.css?v=20261023-demo"></head><body>
 <nav class="site-nav"><div class="wrap">
 <a href="index.html" class="site-logo">
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
@@ -72,6 +72,12 @@
 </div>
 
 
+<div class="wrap hero-actions">
+ <a class="demo-button" href="Demo.html"><span aria-hidden="true">▶</span> Watch the demo</a>
+ <a href="Explainer.html">10-minute architecture explainer</a>
+</div>
+
+
 <div class="wrap">
  <div class="req-note"><strong>Hackathon refactor preview · 23 October 2026.</strong>
 Work is being reviewed on <code>codex/hackathon-refactor</code>, based on <code>alpha</code>.
@@ -85,6 +91,16 @@ These changes are not yet merged into <code>alpha</code> or the release branch.
  and it can use cloud-compatible endpoints when explicitly configured.
  </p>
  <p><a href="Demo.html"><strong>Watch the voice demo →</strong></a> Give Korina a project name and rehearsal time, then ask for both by voice. The recorded interaction uses local Whisper, <strong>Meta Model API</strong> and Kokoro, with actual browser audio and English captions. This is pre-event practice using generated microphone input. <a href="Verification.html#meta-av">Source, observations and limits</a> · <a href="Explainer.html">Watch the narrated explainer</a>.</p>
+ <section aria-labelledby="explainer-heading">
+ <h2 id="explainer-heading">Watch the explainer</h2>
+ <p>Ten-minute illustrated architecture overview, with English narration and captions. <a href="Explainer.html">About this video and its development snapshot</a>.</p>
+ <video controls playsinline preload="metadata" poster="overview/2026-10-23/poster.jpg" width="1920" height="1080" style="width:100%;height:auto" aria-label="Ten-minute narrated architecture overview of Korina">
+ <source src="overview/2026-10-23/explainer.mp4" type="video/mp4">
+ <track kind="captions" src="overview/2026-10-23/captions.en.vtt" srclang="en" label="English" default>
+ <a href="overview/2026-10-23/explainer.mp4">Download the narrated explainer</a>.
+ </video>
+ </section>
+
 
  <div class="card-grid">
  <div class="card"><h3> Korina Converse</h3><p>Browser-based voice UI: live VAD, rolling partial transcription, response LLM, Kokoro TTS, barge-in, and voice interrupts.</p><div class="card-footer"><a href="Converse.html">Read more →</a></div></div>
