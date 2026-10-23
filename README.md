@@ -57,7 +57,7 @@ Load models through authenticated discovery and choose an ID actually available 
 
 Set **Response token budget** in response settings for the selected model (1–8192, default 180). The October 23 synthetic `muse-spark-1.3-contributor` rehearsal used **2048** with model-default reasoning and produced useful context-dependent text. Use that as a measured starting point for this model, then rehearse your actual interaction. Meta reasoning shares the output budget; exhaustion is reported as an error, with no automatic increase or retry. Agent reports retain their separate budget.
 
-The focused hackathon goal is one useful voice interaction using conversational context and a fact retained in the current session. An [authenticated synthetic rehearsal](docs/verification.md#authenticated-meta-rehearsal-at-637e43c) recalled the earlier Cedar/Friday fact through real Whisper, Meta, Kokoro and native browser playback. It used a generated fake microphone; physical headset and human interruption checks remain. The API receives the relevant context; this is not durable memory across restarts. All work before kickoff is preparation. Record the actual event starting SHA and later additions in the [demo guide's ledger](docs/hackathon.md).
+The focused hackathon goal is one useful voice interaction using conversational context and a fact retained in the current session. An [authenticated synthetic rehearsal](docs/verification.md#authenticated-meta-effort-rehearsal-at-bc7c8c5) recalled the earlier Cedar/Friday fact through real Whisper, Meta, Kokoro and native browser playback. The latest run selected minimal response effort and low agent effort, completed native playback in 30.999 seconds, and reported 113 cached input tokens on the voice request. It used a generated fake microphone; physical headset and human interruption checks remain. This is one observation, without a general speed or cache-hit guarantee. The API receives the relevant context; this is not durable memory across restarts. All work before kickoff is preparation. Record the actual event starting SHA and later additions in the [demo guide's ledger](docs/hackathon.md).
 
 ## Install a built wheel
 
@@ -182,7 +182,7 @@ Bundled units use `127.0.0.1:8001` for Korina and `127.0.0.1:8880` for Kokoro. F
 
 Shutdown stops eligible user units before provider-process fallback to prevent supervised workers from respawning. It attempts the remaining cleanup after a failure and returns nonzero for failed commands or unconfirmed process exits. Missing units are skipped; `--dry-run` performs no stops.
 
-`systemd --user` is optional; foreground Python commands work without it. GUI providers need a desktop session environment. If a user service cannot open LM Studio, import the relevant display variables with `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY`.
+`systemd --user` is optional; foreground Python commands work without it. GUI providers need a desktop session environment. If a user service cannot open LM Studio, import the relevant display variables with `systemctl --user import-environment DISPLAY WAYLAND_DISPLAY XAUTHORITY`, then restart `korina-voice-lab.service` before trying GUI activation again. The running service retains its old inherited environment until restarted.
 
 ## Code map
 

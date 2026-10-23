@@ -1,0 +1,642 @@
+{
+  "kind": "authenticated-meta-effort-voice-rehearsal",
+  "date_utc": "2026-10-23",
+  "source_sha": "bc7c8c5a29c760a3f1654fef62a1bbdd4276d853",
+  "pre_event_preparation": true,
+  "earlier_effort_attempt": {
+    "generation_call": 20,
+    "status": "Not a passing voice run: correct Meta seed and valid PCM, but the harness sampled ended before waiting for its event. The repeat explicitly waits for native ended. Usage remains in aggregate."
+  },
+  "model": "muse-spark-1.3-contributor",
+  "api_base": "https://api.meta.ai/v1",
+  "request_contract": {
+    "response_reasoning_effort": "minimal",
+    "agent_reasoning_effort": "low",
+    "response_and_agent_max_tokens": 2048,
+    "tools": false,
+    "automatic_retry": false,
+    "defaults_unchanged": "Production effort defaults remain blank; these were deliberate rehearsal selections."
+  },
+  "runtime_versions": {
+    "api": {
+      "python": "3.12.3",
+      "packages": {
+        "fastapi": "0.159.1",
+        "starlette": "1.9.0",
+        "uvicorn": "0.54.0",
+        "pydantic": "2.14.1",
+        "python-multipart": "0.0.32",
+        "numpy": "2.5.4",
+        "soundfile": "0.14.0",
+        "anyio": "4.15.1",
+        "httpx": "0.28.1",
+        "pytest": "9.1.1",
+        "pytest-cov": "7.1.0",
+        "sniffio": "1.3.1",
+        "faster-whisper": "1.2.1",
+        "av": "18.1.0"
+      }
+    },
+    "node": "v22.23.4",
+    "playwright": "1.64.1",
+    "chromium": "Google Chrome for Testing 156.0.8078.4",
+    "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "speech_service": {
+      "python": "3.12.3",
+      "packages": {
+        "kokoro": "0.9.4",
+        "torch": "2.14.1+cpu",
+        "misaki": "0.9.4",
+        "transformers": "5.20.2",
+        "spacy": "3.8.16"
+      },
+      "configured_torch_threads": 4,
+      "configured_interop_threads": 1
+    }
+  },
+  "whisper_model": {
+    "id": "base.en",
+    "revision": "3d3d5dee26484f91867d81cb899cfcf72b96be6c",
+    "device": "cpu",
+    "compute_type": "int8",
+    "cpu_threads": 4
+  },
+  "browser_voice": {
+    "seed": {
+      "message": "For this demo, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence.",
+      "reply": "Got it, I'll remember Cedar rehearses Friday at ten in the morning.",
+      "entry": "Typed synthetic fact through actual browser askAndSpeak; no voice-seed claim."
+    },
+    "input": "espeak-ng question through Chromium fake microphone and native MediaRecorder/VAD",
+    "microphone_sha256": "19c802848199572187acfc79d3bd45908ae22bf0170a075313a20ce8fea8a1e9",
+    "intended_question": "What is my project called, and when is our practice?",
+    "final_transcription": {
+      "text": "What is my project called and when is our practice?",
+      "seconds": 6.824469327926636,
+      "samples": 102720,
+      "sample_rate": 16000,
+      "duration": 6.42,
+      "model": "base.en",
+      "backend": "faster-whisper",
+      "device": "cpu",
+      "requested_device": "cpu",
+      "compute_type": "int8",
+      "language": "en",
+      "language_probability": 1,
+      "segments": 1
+    },
+    "history": [
+      {
+        "role": "user",
+        "content": "For this demo, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence."
+      },
+      {
+        "role": "assistant",
+        "content": "Got it, I'll remember Cedar rehearses Friday at ten in the morning."
+      }
+    ],
+    "message": "What is my project called and when is our practice?",
+    "response_reasoning_effort": "minimal",
+    "reply": "Your project is called Cedar.\nYour rehearsal is Friday at ten in the morning.",
+    "live_click_to_native_audio_ended_seconds": 30.999,
+    "response_http_seconds": 2.108,
+    "tts": {
+      "voice": "af_heart",
+      "device": "CPU",
+      "chunks": 2,
+      "samples": 128400,
+      "sample_rates": [
+        24000
+      ]
+    },
+    "native_playback": {
+      "buffers": 2,
+      "frames": 128400,
+      "all_ended": true,
+      "some_nonzero_pcm": true
+    },
+    "checks": {
+      "seed_reply": {
+        "ok": true
+      },
+      "seed_native_playback": {
+        "ok": true
+      },
+      "explicit_response_effort": {
+        "ok": true
+      },
+      "seed_chat": {
+        "ok": true
+      },
+      "one_final_stt": {
+        "ok": true,
+        "detail": {
+          "requests": 1
+        }
+      },
+      "real_whisper_final": {
+        "ok": true,
+        "detail": [
+          {
+            "text": "What is my project called and when is our practice?",
+            "seconds": 6.824469327926636,
+            "samples": 102720,
+            "sample_rate": 16000,
+            "duration": 6.42,
+            "model": "base.en",
+            "backend": "faster-whisper",
+            "device": "cpu",
+            "requested_device": "cpu",
+            "compute_type": "int8",
+            "language": "en",
+            "language_probability": 1,
+            "segments": 1
+          }
+        ]
+      },
+      "question_does_not_restate_seed_fact": {
+        "ok": true,
+        "detail": "What is my project called and when is our practice?"
+      },
+      "one_voice_chat": {
+        "ok": true,
+        "detail": {
+          "requests": 1
+        }
+      },
+      "seed_history_and_question_once": {
+        "ok": true,
+        "detail": {
+          "message": "What is my project called and when is our practice?",
+          "history": [
+            {
+              "role": "user",
+              "content": "For this demo, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence."
+            },
+            {
+              "role": "assistant",
+              "content": "Got it, I'll remember Cedar rehearses Friday at ten in the morning."
+            }
+          ],
+          "max_tokens": 2048,
+          "temperature": 0.7,
+          "model": "muse-spark-1.3-contributor",
+          "reasoning": "off",
+          "reasoning_effort": "minimal"
+        }
+      },
+      "voice_fact_recalled": {
+        "ok": true
+      },
+      "voice_tts_completed": {
+        "ok": true,
+        "detail": {
+          "requests": 1,
+          "status": "Done \u00b7 2 chunks"
+        }
+      },
+      "post_seed_native_pcm": {
+        "ok": true,
+        "detail": [
+          {
+            "at": 37163.89999999106,
+            "contextState": "running",
+            "when": 33.95047619047619,
+            "frames": 55200,
+            "sampleRate": 24000,
+            "duration": 2.3,
+            "rms": 0.04799576593584513,
+            "ended": true,
+            "endedAt": 39478.89999999106
+          },
+          {
+            "at": 43703,
+            "contextState": "running",
+            "when": 40.38240362811791,
+            "frames": 73200,
+            "sampleRate": 24000,
+            "duration": 3.05,
+            "rms": 0.045346342014726364,
+            "ended": true,
+            "endedAt": 46768.29999999702
+          }
+        ]
+      },
+      "stop_releases_capture": {
+        "ok": true,
+        "detail": {
+          "live": false,
+          "stream": null,
+          "sttStatus": "Live mode stopped."
+        }
+      },
+      "agent_report_available": {
+        "ok": true,
+        "detail": {
+          "pendingReport": "Intent: demo memory test, last query was recall project name and rehearsal time, already answered.\nFacts: project=Cedar, rehearsal=Friday at ten in morning.\nOpen: none, no pending tasks or questions.\nEmotion: neutral, testing recall.\nInjection: retain Cedar / Friday 10am for future recall, no user-facing update needed.",
+          "permission": null
+        }
+      },
+      "one_agent_report_injection": {
+        "ok": true,
+        "detail": {
+          "requests": 1
+        }
+      },
+      "no_page_errors": {
+        "ok": true,
+        "detail": []
+      }
+    },
+    "page_errors": 0,
+    "console_warnings_or_errors": 0,
+    "stop_released_capture": true
+  },
+  "optional_agent": {
+    "reasoning_effort": "low",
+    "report": "Priority: low\nIntent: demo memory test, last query was recall project name and rehearsal time, already answered.\nFacts: project=Cedar, rehearsal=Friday at ten in morning.\nOpen: none, no pending tasks or questions.\nEmotion: neutral, testing recall.\nInjection: retain Cedar / Friday 10am for future recall, no user-facing update needed.",
+    "wall_seconds": 7.842,
+    "report_injections": 1,
+    "followup": "Understood, speech test acknowledged.",
+    "pending_report_consumed": true
+  },
+  "buffered_tts": {
+    "status": 200,
+    "wall_seconds": 5.8157719199953135,
+    "frames": 64200,
+    "sample_rate": 24000,
+    "channels": 1,
+    "sample_width": 2,
+    "rms": 0.04788880933447623
+  },
+  "python_channel": {
+    "wall_seconds": 8.527036234008847,
+    "text": "Priority: important\nIntent: Record short observation about Meta voice test and Cedar rehearsal.\nFacts: Meta voice test completed. Cedar rehearsal Friday at ten.\nTasks: Confirm storage/logging of observation; no further action requested.\nEmotion: Neutral, task-oriented.\nInjection: Acknowledge both items recorded - Meta test done, Cedar rehearsal Fri 10am noted.",
+    "finished": true,
+    "error": null,
+    "metadata": {
+      "status": "idle",
+      "events_scanned": 2,
+      "next_cursor": 2
+    }
+  },
+  "readiness_smoke": {
+    "ok": true,
+    "base": "http://127.0.0.1:8870",
+    "allow_degraded": false,
+    "checks": [
+      {
+        "path": "/",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/styles.css",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/js/app.js",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/api/capabilities",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/api/health",
+        "ok": true,
+        "http_status": 200
+      },
+      {
+        "path": "/api/ready",
+        "ok": true,
+        "http_status": 200,
+        "readiness": {
+          "ready": true,
+          "checks": {
+            "audio_limits": true,
+            "frontend": true,
+            "response_llm": true,
+            "stt": true,
+            "tts": true,
+            "agent": true
+          }
+        }
+      }
+    ]
+  },
+  "generation_calls": [
+    {
+      "number": 21,
+      "utc": "2026-10-23T08:18:42.836247+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reasoning_effort": "minimal",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "reasoning_effort",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 1.225,
+      "usage": {
+        "completion_tokens": 64,
+        "prompt_tokens": 211,
+        "total_tokens": 275,
+        "completion_tokens_details": {
+          "reasoning_tokens": 40
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0000339"
+    },
+    {
+      "number": 22,
+      "utc": "2026-10-23T08:19:11.077419+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reasoning_effort": "minimal",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        67,
+        51
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "reasoning_effort",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 2.077,
+      "usage": {
+        "completion_tokens": 78,
+        "prompt_tokens": 247,
+        "total_tokens": 325,
+        "completion_tokens_details": {
+          "reasoning_tokens": 52
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 113
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000029226"
+    },
+    {
+      "number": 23,
+      "utc": "2026-10-23T08:19:28.818391+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reasoning_effort": "low",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        1709,
+        525
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "reasoning_effort",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 7.515,
+      "usage": {
+        "completion_tokens": 738,
+        "prompt_tokens": 490,
+        "total_tokens": 1228,
+        "completion_tokens_details": {
+          "reasoning_tokens": 653
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0001966"
+    },
+    {
+      "number": 24,
+      "utc": "2026-10-23T08:19:36.612489+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reasoning_effort": "minimal",
+      "message_roles": [
+        "system",
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+        "user"
+      ],
+      "message_characters": [
+        843,
+        141,
+        67,
+        51,
+        77,
+        439
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "reasoning_effort",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 3.219,
+      "usage": {
+        "completion_tokens": 251,
+        "prompt_tokens": 370,
+        "total_tokens": 621,
+        "completion_tokens_details": {
+          "reasoning_tokens": 235
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 241
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.000063582"
+    },
+    {
+      "number": 25,
+      "utc": "2026-10-23T08:19:46.860468+00:00",
+      "model": "muse-spark-1.3-contributor",
+      "max_tokens": 2048,
+      "reasoning_effort": "low",
+      "message_roles": [
+        "system",
+        "user"
+      ],
+      "message_characters": [
+        1709,
+        174
+      ],
+      "request_parameters": [
+        "max_tokens",
+        "messages",
+        "model",
+        "reasoning_effort",
+        "stream",
+        "temperature"
+      ],
+      "status": "returned",
+      "wall_seconds": 8.488,
+      "usage": {
+        "completion_tokens": 952,
+        "prompt_tokens": 401,
+        "total_tokens": 1353,
+        "completion_tokens_details": {
+          "reasoning_tokens": 868
+        },
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      },
+      "finish_reasons": [
+        "stop"
+      ],
+      "estimated_usd": "0.0002305"
+    }
+  ],
+  "rehearsal_generation_calls": 5,
+  "rehearsal_estimated_usd": "0.000553808",
+  "aggregate_task_generation_calls": 25,
+  "aggregate_task_estimated_or_reserved_usd": "0.003492270",
+  "cost_basis": {
+    "source": "https://dev.meta.ai/docs/pricing-rate-limits",
+    "usd_per_million_tokens": {
+      "input": 0.1,
+      "cached_input": 0.002,
+      "output": 0.2
+    },
+    "note": "Returned-usage estimate, not an invoice/account spending cap; prior failed voice attempt remains in aggregate task usage."
+  },
+  "source_files_sha256": {
+    "korina/schemas.py": "96cbb987d4856b31f68d216354b083efd794c09c0a74f45c15b612ed2eb82ae0",
+    "korina/app.py": "6327e2a11c4d05681627aa2942a5f1fb42b17c8f26e2de054de5edcc26ee4a38",
+    "korina/settings_schema.py": "8945dd9e5e9161c7d639914fabd7bae1449081ae43a28507e68ad0e47084e385",
+    "korina/model_roots.py": "7599657cae0e924aebb4b19534b0e6ea58c09ebf6248adaca1fdb55eea14a84b",
+    "korina/model_ids.py": "291ef12e00cff144ab0f76ad7c76e4939873199f8d0a0a96e4b189ae9094a509",
+    "korina/asset_manifest.py": "90a03ef003be040e8106654649de0276438df4c180fae3e76b09d8e70c7b1531",
+    "korina/schemas_capabilities.py": "65cd9dbde459f33b014d5d5d95bd3e2c667158e6137139f32ec382dd2c1e41d7",
+    "korina/config.py": "cd5ebfefef3cc7907783ae6196e542aa135a5b7ac0bf0cefb1f08aee5406cae4",
+    "korina/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "korina/app_factory.py": "3092b43d8a0cf8ae73699ace45e27195727866a48df377e16c2ef4ca46e3f9f7",
+    "korina/runtime/state.py": "4bb853197add110f33d11161d612eae57b6365febf94efee1bcc6e1f6c6e23cf",
+    "korina/runtime/limits.py": "e049483600c3dc7fa9088e2e0cd1cac0cdb13ba65f548caebcc8bbb42bfbaade",
+    "korina/runtime/http.py": "cd32953c00379f75ac3df7c925c1582a623a31d6f146f4129620b71db43f10b0",
+    "korina/runtime/completion.py": "2656df7655f27ba4191177e127b1d1d48d6aeb11e599d78dd7bca543e3db1910",
+    "korina/runtime/json_http.py": "89e774c0b9d67e3c9fab907a787a4f9dc3dd271dcd013eada4c34fe1ed38b91b",
+    "korina/runtime/__init__.py": "a17620677f0958c8a08dd96be109a2018d69a4f44546e6f0607aa0664c640652",
+    "korina/runtime/request_owner.py": "88b40d3eba02c60bde7179e2d522edd540ad881dfbf828f2f9dc998d4d687119",
+    "korina/tts/server.py": "0d84502a880e58f3bdf709ba1b903f7b584958c9fae83c0a6a3fbb2609a7d827",
+    "korina/tts/__init__.py": "1ef3f51486240b59ba6d9f72630899af83accba421229a5d5fce61a3112b9446",
+    "korina/tts/runtime.py": "ab8dcf6d82c428a143883451d135f1dedd058e2113a28772f17d4b9623c6ce1b",
+    "korina/util/paths.py": "7f7ffb9cb399e1b0c2d73d3e14d961421aed9bc23e0a406edbd2861d38d29b30",
+    "korina/util/labels.py": "584844bf8cc389ee26147836e42dcb80e50dca10b9c6e791ccd2e14bc5c16bfe",
+    "korina/util/presets.py": "d95666571356472644a484be72001c0f027a40dc0801562b8f02be5ed6f54824",
+    "korina/util/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "korina/services/active_probe.py": "95312627c732cd501d328b862a839d48cddfcf8624415d54aaa46ba795fc37aa",
+    "korina/services/whisper_service.py": "7dcc1f6a03920b1c9307e5eb86afdcee9f6ba55dcb163e1017a9d91c36ab0c41",
+    "korina/services/audio_probe.py": "4cc5054e164f4563af2294a6d373b350e77206ed4373f12fe637395ccce2924d",
+    "korina/services/model_capability.py": "9f28730bb0b05f89caf61af8ca9d9cb4e4083254679bb3618efa467cd4cae99c",
+    "korina/services/model_catalog.py": "a8bf3c97c12302d677f9db079a500366125c42f9279e997c9a488e653189992f",
+    "korina/services/provider_manager.py": "b0a6a7c06897189d5f152809cdd637770fb2ceb25ca2b609b7c903f7965c4bd8",
+    "korina/services/agent_priority.py": "70ac39351bfce920a3d48a7ee56a5ff5ec812d533bed15a70d394e0fb19afc79",
+    "korina/services/ack_service.py": "0f2f74af081172fdf460dd813b7123cd1fdd1b69f1d5fac0d7fe0c9db2b492db",
+    "korina/services/provider_processes.py": "2582938a7931dad04d1f2bc51a93a3455847576c60a92d2340745fbae99817c0",
+    "korina/services/__init__.py": "17a3936cd81a082829b011f79c07c503ab8fc4d4dce7407acd60142fdd572a80",
+    "korina/services/stt_resolution.py": "b20e7be1d704f7fea197a772f426f01f7cae8bab15cb2eb3d7bf9a608e52d2d6",
+    "korina/services/agent_context.py": "2c3a030c2e0d745039b4457201f7d936e4b104d409fc07cc2820203258390cd5",
+    "korina/services/agent_events.py": "4ff49718c17902699de009ea0a3ca6ea07988f3f63903421e424b14a7fee3b71",
+    "korina/services/multimodal_stt.py": "ccabe07a3760b6faed8e74800a85e82d64225cc32efc9b4d1fbb9d5c54224c93",
+    "korina/services/ack_manifest.py": "1feee34d6496c0518418385afeba5dc5ff66124c5b6412513f2cb286e5ddf3ff",
+    "korina/services/agent_service.py": "602fa6f9ea4a92addaa99d3f5b1a31f285fdf19253223d4858c08264c8f95556",
+    "korina/services/response_llm.py": "4bd1ef2b30443e4855ded403df9be564d8ca4a52d08ec7f58e408e87636d3347",
+    "korina/services/model_metadata.py": "a9894cf4c3f49a98247bb363c6cd7bd7a4cd57cd2387defab3b5e431bef9133e",
+    "korina/agents/korina_adapter.py": "19919bb2a3612c340d61069f509dafd1d4457614d1da3fd5f5e1d60090d7e098",
+    "korina/agents/state.py": "3717a947fe2c555a9f97a5ff57e3a4c7ed814c61fecdd80f7e81eb5657edbffa",
+    "korina/agents/gateway.py": "306a099216d4757170ea469837949abfb17e28936c725da88fae4260e1750d82",
+    "korina/agents/__init__.py": "f87025dcae0abed37c225d21f825f7bc3ab63b5e828f7095f0491a14690a35a3",
+    "korina/agents/base.py": "620b22b1ab9b1ad406011c088610d2fa50d83803d956810e8fe7e8189f014d5a",
+    "korina/routes/providers.py": "323bf4b3e478ce4421c6ac6de872a7794732c843da3237847fb8357e4684ac77",
+    "korina/routes/stt.py": "0eade2c2498b687309683480b2feffcf2807ae273a11d874cfe417cf931aac06",
+    "korina/routes/validation.py": "47ae2ec000f950ac29c12268582e34ca9b78bcef210d1eb1d745ad17302d121a",
+    "korina/routes/model_roots.py": "e944889c7132699e3c6cc24ce457608fe31f9e757f65a86354f9d9a4a9d53186",
+    "korina/routes/chat.py": "c9e7f2efc6fd57a039c305d2482d728df2922a174eaa5ce6043f7249eccb7eba",
+    "korina/routes/index.py": "1c130f03109162b70f039fd432071a5b6ecb4a0316743038ac70364155a859f0",
+    "korina/routes/acks.py": "229af555e7345af49a3295495dfcf0d1ebd48dbaec8c024b0e41456d5bdc8ffa",
+    "korina/routes/config.py": "4d910c0eb7497bbac3ae1f63756a79b35e186f5aaeb63f365c0419b2e5a3fbab",
+    "korina/routes/__init__.py": "0481bbc4b57971e5d5abf711da8a057b983d0d9114beeaab77aa7317ea0aa48d",
+    "korina/routes/converse.py": "f321eb16411b5748121086ef7080d063a9280f1cfeda6ece7cf98833487f9ab4",
+    "korina/routes/health.py": "11ff2bcd1bf69e55a3bb128b6998d67f4c01e89f92cc742b2390745043b88e4e",
+    "korina/routes/capabilities.py": "e9ca1ce675181c354dc3dee1ff206b6c8c57547c2d824409b38a25d7b3910596",
+    "korina/routes/models.py": "bcdc6ae4208d650a534ce3f0cd57c6943a571b990a90a6ce6d59aa0586014aca",
+    "korina/routes/agent.py": "5426a45ad7468274e29a7022f50a220c2ba2035eed23db354ba8ffdf2de4624a",
+    "korina/adapters/hermes_stub.py": "75ae3a544b66cf567b6f2e92db5b2d7d84895d3044abfbe7b6ee3eb0dff6cf47",
+    "korina/adapters/__init__.py": "6d863301c3970eeed3e0411fc23f753c09826a8d8ff882679cdf8f351f15db1c",
+    "korina/converse/protocol.py": "64fe3ffd38331eddb9f37670e2b9ef2c04fcf5fd2a7d1e9576d7ff366a65c672",
+    "korina/converse/korina_channel.py": "c491c81005cb2ac263409b0facf2133691f1ff7df4e0c585c03499d5c24e2847",
+    "korina/converse/registry.py": "d4e52da13589a67ce8adcc7b5240ea88b917c5476255fed2e8aed75d71fe2fe5",
+    "korina/converse/__init__.py": "51aedead3af870c9f0c3e0ee5ecd569523980de65b84187708aefa188133e074"
+  },
+  "cleanup": {
+    "ports_closed": {
+      "8870": true,
+      "8872": true
+    },
+    "python_worker_shutdown": true
+  },
+  "limits": [
+    "Synthetic content only; Contributor content may train Meta models.",
+    "One local observation; no causal effort comparison, latency, accuracy, or general quality benchmark.",
+    "Generated microphone/native playback is not physical headset, audibility, echo, or human interruption proof.",
+    "Current-session context and optional reports, not durable memory or external tool execution.",
+    "No cache-hit guarantee or cost-saving claim; inspect per-request returned usage.",
+    "Hosted CI, final event rules/artifacts and actual kickoff SHA remain separate."
+  ]
+}

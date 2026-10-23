@@ -55,7 +55,7 @@ A core-only adapter reports `legacy_http_supported: false`. It still supports HT
 
 ## HTTP requests and limits
 
-Agent JSON request bodies are limited to **2 MiB**, counting actual received bytes as well as declared `Content-Length`. Oversized bodies return HTTP 413 before request parsing. Invalid `Content-Length` returns HTTP 400. Schema violations return HTTP 422 with FastAPI's `detail` validation list.
+Agent JSON request bodies are limited to **2 MiB**, counting actual received bytes as well as declared `Content-Length`. Oversized bodies return HTTP 413 before request parsing. Invalid `Content-Length` returns HTTP 400. Nonempty JSON bodies require one `application/json` or `application/*+json` Content-Type, optionally with a charset; missing, ambiguous or other types return HTTP 415. Bodyless reset remains supported. Schema violations return HTTP 422 with a `detail` validation list containing only error type, location and message.
 
 A transcript is an ordered list of at most **64** objects. Each object must contain exactly `role` and `content`, both strings. `role` is one of `user`, `assistant`, `system`, or `tool`; `content` is at most **8192 characters**. Extra per-turn keys are rejected. Unrecognized top-level model fields currently follow Pydantic's default ignore behavior; clients should send the documented fields.
 
@@ -92,7 +92,7 @@ The built-in model settings are separate from adapter registration. `GET /api/ca
 
 An explicit `agent_api_key` takes priority. Otherwise credentials can inherit the response environment key only for the same actual API base, or use the selected profile's own registry default. For Meta at its canonical base, that default is `MODEL_API_KEY`; a generic/custom endpoint does not acquire it merely from a Meta hostname. Explicit response environment-name overrides retain their scope, and a missing environment value yields no Authorization header. Candidate discovery retains these same rules, including the changed-URL direct-key boundary above.
 
-Meta report requests use model-default reasoning and add neither the local response `reasoning` flag nor `reasoning_effort`. This model profile adds no tool execution, durable memory, or browser voice rerouting. The focused demo keeps Whisper STT and Kokoro TTS local, with the ordinary `/api/chat` response using supplied current-session context. Mocked profile tests do not establish live Meta access or prompt-cache hits. See [provider contracts](capabilities.md) and the [hackathon preparation ledger](hackathon.md) for the one-interaction scope and actual kickoff-SHA record.
+Meta report requests omit the local response `reasoning` flag. Blank `agent_reasoning_effort` leaves the model default; an explicit supported value sends `reasoning_effort` from that report's own captured configuration. It does not inherit response effort or change STT behavior. This model profile adds no tool execution, durable memory, or browser voice rerouting. The focused demo keeps Whisper STT and Kokoro TTS local, with the ordinary `/api/chat` response using supplied current-session context. Mocked profile tests do not establish live Meta access or prompt-cache hits. See [provider contracts](capabilities.md) and the [hackathon preparation ledger](hackathon.md) for the one-interaction scope and actual kickoff-SHA record.
 
 For Meta and OpenAI-compatible reports, empty text with `finish_reason: "length"` is an output-budget error. The worker exposes it through `last_error` and an `agent_error` event, preserving its previous report. Increase **State report max tokens** in Korina Agent settings deliberately before retrying; the default remains 512 and there is no automatic increase or retry. An intentional empty completion ending with `stop` remains suppressed without replacing memory, while visible truncated reports retain their existing behavior.
 
@@ -228,16 +228,27 @@ If an admitted send times out, its caller is cancelled, or polling fails, the ch
 
 An adapter may raise `korina.agents.AgentAdmissionRejected` only when it guarantees that no background work was admitted. The channel returns that rejection immediately and permits a later send without resetting adapter memory. The built-in adapter uses it for disabled-agent, busy-worker, and retired-session admissions, so callers can retry after enabling the agent, finishing active work, or clearing a session. Other submission exceptions remain uncertain and retain the explicit recovery requirement.
 
+The following standalone example uses its own process-local registry and built-in
+worker. Configure and enable the built-in agent in that process's runtime settings
+and provide its credentials before running it. It does not connect to an already
+running Korina HTTP service. Application lifespan startup registers the default
+channel automatically; standalone callers must register it explicitly.
+
 ```python
 import asyncio
-from korina.converse import ConverseRequest, get_converse_channel
+from korina.converse import ConverseRequest, ensure_default_registered, get_converse_channel
+from korina.services.agent_service import shutdown_agent_worker
 
 async def main():
-    response = await get_converse_channel().send(ConverseRequest(
-        transcript=[{"role": "user", "text": "Prepare the demo."}],
-        metadata={"session_id": "demo", "turn_count": 1},
-    ))
-    print(response.text, response.error)
+    ensure_default_registered()
+    try:
+        response = await get_converse_channel().send(ConverseRequest(
+            transcript=[{"role": "user", "text": "Prepare the demo."}],
+            metadata={"session_id": "demo", "turn_count": 1},
+        ))
+        print(response.text, response.error)
+    finally:
+        shutdown_agent_worker()
 
 asyncio.run(main())
 ```
