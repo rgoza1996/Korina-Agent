@@ -1,0 +1,83 @@
+{
+  "kind": "github-actions-checkpoint",
+  "recorded_at_utc": "2026-10-23T19:08:39.143Z",
+  "head_revision": "fb2ba3f5a461d2a0d78d8f88df57e6a51354f89a",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "all_nine_passed": true,
+  "checks": [
+    {
+      "id": 120599986962,
+      "name": "pytest (3.10)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986962",
+      "annotations_count": 0
+    },
+    {
+      "id": 120599986905,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986905",
+      "annotations_count": 0
+    },
+    {
+      "id": 120599986767,
+      "name": "pytest (3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986767",
+      "annotations_count": 0
+    },
+    {
+      "id": 120599986750,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986750",
+      "annotations_count": 0
+    },
+    {
+      "id": 120599986742,
+      "name": "speech-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986742",
+      "annotations_count": 0
+    },
+    {
+      "id": 120599986725,
+      "name": "pytest (3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986725",
+      "annotations_count": 0
+    },
+    {
+      "id": 120599986647,
+      "name": "pytest (3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986647",
+      "annotations_count": 0
+    },
+    {
+      "id": 120599986507,
+      "name": "minimum-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986507",
+      "annotations_count": 0
+    },
+    {
+      "id": 120599986228,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/40007772212/job/120599986228",
+      "annotations_count": 0
+    }
+  ],
+  "annotations_count": 0,
+  "scope": "Normal PR workflow against the proposed merge with alpha. The actual local PC recording uses product-identical9448ac9; this later commit fixes only test fixtures and records the earlier failed hosted attempt. Physical device and actual model evidence remain separate."
+}

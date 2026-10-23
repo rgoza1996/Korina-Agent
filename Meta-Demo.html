@@ -1,0 +1,56 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="A pre-event Korina voice prototype: actual Whisper, Meta Model API and Kokoro with generated microphone input."><title>Earlier Meta API demo — Korina</title><link rel="icon" type="image/svg+xml" href="favicon.svg"><link rel="stylesheet" href="./site.css"></head><body>
+<nav class="site-nav"><div class="wrap">
+<a href="index.html" class="site-logo">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+<rect width="32" height="32" rx="7" fill="#0d1117"/>
+<circle cx="16" cy="16" r="10" fill="none" stroke="#58a6ff" stroke-width="2"/>
+<circle cx="16" cy="16" r="5" fill="#bc8cff"/>
+<path d="M10 16 Q13 11 16 16 Q19 21 22 16" fill="none" stroke="#3fb950" stroke-width="1.5" stroke-linecap="round"/>
+</svg>Korina</a>
+<button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" onclick="document.getElementById('navLinks').classList.toggle('open')"> &#9776;</button>
+ <div class="site-nav-links" id="navLinks">
+<a href="index.html">Home</a><a href="Architecture.html">Architecture</a>
+<a href="Converse.html">Converse</a><a href="Agent.html">Agent</a>
+<a href="Agent-Side-Channel.html">Side Channel</a>
+<a href="Providers.html">Providers</a><a href="Testing.html">Testing</a>
+<a href="Hackathon.html">Hackathon</a>
+<a href="Roadmap.html">Roadmap</a>
+<a href="Issues.html">Issues</a>
+<a href="https://github.com/rgoza1996/Korina-Agent" target="_blank" rel="noopener noreferrer">GitHub</a>
+</div>
+<div class="nav-right"><a href="https://github.com/rgoza1996/Korina-Agent/issues" class="nav-btn" target="_blank" rel="noopener noreferrer">Issues</a></div>
+</div></nav><main class="wrap"><a href="index.html" class="back-link">← Back to Home</a>
+<h1>Earlier Meta API demo</h1>
+<p><a href="Demo.html">Watch the latest fully local GPU recording →</a></p>
+<p>This earlier run used the four-core ARM Oracle VPS for CPU Whisper and Kokoro, with Meta Model API for the response.</p>
+<div class="req-note"><strong>Pre-event practice · 23 October 2026 · source <a href="https://github.com/rgoza1996/Korina-Agent/commit/4158cd2e811ea6d8869e5687204f264ea8ac2caf"><code>4158cd2</code></a>.</strong> Generated microphone input, actual model services and recorded browser audio. Physical headset and human interruption checks remain separate.</div>
+<p>Korina is given one fictional fact: the project is called Cedar, and its rehearsal is Friday at ten. A later voice question asks for the project and practice time without repeating that fact. The answer uses the supplied conversation context.</p>
+<h2 id="watch">Watch and hear the interaction</h2>
+<p>This recording includes the spoken replies and the original waiting time. The generated microphone question feeds capture directly; its recognized text appears on screen.</p>
+<video controls playsinline preload="metadata" poster="demo/4158cd2-av/poster.jpg" width="1440" height="1200" style="width:100%;height:auto" aria-label="Screen and actual browser audio from the pre-event Korina voice interaction">
+<source src="demo/4158cd2-av/demo.mp4" type="video/mp4">
+<source src="demo/4158cd2-av/demo.webm" type="video/webm">
+<track kind="captions" src="demo/4158cd2-av/captions.en.vtt" srclang="en" label="English" default>
+<a href="demo/4158cd2-av/demo.mp4">Download the demo with audio</a>.
+</video>
+<p><a href="demo/4158cd2-av/demo.mp4">MP4 with audio</a> · <a href="demo/4158cd2-av/demo.webm">WebM with audio</a> · <a href="demo/4158cd2-av/captions.en.vtt">English captions</a> · <a href="Explainer.html">Ten-minute narrated architecture explainer</a></p>
+<h2 id="listen">The actual spoken answer</h2>
+<blockquote>Your project is called Cedar.<br>Your rehearsal is Friday at ten in the morning.</blockquote>
+<p>One native browser display-capture stream recorded the screen and tab audio together. The player files convert that same audiovisual capture, rendering its recorded audio timestamp gaps as silence so browsers keep the original timing. Earlier speech buffers were not added to the video.</p>
+<h2>What ran</h2>
+<div class="card-grid"><div class="card"><h3>Transcription</h3><p>Local Whisper <code>base.en</code>, CPU/int8. Generated microphone input: “What is my project called and when is our practice?”</p></div>
+<div class="card"><h3>Response</h3><p>Direct Meta Model API, <code>muse-spark-1.3-contributor</code>, minimal reasoning effort and a deliberate 2048-token budget. Agent reports were off.</p></div>
+<div class="card"><h3>Speech</h3><p>Local Kokoro <code>af_heart</code> on CPU. Both answer chunks reached native browser ended events; Stop released capture.</p></div></div>
+<p>The voice request reported <strong>246 input, 88 output, 62 reasoning and 0 cached input tokens</strong>. Reasoning is included in output; cached input is included in input. These are observations from this request, with no promise of future cache hits or savings.</p>
+<details><summary>Verification and limits</summary>
+<p><a href="demo/4158cd2-av/actual-av.webm">Unchanged original browser capture</a> is available for inspection. Its sparse audio timestamps play differently across players; the converted MP4 and WebM above were checked for audible speech and matching captions.</p>
+<p>The instrumented turn took 47.710 seconds from clicking Live to observing completed native playback, including the question, transcription, model response and CPU synthesis. Recording and observation add overhead; this is not a controlled latency comparison. All six readiness checks passed before and after, no page errors occurred, and owned services stopped cleanly.</p>
+<p>The two new generation calls cost an estimated $0.000080900. Task testing through this recording totals 43 calls / estimated $0.005781132 of the authorized $3, retaining all priming and stopped attempts. Costs use returned usage, not an invoice or an account-enforced cap. Contributor content may train Meta models; all demonstration content was fictional.</p>
+<p>Korina supplies current-session history to the API. This does not demonstrate durable memory or tool execution. The project is MIT licensed and existed before the event; this recording and its code are pre-event preparation.</p>
+<p><a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/docs/verification/meta-av-4158cd2.json">Exact source, inputs, usage, media hashes and cleanup evidence</a> · <a href="Verification.html">Earlier observations and failed attempts</a> · <a href="Hackathon.html">Rehearsal and baseline guide</a>.</p>
+</details>
+<details><summary>Earlier recording and separate audio</summary>
+<p>The previous recording at the same source had silent video and separately captured speech buffers. It remains preserved as its own 41-call observation, with different usage and timing. It is superseded here by the new recording with actual tab audio.</p>
+<p><a href="demo/4158cd2/ui-silent.mp4">Earlier silent MP4</a> · <a href="demo/4158cd2/ui-silent.webm">Earlier silent WebM</a> · <a href="demo/4158cd2/voice-answer-replay.wav">Earlier audio-only replay</a> · <a href="demo/4158cd2/schedule.json">Earlier buffer schedule</a> · <a href="https://github.com/rgoza1996/Korina-Agent/blob/codex/hackathon-refactor/docs/verification/meta-recording-4158cd2.json">Earlier evidence</a></p>
+</details>
+</main><footer><div class="wrap"><p>Korina Agent &amp; Korina Converse — <a href="https://github.com/rgoza1996/Korina-Agent">GitHub</a> · <a href="https://github.com/rgoza1996/Korina-Agent/issues/23">Hackathon progress</a></p><p>Documentation preview updated 23 October 2026. Published from <code>gh-pages</code> on <a href="https://rgoza1996.github.io/Korina-Agent/">GitHub Pages</a>.</p></div></footer></body></html>

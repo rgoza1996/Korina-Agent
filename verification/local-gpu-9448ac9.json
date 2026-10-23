@@ -1,0 +1,305 @@
+{
+  "kind": "pre-event-fully-local-pc-gpu-voice-recording",
+  "observed_on": "2026-10-23",
+  "source_commit": "9448ac92d6524eec418361b10cfb615dcae77d70",
+  "pre_event_preparation": true,
+  "complete": true,
+  "machine": {
+    "role": "owner PC (roggoz)",
+    "cpu": "AMD Ryzen 7 5800X, 8 cores / 16 threads",
+    "gpu": "AMD Radeon AI PRO R9700, 32 GiB, gfx1201",
+    "comfyui": "No queued/running work at admission or during the monitored run; existing services/environment preserved."
+  },
+  "source_verification": {
+    "tracked_git_blobs_matched": 375,
+    "installed_frontend_assets_matched": 30,
+    "product_source_unchanged": "The recording uses immutable 9448ac9; fb2ba3f only changes tests and preserves the earlier hosted failure record."
+  },
+  "models": {
+    "transcription": {
+      "model": "Cactus-Compute/whistle",
+      "device": "cpu",
+      "package": "cactus-needle 3.2.8",
+      "revision": "741118687e1f008f06d1351a402a731274789790",
+      "weights_sha256": "b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb",
+      "engine_version": "Needle 3 engine 3.3.3",
+      "engine_sha256": "87476ff70e80334d7c766dbf236b72f42876072df22014c6ec8a9b087b82b260",
+      "language": "en"
+    },
+    "response": {
+      "model": "Qwen3.5-2B-Q8_0.gguf",
+      "sha256": "30d5d309e77d48b44325fe8eee08f4201f99687752f9a4a77fa66498457b45f4",
+      "device": "AMD GPU via llama.cpp Vulkan",
+      "gpu_layers": 25,
+      "total_layers": 25,
+      "actual_model_gpu_buffer_mib": 1908.35,
+      "context_tokens": 8192,
+      "max_output_tokens": 256,
+      "reasoning": "off"
+    },
+    "speech": {
+      "model": "hexgrad/Kokoro-82M (kokoro-v1_0.pth)",
+      "voice": "af_heart",
+      "device": "AMD GPU via PyTorch ROCm",
+      "torch": "2.9.1+rocm6.3",
+      "runtime": "kokoro 0.9.4",
+      "weights_sha256": "496dba118d1a58f5f3db2efc88dbdc216e0483fc89fe6e47ee1f2c53f18ad1e4",
+      "voice_sha256": "0ab5709b8ffab19bfd849cd11d98f75b60af7733253ad0d67b12382a102cb4ff",
+      "allocated_bytes_after_warmup": 675575808,
+      "runtime_notes": "An isolated Python3.13 environment reuses the existing ROCm Torch without modifying ComfyUI. Kokoro0.9.4 was installed despite its <3.13 package metadata and verified by actual inference. MIOpen LSTM acceleration was disabled because its installed JIT lacks a rocrand header; native ATen GPU LSTM and GPU weights were used."
+    }
+  },
+  "input": {
+    "seed": "For this demonstration, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence.",
+    "question": "What is my project called and when is our practice?",
+    "microphone": "Kokoro-generated natural question fed to native getUserMedia through an AudioContext/MediaStreamDestination. Generated input is not connected to tab speakers; the recognized text is visible. The input WAV is downloadable separately.",
+    "microphone_wave_sha256": "7b004725c8c1c57f05a90c40c31d7ef27bd95944a7166eb16fe3631dae1a9c13",
+    "physical_microphone": false,
+    "agent": "off",
+    "acknowledgements": "off",
+    "models_warmed_before_capture": true
+  },
+  "actual_outputs": {
+    "seed_reply": "I acknowledge your project name and rehearsal details.",
+    "final_transcript": "What is my project called, and when is our practice?",
+    "voice_reply": "Your project is called Cedar, and our practice is on Friday at ten in the morning."
+  },
+  "observed_timing": {
+    "live_to_native_playback_ended_seconds": 12.115,
+    "transcription_seconds": 0.2641927449985815,
+    "transcribed_audio_seconds": 5.22,
+    "response_browser_round_trip_seconds": 0.31,
+    "voice_pcm_seconds": 5.175,
+    "scope": "One warmed, instrumented observation including question capture, endpoint silence and complete speech playback. Different hardware, models and generated input from the older Oracle/Meta recording; not a controlled speed comparison."
+  },
+  "usage": {
+    "seed": {
+      "prompt_tokens": 222,
+      "completion_tokens": 10,
+      "reasoning_tokens": null,
+      "cached_tokens": 0
+    },
+    "voice": {
+      "prompt_tokens": 253,
+      "completion_tokens": 19,
+      "reasoning_tokens": null,
+      "cached_tokens": 181
+    },
+    "visible_panel_matched_voice_request": true,
+    "local_qwen_requests_in_recorded_interaction": 2,
+    "accepted_attempt_qwen_prewarm_requests": 1,
+    "earlier_failed_attempt_qwen_prewarm_requests": 1,
+    "new_cloud_generation_requests": 0,
+    "new_cloud_inference_spend_usd": "0"
+  },
+  "verification": {
+    "browser_checks": {
+      "selected_settings": true,
+      "actual_av_started_before_seed": true,
+      "not_interrupted_before_seed": true,
+      "seed_http": true,
+      "not_interrupted_before_live": true,
+      "voice_http": true,
+      "exactly_two_chats": true,
+      "one_real_full_transcription": true,
+      "context_path": true,
+      "remembered_fact": true,
+      "two_actual_speech_responses": true,
+      "no_agent_submission": true,
+      "request_settings": true,
+      "usage_panel_exact": true,
+      "native_pcm_complete": true,
+      "capture_stopped": true,
+      "no_external_browser_requests": true,
+      "no_page_errors": true,
+      "not_interrupted": true,
+      "actual_av_complete": true
+    },
+    "readiness_checks_before": 6,
+    "readiness_checks_after": 6,
+    "all_readiness_checks_passed": true,
+    "page_errors": [],
+    "model_service_network": "All traced connect calls by the Korina backend, Qwen server and Kokoro service were loopback or local Unix sockets. No model requests or speech were sent to a cloud inference API.",
+    "browser_page_external_requests": 0,
+    "network_scope": "This verifies local model/speech processing and loopback page requests, not an air-gapped operating system or suppression of every native browser background route probe.",
+    "rolling_partial_requests_observed": 3,
+    "full_transcription_requests": 1,
+    "native_audio_and_caption_validation": {
+      "formats": [
+        {
+          "file": "demo.mp4",
+          "duration": 19.44,
+          "width": 1440,
+          "height": 1200,
+          "muted": false,
+          "volume": 1,
+          "ended": true,
+          "observations": [
+            {
+              "start": 0.869,
+              "end": 4.644,
+              "text": "I acknowledge your project name and rehearsal details.",
+              "maximum_rms": 0.43364121342348644,
+              "active_caption": true
+            },
+            {
+              "start": 11.638,
+              "end": 16.813,
+              "text": "Your project is called Cedar, and our practice is on Friday at ten in the morning.",
+              "maximum_rms": 0.15711642430319356,
+              "active_caption": true
+            }
+          ]
+        },
+        {
+          "file": "demo.webm",
+          "duration": 19.448,
+          "width": 1440,
+          "height": 1200,
+          "muted": false,
+          "volume": 1,
+          "ended": true,
+          "observations": [
+            {
+              "start": 0.869,
+              "end": 4.644,
+              "text": "I acknowledge your project name and rehearsal details.",
+              "maximum_rms": 0.437482265276947,
+              "active_caption": true
+            },
+            {
+              "start": 11.638,
+              "end": 16.813,
+              "text": "Your project is called Cedar, and our practice is on Friday at ten in the morning.",
+              "maximum_rms": 0.1555613731121741,
+              "active_caption": true
+            }
+          ]
+        }
+      ],
+      "errors": [],
+      "browser_closed": true
+    },
+    "stop_and_cleanup": {
+      "all_owned_processes_exited": true,
+      "all_owned_ports_closed": true
+    }
+  },
+  "media_conversion": {
+    "source_revision": "9448ac92d6524eec418361b10cfb615dcae77d70",
+    "source_sha256": "269a7b4e3996344947b37677cae45d67e08c8cf8c9857dcc60ab55ab98be67cb",
+    "source_bytes": 1105152,
+    "filter": "aresample=async=1:first_pts=0:min_hard_comp=0.001",
+    "method": "Render the same captured AV audio timestamps as continuous encoded samples, filling original timestamp gaps with silence; preserve original video presentation timestamps. No earlier speech buffers or synthetic speech/alignment used.",
+    "source_decoded_samples": 933120,
+    "rendered_samples_before_lossy_encode": 933120,
+    "inserted_silence_samples": 0,
+    "inserted_silence_seconds_including_initial_pts": 0.0,
+    "filter_reference_bit_exact": true,
+    "derivatives": [
+      {
+        "file": "demo.mp4",
+        "bytes": 880347,
+        "sha256": "60be6bf1410ebd501c1df3ba4a684f2098d6279b7c36fb04c9f2ef055810c2df",
+        "duration_seconds": 19.44,
+        "streams": [
+          {
+            "kind": "video",
+            "codec": "h264",
+            "start_seconds": 0.056
+          },
+          {
+            "kind": "audio",
+            "codec": "aac",
+            "start_seconds": 0.0
+          }
+        ],
+        "all_video_pts_preserved": true,
+        "video_frame_count": 157,
+        "remaining_audio_frame_gaps_over_1ms": 0,
+        "decoded_samples": 933888,
+        "reference_audio_correlation": 0.9996191263198853,
+        "decoded_rms": 0.061731692403554916
+      },
+      {
+        "file": "demo.webm",
+        "bytes": 1096503,
+        "sha256": "f8784a172b4639cd19147317c80a5a182183f7f2f7243cf7f2ccf5fb3521865c",
+        "duration_seconds": 19.448,
+        "streams": [
+          {
+            "kind": "video",
+            "codec": "vp8",
+            "start_seconds": 0.056
+          },
+          {
+            "kind": "audio",
+            "codec": "opus",
+            "start_seconds": -0.007
+          }
+        ],
+        "all_video_pts_preserved": true,
+        "video_frame_count": 157,
+        "remaining_audio_frame_gaps_over_1ms": 0,
+        "decoded_samples": 933120,
+        "reference_audio_correlation": 0.9990873336791992,
+        "decoded_rms": 0.062472473829984665,
+        "all_vp8_packet_payload_hashes_preserved": true
+      }
+    ]
+  },
+  "media": {
+    "page": "https://rgoza1996.github.io/Korina-Agent/Demo.html",
+    "files": {
+      "actual-av.webm": {
+        "bytes": 1105152,
+        "sha256": "269a7b4e3996344947b37677cae45d67e08c8cf8c9857dcc60ab55ab98be67cb",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/9448ac9-local-gpu/actual-av.webm"
+      },
+      "captions.en.vtt": {
+        "bytes": 207,
+        "sha256": "b7b01e9362ee4a0b2b64719652b9f1f1b78ba4a1f85b200a44f4b8c1f28ab971",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/9448ac9-local-gpu/captions.en.vtt"
+      },
+      "demo.mp4": {
+        "bytes": 880347,
+        "sha256": "60be6bf1410ebd501c1df3ba4a684f2098d6279b7c36fb04c9f2ef055810c2df",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/9448ac9-local-gpu/demo.mp4"
+      },
+      "demo.webm": {
+        "bytes": 1096503,
+        "sha256": "f8784a172b4639cd19147317c80a5a182183f7f2f7243cf7f2ccf5fb3521865c",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/9448ac9-local-gpu/demo.webm"
+      },
+      "poster.jpg": {
+        "bytes": 78890,
+        "sha256": "b35ad442417450f55b9464051a2a39fe5c8415305b8006848df7886fd94ccdaf",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/9448ac9-local-gpu/poster.jpg"
+      },
+      "question.wav": {
+        "bytes": 158444,
+        "sha256": "674078c3bfdad7fdd57674019f25c7136c9426cbab6f4e9fb8ab5bb2da8c8126",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/9448ac9-local-gpu/question.wav"
+      }
+    }
+  },
+  "earlier_attempts": [
+    {
+      "attempt": 1,
+      "result": "Stopped before dialogue because an offload-log assertion could not see the default-verbosity diagnostics; resources cleaned."
+    },
+    {
+      "attempt": 2,
+      "result": "Stopped before dialogue because the browser offline-DNS rule also blocked 127.0.0.1. A separate browser probe reproduced this and verified the loopback exception; resources cleaned."
+    },
+    {
+      "preflight": "The older espeak input was mistranscribed by Whistle; the accepted recording uses a newly generated natural Kokoro question with the same words. No transcript or model answer was substituted."
+    }
+  ],
+  "limits": [
+    "Generated microphone/digital output; no physical headset, echo or human-interruption proof.",
+    "Current-session supplied history, not durable memory or tools.",
+    "Whistle uses its CPU engine; only Qwen and Kokoro are GPU accelerated.",
+    "The earlier Meta prototype remains separate hackathon evidence; this local recording is not a Meta API call or event-built feature."
+  ]
+}
