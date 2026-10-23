@@ -65,7 +65,7 @@ async function runRebuilds() {
     nextRebuild = null;
     const { context } = job;
     if (!await job.saved || !current(context)) continue;
-    state.ackFiles = []; state.ackBuffers = []; state.ackBuffersByTag = {};
+    state.ackFiles = []; state.ackBuffersByTag = {};
     if ($('ackEnabled').value !== 'on') {
       ackStatus(`Voice ${context.voice} saved. Acknowledgements are disabled.`);
       continue;
@@ -107,7 +107,6 @@ function selectVoice(voice) {
   if (cachedVoice === voice) return;
   cachedVoice = voice;
   state.ackFiles = [];
-  state.ackBuffers = [];
   state.ackBuffersByTag = {};
 }
 
@@ -190,7 +189,6 @@ export async function preloadAckBuffers(tag = 'global') {
     }
     if (!current(context, true)) return [];
     state.ackBuffersByTag[tag] = decoded;
-    if (tag === 'global') state.ackBuffers = decoded;
     // Missing/generated-later audio must not turn animation-frame idle checks
     // into a catalog or WAV request on every frame.
     if (!decoded.length) retryAfter.set(tag, { context, at: performance.now() + EMPTY_RETRY_MS });

@@ -75,7 +75,6 @@ export const state = {
 
   // --- ack playback ---
   ackFiles: [],
-  ackBuffers: [],
   ackBuffersByTag: {},
   ackSource: null,
   ackPlayingUntil: 0,

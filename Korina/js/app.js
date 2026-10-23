@@ -259,7 +259,6 @@ function stopPlayback() {
   if (state.audioCtx) {
     try { state.audioCtx.close(); } catch {}
     state.audioCtx = null;
-    state.ackBuffers = [];
     state.ackBuffersByTag = {};
   }
   $('audio')?.pause();

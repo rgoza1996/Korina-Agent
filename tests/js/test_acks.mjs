@@ -45,7 +45,7 @@ beforeEach(() => {
       return source;
     } };
   Object.assign(state, { live: true, liveSession: 1, agentSession: 1, audioCtx: context,
-    gain: {}, activeSources: [], controller: null, ackFiles: [], ackBuffers: [], ackBuffersByTag: {},
+    gain: {}, activeSources: [], controller: null, ackFiles: [], ackBuffersByTag: {},
     ackSource: null, ackPlayingUntil: 0, suppressAckUntil: 0,
     pendingImportantAgentMessage: '', awaitingAgentPermission: null,
     partialRecorder: null, partialTimer: null, partialQueue: [], partialController: null,
@@ -187,7 +187,7 @@ test('a decoded overlong acknowledgement is rejected without scheduling playback
     await playing;
   } finally { console.warn = warn; }
   assert.equal(sources.length, 0);
-  assert.deepEqual(state.ackBuffers, []);
+  assert.deepEqual(state.ackBuffersByTag.global, []);
 });
 
 test('acknowledgement cancellation releases a pending native response reader', { timeout: 1000 }, async () => {
@@ -226,10 +226,10 @@ for (const [name, response] of [
 
 test('voice save failure preserves cached clips and cannot clear or rebuild on the backend', async () => {
   const buffers = [{ buffer: 'previous audio' }];
-  state.ackBuffers = buffers;
+  state.ackBuffersByTag.global = buffers;
   globalThis.fetch = async () => assert.fail('A failed settings save must precede any rebuild request');
   await changeAckVoice(async () => { throw new Error('Disk unavailable'); });
-  assert.equal(state.ackBuffers, buffers);
+  assert.equal(state.ackBuffersByTag.global, buffers);
   assert.match(element('ackStatus').textContent, /Voice settings save failed: Disk unavailable/);
 });
 

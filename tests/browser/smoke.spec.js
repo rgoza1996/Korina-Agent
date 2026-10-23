@@ -452,12 +452,16 @@ test('a failed voice save preserves cached acknowledgements without requesting a
   const scenario = await mockProviders(page, request);
   scenario.config.ack_enabled = 'on';
   await page.goto('/'); await waitForBoot(page);
-  await page.evaluate(() => { window.state.ackBuffers = [{ marker: 'previous cached audio' }]; });
+  await page.evaluate(() => {
+    window.previousAckBuffers = [{ marker: 'previous cached audio' }];
+    window.state.ackBuffersByTag.global = window.previousAckBuffers;
+  });
   scenario.failSave = true;
   await page.locator('#voice').selectOption('af_bella');
   await expect(page.locator('#ackStatus')).toContainText('Voice settings save failed: Disk unavailable');
   expect(scenario.rebuilds).toBe(0);
-  expect(await page.evaluate(() => window.state.ackBuffers[0].marker)).toBe('previous cached audio');
+  expect(await page.evaluate(() => window.state.ackBuffersByTag.global === window.previousAckBuffers)).toBe(true);
+  expect(await page.evaluate(() => window.state.ackBuffersByTag.global[0].marker)).toBe('previous cached audio');
 });
 
 test('a rebuild failure shows its structured diagnostic without changing transcription status', async ({ page, request }) => {
