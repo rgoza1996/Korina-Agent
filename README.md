@@ -70,7 +70,7 @@ python -m pip install dist/*.whl
 korina
 ```
 
-Wheels include the frontend, example configuration, and acknowledgement manifest. Generated state lives under `${XDG_DATA_HOME:-~/.local/share}/korina`, so the installed package can be read-only. Editable/source installs keep generated state alongside the tracked `Korina/` assets. `KORINA_APP_DIR` overrides both with a complete runtime tree.
+Wheels include the frontend, example configuration, and acknowledgement manifest. Generated state lives under `${XDG_DATA_HOME:-~/.local/share}/korina`, so the installed package can be read-only. Editable/source installs keep generated state alongside the tracked `Korina/` assets. `KORINA_APP_DIR` overrides both with a complete runtime tree. New runtime configuration files use owner-only (`0600`) permissions; later saves retain the existing permission bits.
 
 The base wheel serves the UI and API; Whisper and Kokoro remain optional dependencies. For voice, install `ffmpeg`, `espeak-ng`, and the appropriate Torch distribution as described above, then install the wheel with speech extras. Use the actual wheel filename if its version differs:
 

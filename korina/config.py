@@ -6,6 +6,8 @@ runs on every load_config() call so old config.json files still work.
 from __future__ import annotations
 
 import json
+import stat
+import tempfile
 import threading
 from functools import wraps
 from pathlib import Path
@@ -175,10 +177,42 @@ def save_config(config: dict) -> dict:
     for key, value in (config or {}).items():
         if key in CONFIG_KEYS:
             merged[key] = _normalize_config_value(key, value)
-    tmp = CONFIG_PATH.with_suffix('.tmp.json')
-    tmp.write_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
-    tmp.replace(CONFIG_PATH)
+    _write_config_text(json.dumps(merged, indent=2, sort_keys=True) + '\n')
     return merged
+
+
+def _write_config_text(content: str) -> None:
+    """Replace this config path atomically, retaining its permission bits.
+
+    New files and unfinished writes stay private. Unlike the systemd unit
+    writer, replacing a config symlink retains the legacy alias-replacement
+    behavior rather than modifying its target.
+    """
+    mode = 0o600
+    try:
+        mode = stat.S_IMODE(CONFIG_PATH.stat().st_mode)
+    except FileNotFoundError:
+        pass
+    temporary = tempfile.NamedTemporaryFile(
+        mode='w', encoding='utf-8', dir=CONFIG_PATH.parent,
+        prefix='.korina-config-', suffix='.tmp', delete=False,
+    )
+    path = Path(temporary.name)
+    try:
+        temporary.write(content)
+        temporary.close()
+        path.chmod(mode)
+        path.replace(CONFIG_PATH)
+    finally:
+        # Cleanup failures must not hide a write, close, chmod, or replace error.
+        try:
+            temporary.close()
+        except OSError:
+            pass
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 class ProviderSettingsBusy(RuntimeError):
