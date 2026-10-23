@@ -82,9 +82,13 @@ test('foreign simple GETs cannot forward candidate credentials; a trusted origin
       stt_llm_base_url: trusted.base + '/candidate/v1', stt_llm_api_key_env: 'FIXTURE_DISCOVERY_KEY' });
     expect(await page.evaluate(async url => {
       const response = await fetch(url, { headers: { 'X-Korina-Intent': 'model-discovery' } });
-      return { status: response.status, models: (await response.json()).llm_models };
-    }, `${server.base}/api/models?${query}`)).toEqual({ status: 200, models: ['fixture-model'] });
-    expect(trusted.calls).toEqual([{ path: '/candidate/v1/models', credential: true }, { path: '/candidate/v1/models', credential: true }]);
+      const result = await response.json();
+      return { status: response.status, models: result.llm_models, sttModels: result.stt_llm_models,
+        responseError: result.llm_error, sttError: result.stt_llm_error };
+    }, `${server.base}/api/models?${query}`)).toEqual({
+      status: 200, models: ['fixture-model'], sttModels: ['fixture-model'], responseError: null, sttError: null,
+    });
+    expect(trusted.calls).toEqual([{ path: '/candidate/v1/models', credential: true }]);
   } finally { await server.close(); await trusted.close(); await foreign.close(); }
 });
 
@@ -105,7 +109,7 @@ test('the actual same-origin picker sends intent and retains credentialed respon
     await expect(page.locator('#lmModel option[value="fixture-model"]')).toHaveCount(1);
     await expect(page.locator('#sttLlmModel option[value="fixture-model"]')).toHaveCount(1);
     await expect(page.locator('#modelOptionsStatus')).not.toContainText('failed');
-    expect(provider.calls).toEqual([{ path: '/candidate/v1/models', credential: true }, { path: '/candidate/v1/models', credential: true }]);
+    expect(provider.calls).toEqual([{ path: '/candidate/v1/models', credential: true }]);
     const requests = await (await request.get(`${server.base}/test-discovery-requests`)).json();
     expect(requests).toHaveLength(1);
     expect(requests[0].intent).toBe('model-discovery');
