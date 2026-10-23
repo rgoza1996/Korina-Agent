@@ -1,0 +1,229 @@
+{
+  "kind": "local-archived-checkpoint",
+  "verified_on": "2026-10-23",
+  "commit": "06026b11e40d6260c559d314e2a33ae80a9da66a",
+  "pre_event_preparation": true,
+  "platform": "Linux-7.0.0-1013-oracle-aarch64-with-glibc2.39",
+  "checks": {
+    "py312": {
+      "passed": true,
+      "wall_seconds": 363.615,
+      "tests": 1342,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "passed_tests": 1342,
+      "coverage_percent": 95
+    },
+    "py310": {
+      "passed": true,
+      "wall_seconds": 281.365,
+      "tests": 1342,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed_tests": 1341
+    },
+    "py311": {
+      "passed": true,
+      "wall_seconds": 265.772,
+      "tests": 1342,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed_tests": 1341
+    },
+    "py313": {
+      "passed": true,
+      "wall_seconds": 272.852,
+      "tests": 1342,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed_tests": 1341
+    },
+    "pyfloor": {
+      "passed": true,
+      "wall_seconds": 330.725,
+      "tests": 1342,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1,
+      "passed_tests": 1341
+    },
+    "node": {
+      "passed": true,
+      "wall_seconds": 18.31,
+      "passed_tests": 444
+    },
+    "lint": {
+      "passed": true,
+      "wall_seconds": 48.53,
+      "mypy_modules": 67
+    },
+    "build": {
+      "passed": true,
+      "wall_seconds": 34.165,
+      "matching_installed_assets": 30
+    },
+    "browser": {
+      "passed": true,
+      "wall_seconds": 192.336,
+      "passed_tests": 86
+    }
+  },
+  "runtimes": {
+    "py312": {
+      "python": "3.12.3",
+      "packages": {
+        "fastapi": "0.159.1",
+        "starlette": "1.9.0",
+        "uvicorn": "0.54.0",
+        "pydantic": "2.14.1",
+        "python-multipart": "0.0.32",
+        "numpy": "2.5.4",
+        "soundfile": "0.14.0",
+        "anyio": "4.15.1",
+        "httpx": "0.28.1",
+        "pytest": "9.1.1",
+        "pytest-cov": "7.1.0",
+        "sniffio": "1.3.1",
+        "faster-whisper": "1.2.1",
+        "av": "18.1.0"
+      }
+    },
+    "py310": {
+      "python": "3.10.20",
+      "packages": {
+        "fastapi": "0.159.1",
+        "starlette": "1.7.0",
+        "uvicorn": "0.54.0",
+        "pydantic": "2.14.1",
+        "python-multipart": "0.0.32",
+        "numpy": "2.2.6",
+        "soundfile": "0.14.0",
+        "anyio": "4.15.1",
+        "httpx": "0.28.1",
+        "pytest": "9.1.1",
+        "pytest-cov": "7.1.0",
+        "sniffio": "1.3.1",
+        "faster-whisper": null,
+        "av": null
+      }
+    },
+    "py311": {
+      "python": "3.11.15",
+      "packages": {
+        "fastapi": "0.159.1",
+        "starlette": "1.9.0",
+        "uvicorn": "0.54.0",
+        "pydantic": "2.14.1",
+        "python-multipart": "0.0.32",
+        "numpy": "2.4.6",
+        "soundfile": "0.14.0",
+        "anyio": "4.15.1",
+        "httpx": "0.28.1",
+        "pytest": "9.1.1",
+        "pytest-cov": "7.1.0",
+        "sniffio": "1.3.1",
+        "faster-whisper": null,
+        "av": null
+      }
+    },
+    "py313": {
+      "python": "3.13.14",
+      "packages": {
+        "fastapi": "0.159.1",
+        "starlette": "1.9.0",
+        "uvicorn": "0.54.0",
+        "pydantic": "2.14.1",
+        "python-multipart": "0.0.32",
+        "numpy": "2.5.4",
+        "soundfile": "0.14.0",
+        "anyio": "4.15.1",
+        "httpx": "0.28.1",
+        "pytest": "9.1.1",
+        "pytest-cov": "7.1.0",
+        "sniffio": "1.3.1",
+        "faster-whisper": null,
+        "av": null
+      }
+    },
+    "pyfloor": {
+      "python": "3.10.20",
+      "packages": {
+        "fastapi": "0.118.0",
+        "starlette": "0.42.0",
+        "uvicorn": "0.30.0",
+        "pydantic": "2.8.0",
+        "python-multipart": "0.0.18",
+        "numpy": "1.26.0",
+        "soundfile": "0.12.0",
+        "anyio": "4.4.0",
+        "httpx": "0.27.0",
+        "pytest": "8.0.0",
+        "pytest-cov": "5.0.0",
+        "sniffio": "1.3.1",
+        "faster-whisper": null,
+        "av": null
+      }
+    }
+  },
+  "node": "v22.23.4",
+  "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+  "playwright": "1.64.1",
+  "chromium": "Google Chrome for Testing 156.0.8078.4",
+  "asset_sha256": {
+    "index.html": "89642d469527f6f55c70d27dd0d3f400574f9b7ae71b6bc6e6bbc3c911b2c77a",
+    "styles.css": "57aea45b88a51da414f9d3caba349c8330afa9be6970eb86e37c35d1b687921e",
+    "config/config.example.json": "9480c17978a26289e5dbc182e7dc4c78419e72111eb84db9a98208e19ef3bb44",
+    "Ack/ack_phrases.json": "1f5c97191e3813a8489a2e7fd60c6b6baab9697727c23abf5d5ed4893d14cf62",
+    "js/acks.js": "1722699c7b888c23ab15c4a1bc40101707566c08c652625c8442e6538369c836",
+    "js/agent-ui.js": "9fb4ebdccd976e609f33df0be54ce4725280d4862850583b4394f87cf1b099dc",
+    "js/api-errors.js": "eb339be52d760f324359630a58b82657dbf5e79ecba1dee77188460ea474cb84",
+    "js/api.js": "43058201e2b2bb2b654da9acddfd542aad826b30fef6a42cbfacbe37c7d29474",
+    "js/app.js": "4470fceee02be5bfcaddcf7c25faac1291bebeddbbda5547b80d7e12d0cefd7e",
+    "js/audio-probes.js": "0cd070b79f66c318a41eeae8829e3e2f97290ae57a98caa75356b1a823742c53",
+    "js/barge-in.js": "46c1d2f86f300faabc7e9acbfd5dc49a305601986fc31ba20ba02def099c668d",
+    "js/bounded-recorder.js": "500f6a5e99e3adc8814416e919cfd92901d63739b728489d905be6423b6b43f8",
+    "js/capability-filter.js": "3de4926d815eeadf2927414f8623fd221cc9fd5414ce1d289d705d5bdb9fad4c",
+    "js/channel-ui.js": "36604bd807e74db7772b42ce6bc05662ce3955c1e2a47d9b7f52f2498e0296ab",
+    "js/dom.js": "176cad295ab568694bf78f2586dcab62962de537352e85c699947038bc4ae07b",
+    "js/endpoints.js": "21087b03735dbc9f0513a345297ad01b0799e4dabc209b982f0b5391be6ba279",
+    "js/history.js": "a53d003edb41a9af29a2168d7b450ae5e56111067663f8b093d8fa9ec125d8af",
+    "js/labels.js": "79bd2301fece37c6138e91282c5a47d567a0c0e52d4209192c7ff531e85584b2",
+    "js/live.js": "0aad160f6a068e4394eb15efef2aeb14636e6a87e7f00429c4fc9388ba963820",
+    "js/local-models.js": "31e51301b70882856554789848da197e8256e827eb58abfbb94c51b27276c839",
+    "js/model-catalog.js": "b6817cb48c4d7ba61cb212eba5f2a73a204cf4633ff1bc7e4dbcd6392afba0b3",
+    "js/partial-queue.js": "ec3d87d02da98ce0395181e010f8834de59dff2c8f08ce922494e3539b89f09f",
+    "js/providers-ui.js": "0cedde13c802bfea57c2b244f21c02ca46ebda6188e61ccf4991350880a8dadf",
+    "js/recorder.js": "e66f9addd5cbebd22e4f4911ce78ed0816d6337569d9b1895c9fd6fbaca9e216",
+    "js/response-body.js": "9d52e665cac863a411610a123db42220e8d5994ef584dcd8189ed39befece520",
+    "js/settings-ui.js": "db7c3c25aa884eaf335b87f46608b3cb92f6262d0c447be8c6a64d4801c819ca",
+    "js/speech.js": "3a61fa632e6290b0ba6b7ee49b650a3fb4ea02b8e6259998086deb7d5c6f89ca",
+    "js/sse.js": "b92da376a88fe82be1515907213bc8470ae03740476b157978c552a6a1e7e685",
+    "js/state.js": "71970a1561ded085c07faa443e9e74833b4f4d712f8a473f9ab87c87dde8ed07",
+    "js/vad.js": "8809682c3a16a8c0b0a5a8936d649e999ebee587507df96eed961fe38057bfa1"
+  },
+  "scope": [
+    "Exact Git archive; separate runtime state and JUnit report per Python tier.",
+    "Python suites completed before the managed Chromium server started.",
+    "Optional actual Whisper decoder exercised on 3.12; one intentional skip in other tiers.",
+    "Browser/provider model responses are fixtures; no authenticated Meta inference or cache hit.",
+    "Installed wheel checked outside the checkout with writable state outside the package.",
+    "Wall times are local test execution observations, not product latency benchmarks.",
+    "Authenticated usage rendering at this source is separate evidence linked below; automated model replies remain fixtures."
+  ],
+  "not_verified": [
+    "Authenticated Meta model output and useful presentation-model quality.",
+    "Meta prompt-cache hits or savings.",
+    "Physical microphone, speakers, headset, or human interruption timing.",
+    "GPU execution and successful hosted CI.",
+    "Final event rules, submission, or merge."
+  ],
+  "separate_actual_model_evidence": {
+    "same_source_response_usage": "meta-usage-06026b1.json",
+    "earlier_voice": "meta-bc7c8c5.json",
+    "earlier_prefix": "meta-637e43c.json"
+  }
+}

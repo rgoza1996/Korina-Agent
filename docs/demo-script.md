@@ -2,6 +2,8 @@
 
 This is a physical rehearsal template, not an official video-length requirement or completed submission. The [automated synthetic Meta voice run](verification.md#authenticated-meta-effort-rehearsal-at-bc7c8c5) passed with a fake microphone; it does not replace the presentation-headset check. Adjust the pacing to actual inference time; record delays and failures honestly.
 
+The **Last response usage** panel can show the completed request’s model, budget, reasoning and provider-reported cache count. Explain a missing count as unavailable and zero as zero; neither promises future cache hits or latency savings. Counts stay outside the spoken answer.
+
 Before practicing, record the source SHA with `git rev-parse HEAD`. Korina is an existing MIT-licensed project; completed refactoring and integration are pre-event preparation. At kickoff, record the actual event-start SHA separately and track later features, commits, dates, and third-party attribution in the [event ledger](hackathon.md). A practice SHA does not establish the kickoff baseline.
 
 Use the [setup guide](hackathon.md) to prepare authenticated model access, a deliberate response token budget (2048 was measured for the Contributor rehearsal), and warmed local Whisper/Kokoro services. Leave the optional agent off for this focused interaction.

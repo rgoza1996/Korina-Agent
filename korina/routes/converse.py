@@ -11,7 +11,7 @@ Endpoints:
     POST /api/converse/channel/{name} -> {"channel": "<name>", "ok": true}
 
 Switching the active channel is process-global. Tests must call
-``reset_for_testing()`` + ``reset_default_registered()`` to restore state.
+``reset_for_testing()`` to restore registry state.
 """
 from __future__ import annotations
 
