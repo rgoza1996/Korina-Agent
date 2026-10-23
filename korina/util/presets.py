@@ -13,7 +13,17 @@ No state, no side effects -- safe to import anywhere.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, get_args
+
+
+MetaReasoningEffort = Literal['', 'minimal', 'low', 'medium', 'high', 'xhigh']
+_META_REASONING_EFFORTS = frozenset(get_args(MetaReasoningEffort))
+
+
+def normalize_meta_reasoning_effort(value: object) -> str:
+    """Old or invalid settings safely leave the provider parameter omitted."""
+    effort = value.strip().lower() if isinstance(value, str) else ''
+    return effort if effort in _META_REASONING_EFFORTS else ''
 
 
 # Registry: {provider_id: capability_dict}.

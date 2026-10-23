@@ -8,6 +8,7 @@ from korina.config import (
     config_llm_api_env,
     config_llm_max_tokens,
     config_llm_reasoning,
+    config_llm_reasoning_effort,
     load_config,
 )
 
@@ -65,7 +66,11 @@ def response_llm_chat(req: ChatRequest, *, is_current: Callable[[], bool] | None
     }
     # Meta's Chat Completions API reasons by default. Its documented control
     # is reasoning_effort; the local/generic on/off extension is not sent.
-    if str(config.get('llm_provider') or '').strip().lower() != 'meta':
+    if str(config.get('llm_provider') or '').strip().lower() == 'meta':
+        effort = req.reasoning_effort if 'reasoning_effort' in req.model_fields_set else config_llm_reasoning_effort(config)
+        if effort:
+            payload['reasoning_effort'] = effort
+    else:
         payload['reasoning'] = str(req.reasoning).strip().lower() if req.reasoning else config_llm_reasoning(config)
     headers = {'Content-Type': 'application/json'} | auth_headers_from_env(config_llm_api_env(config))
     try:

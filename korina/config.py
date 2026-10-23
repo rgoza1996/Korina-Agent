@@ -15,7 +15,7 @@ from korina.util.paths import (
     APP_DIR, CONFIG_PATH, ACK_DEFAULT_VOICE, LMSTUDIO_MODEL,
 )
 
-from korina.util.presets import provider_default_api_key_env, provider_preset_base_url
+from korina.util.presets import normalize_meta_reasoning_effort, provider_default_api_key_env, provider_preset_base_url
 from korina.runtime.http import api_key_from_config
 from korina.model_roots import MAX_MODEL_ROOTS, MAX_MODEL_ROOT_PATH_CHARS
 
@@ -58,6 +58,7 @@ DEFAULT_CONFIG = {
     'llm_base_url': 'http://127.0.0.1:8080/v1',
     'llm_api_key_env': '',
     'llm_reasoning': 'off',
+    'llm_reasoning_effort': '',
     'llm_max_tokens': 180,
     'stt_cloud_provider': '',
     'stt_cloud_base_url': '',
@@ -70,6 +71,7 @@ DEFAULT_CONFIG = {
     'agent_model': '',
     'agent_max_turns': 16,
     'agent_max_tokens': 512,
+    'agent_reasoning_effort': '',
     'agent_yolo_mode': 'off',
     'agent_project_trust': 'ask',
     'agent_injection_mode': 'one-at-a-time',
@@ -550,6 +552,16 @@ def _reasoning_mode(value) -> str:
 def config_llm_reasoning(config: Optional[dict] = None) -> str:
     config = config or load_config()
     return _reasoning_mode(config.get('llm_reasoning'))
+
+
+def config_llm_reasoning_effort(config: Optional[dict] = None) -> str:
+    config = config if config is not None else load_config()
+    return normalize_meta_reasoning_effort(config.get('llm_reasoning_effort'))
+
+
+def config_agent_reasoning_effort(config: Optional[dict] = None) -> str:
+    config = config if config is not None else load_config()
+    return normalize_meta_reasoning_effort(config.get('agent_reasoning_effort'))
 
 
 def config_stt_llm_reasoning(config: Optional[dict] = None) -> str:

@@ -10,6 +10,7 @@ import time
 from typing import Annotated, Literal, Optional
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from korina.util.presets import MetaReasoningEffort
 
 
 # Bound accepted payloads before they reach model prompts or background queues.
@@ -51,6 +52,7 @@ class ChatRequest(BaseModel):
     max_tokens: TokenBudget = 180
     model: ModelName | None = None
     reasoning: str | None = Field(None, max_length=64)
+    reasoning_effort: MetaReasoningEffort = ''
 
 
 class AgentStateRequest(BaseModel):

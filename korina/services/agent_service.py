@@ -11,6 +11,7 @@ from korina.config import (
     agent_auth_headers,
     agent_chat_url,
     agent_provider,
+    config_agent_reasoning_effort,
     load_config,
 )
 
@@ -77,6 +78,10 @@ def generate_agent_state_report(
             'max_tokens': int(req.max_tokens or config.get('agent_max_tokens') or 512),
             'stream': False,
         }
+        if provider == 'meta':
+            effort = config_agent_reasoning_effort(config)
+            if effort:
+                payload['reasoning_effort'] = effort
     try:
         body = request_json(agent_chat_url(config), method='POST', headers=headers, json_body=payload, timeout=90, is_current=is_current)
     except RequestCancelledError:

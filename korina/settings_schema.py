@@ -11,6 +11,7 @@ from typing import Annotated, Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from korina.model_roots import ModelRootList, validate_model_root_paths
+from korina.util.presets import MetaReasoningEffort
 
 from korina.config import (
     DEFAULT_CONFIG,
@@ -86,6 +87,7 @@ class SettingsUpdate(_UpdateModel):
     llm_base_url: SettingText = _setting('llm_base_url')
     llm_api_key_env: Name = _setting('llm_api_key_env')
     llm_reasoning: Reasoning = _setting('llm_reasoning')
+    llm_reasoning_effort: MetaReasoningEffort = _setting('llm_reasoning_effort')
     llm_max_tokens: Annotated[int, Field(ge=1, le=8192)] = _setting('llm_max_tokens')
     stt_cloud_provider: Provider = _setting('stt_cloud_provider')
     stt_cloud_base_url: SettingText = _setting('stt_cloud_base_url')
@@ -98,6 +100,7 @@ class SettingsUpdate(_UpdateModel):
     agent_model: Name = _setting('agent_model')
     agent_max_turns: Annotated[int, Field(ge=1, le=64)] = _setting('agent_max_turns')
     agent_max_tokens: Annotated[int, Field(ge=1, le=8192)] = _setting('agent_max_tokens')
+    agent_reasoning_effort: MetaReasoningEffort = _setting('agent_reasoning_effort')
     agent_yolo_mode: Toggle = _setting('agent_yolo_mode')
     agent_project_trust: Name = _setting('agent_project_trust')
     agent_injection_mode: Name = _setting('agent_injection_mode')
