@@ -26,7 +26,7 @@ beforeEach(() => {
   Object.assign(state, {
     history: [], agentTurnCount: 3, agentLastDeliveredTurn: 0,
     agentFirstDelivered: false, agentLastDeliveryAt: 0,
-    agentEventCursor: 0, pendingAgentStateReport: '', agentStateReport: '',
+    agentEventCursor: 0, pendingAgentStateReport: '',
     pendingAgentReportVersion: 0, agentSession: 0, agentResetBlocked: false,
     awaitingAgentPermission: null, pendingImportantAgentMessage: '', deferredAgentInterrupt: null,
   });
@@ -231,7 +231,6 @@ test('an authoritative lower cursor clears stale agent context and receives new 
   state.agentEventCursor = 42;
   state.agentFirstDelivered = true;
   state.agentLastDeliveredTurn = 3;
-  state.agentStateReport = 'Old report.';
   state.pendingAgentStateReport = 'Old injection.';
   state.awaitingAgentPermission = { id: 41 };
   state.pendingImportantAgentMessage = 'Old interrupt.';
@@ -251,7 +250,6 @@ test('an authoritative lower cursor clears stale agent context and receives new 
   await pollAgentEvents();
   assert.equal(state.agentEventCursor, 0);
   assert.equal(state.agentSession, 1);
-  assert.equal(state.agentStateReport, '');
   assert.equal(state.pendingAgentStateReport, '');
   assert.equal(state.awaitingAgentPermission, null);
   assert.equal(state.pendingImportantAgentMessage, '');

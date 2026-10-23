@@ -199,7 +199,7 @@ async function startRecording() {
           status($('sttStatus'), metadata.error || 'The recording exceeded its limit. Start a shorter recording.', 'bad');
           return;
         }
-        status($('sttStatus'), 'Uploading to faster-whisper streaming STT…', 'warn');
+        status($('sttStatus'), 'Uploading recording for transcription…', 'warn');
         const blob = new Blob(state.recChunks, { type: state.recChunks[0]?.type || 'audio/webm' });
         const j = await transcribeBlob(blob, { signal: controller.signal, isCurrent });
         if (!isCurrent()) return;
@@ -256,10 +256,6 @@ function stopPlayback() {
   if (state.bargeLoopId) cancelAnimationFrame(state.bargeLoopId);
   state.bargeLoopId = null;
   if (state.bargeRecorder && state.bargeRecorder.state !== 'inactive') state.bargeRecorder.stop();
-  if (state.ackSource) {
-    try { state.ackSource.stop(); } catch {}
-    state.ackSource = null;
-  }
   if (state.audioCtx) {
     try { state.audioCtx.close(); } catch {}
     state.audioCtx = null;
@@ -285,7 +281,6 @@ async function clearSession() {
   clearButton.textContent = 'Clearing session…';
   try { stopTtsNow(); } catch {}
   state.history = [];
-  state.agentStateReport = '';
   state.pendingAgentStateReport = '';
   state.pendingAgentReportVersion++;
   state.agentSession++;

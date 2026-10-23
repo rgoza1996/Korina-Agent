@@ -90,7 +90,7 @@ function retireAgentActivity() {
   if (activeInterruptSpeech && activeInterruptSpeech.controller === state.controller) stopTtsNow();
   activeInterruptSpeech = null;
   state.agentInterruptInProgress = false;
-  state.agentStateReport = state.pendingAgentStateReport = state.pendingImportantAgentMessage = '';
+  state.pendingAgentStateReport = state.pendingImportantAgentMessage = '';
   state.pendingAgentReportVersion++;
   state.awaitingAgentPermission = state.deferredAgentInterrupt = null;
   state.agentInterruptCooldownUntil = 0;
@@ -253,7 +253,6 @@ function clearPreviousAgentSession() {
   // Keep the conversation so the next delivery can establish the new agent context.
   state.agentSession++;
   state.pendingAgentReportVersion++;
-  state.agentStateReport = '';
   state.pendingAgentStateReport = '';
   state.pendingImportantAgentMessage = '';
   state.awaitingAgentPermission = null;
@@ -312,8 +311,8 @@ export function handleAgentEvent(ev) {
     return;
   }
   if (ev.type === 'state_report') {
-    state.agentStateReport = stripTranscriptLabels(ev.report || ev.message || '');
-    if (!state.agentStateReport) return;
+    const report = stripTranscriptLabels(ev.report || ev.message || '');
+    if (!report) return;
     const priority = ev.priority || 'normal';
     if (($('agentInterruptsEnabled')?.value || 'on') === 'on' && priorityAtLeast(priority, $('agentInterruptMinPriority')?.value || 'important')) {
       const hard = priorityAtLeast(priority, $('agentHardInterruptMinPriority')?.value || 'critical');
@@ -321,7 +320,7 @@ export function handleAgentEvent(ev) {
       if (!agentInterruptAllowed()) { deferAgentInterrupt(msg, ev); return; }
       interruptConverse(msg, hard);
     } else if (($('agentReportInjectionMode')?.value || 'next_reply') === 'next_reply') {
-      queueAgentReport(state.agentStateReport);
+      queueAgentReport(report);
       $('transcriptInfo').textContent = 'Korina Agent report stored for next reply.';
     }
   }

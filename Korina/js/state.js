@@ -94,7 +94,6 @@ export const state = {
   // True after the user activates a provider until /api/health confirms
   // the new model is loaded. Drives the providerReady pill in the debug strip.
   providerPending: false,
-  agentStateReport: '',
   pendingAgentStateReport: '',
   pendingAgentReportVersion: 0,
   agentSession: 0,
