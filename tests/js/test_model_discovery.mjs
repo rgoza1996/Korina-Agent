@@ -114,6 +114,18 @@ test('HTTP discovery failures are reported and remain retryable without force', 
   assert.equal(element('lmModel').value, 'recovered-response');
 });
 
+test('candidate model discovery explicitly requests preflighted credential intent', async () => {
+  element('llmApiKeyEnv').value = 'RESPONSE_ENV';
+  element('sttLlmApiKeyEnv').value = 'AUDIO_ENV';
+  const loading = loadModelOptions(true); await waitRequests(1);
+  const query = new URL(pending[0].url, 'http://korina.test').searchParams;
+  assert.equal(query.get('llm_api_key_env'), 'RESPONSE_ENV');
+  assert.equal(query.get('stt_llm_api_key_env'), 'AUDIO_ENV');
+  assert.equal(pending[0].options.headers['X-Korina-Intent'], 'model-discovery');
+  pending[0].resolve(response(payload('credentialed'))); await loading;
+  assert.deepEqual(state.lastModelsPayload, payload('credentialed'));
+});
+
 test('late agent discovery cannot replace newer options or restore an old selected model', async () => {
   element('agentModel').value = 'old-choice';
   const old = loadAgentModelOptions(); await waitRequests(1);

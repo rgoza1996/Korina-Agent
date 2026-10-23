@@ -40,7 +40,7 @@ def test_discovery_auth_is_scoped_to_its_endpoint(monkeypatch, client, config_mo
     monkeypatch.setattr(models, 'llm_models_for', model_catalog.llm_models_for)
     monkeypatch.setattr(models, 'discover_local_gguf_models', lambda **kwargs: [])
     monkeypatch.setattr(models, 'discover_lmstudio_catalog_models', lambda **kwargs: [])
-    response = client.get('/api/models', params=params)
+    response = client.get('/api/models', params=params, headers={'X-Korina-Intent': 'model-discovery'})
     assert response.status_code == 200
     assert len(calls) == 2
     assert tuple(auth for _, auth in calls) == expected

@@ -8,7 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from korina.model_ids import MAX_CATALOG_IDS, MAX_CATALOG_ID_BYTES, limit_model_ids, model_list_info
 
 from korina.config import (
@@ -33,6 +33,8 @@ from korina.util.labels import display_model_label
 from korina.util.paths import LMSTUDIO_MODEL, WHISPER_MODEL_CHOICES
 
 router = APIRouter()
+MODEL_DISCOVERY_INTENT_HEADER = 'X-Korina-Intent'
+MODEL_DISCOVERY_INTENT = 'model-discovery'
 
 
 def _discovery_auth(base_url: str, configured_base: str, configured_env: str, override: str | None) -> str:
@@ -128,6 +130,7 @@ def _status_for_model(
 
 @router.get('/api/models')
 def models(
+    request: Request,
     llm_base_url: Optional[str] = Query(None),
     llm_api_key_env: Optional[str] = Query(None),
     stt_llm_base_url: Optional[str] = Query(None),
@@ -135,6 +138,15 @@ def models(
     llm_provider: Optional[str] = Query(None),
     stt_llm_provider: Optional[str] = Query(None),
 ):
+    # Explicit env names can send server credentials to an unsaved URL. A
+    # non-simple header makes a foreign browser page obtain CORS permission
+    # before it can request that action, even when its GET has no Origin.
+    if any(str(value or '').strip() for value in (llm_api_key_env, stt_llm_api_key_env)):
+        if request.headers.get(MODEL_DISCOVERY_INTENT_HEADER) != MODEL_DISCOVERY_INTENT:
+            raise HTTPException(
+                status_code=403,
+                detail='Credentialed candidate discovery requires X-Korina-Intent: model-discovery',
+            )
     config = load_config()
     saved_llm_base = config_llm_base_url(config)
     saved_stt_base = config_stt_llm_base_url(config)

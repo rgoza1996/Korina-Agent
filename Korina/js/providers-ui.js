@@ -218,7 +218,9 @@ async function discoverModelOptions(force){
     if(!isCurrent()) return;
     let j=state.lastModelsPayload;
     if(force || state.lastModelsNeedsRefresh || !j || query!==state.lastModelsQuery){
-      const r=await fetch(`/api/models?${query}`, { signal: controller.signal });
+      const r=await fetch(`/api/models?${query}`, {
+        signal: controller.signal, headers: { 'X-Korina-Intent': 'model-discovery' },
+      });
       const payload = await discoveryJson(r, controller.signal, isCurrent);
       if(!isCurrent()) return;
       j = boundedModelPayload(payload, { response: lmModel(), stt: sttLlmModel() });

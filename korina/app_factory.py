@@ -91,7 +91,7 @@ def create_app() -> FastAPI:
         # backend boundary, not browser cookie jars.
         allow_credentials=False,
         allow_methods=['GET', 'POST', 'DELETE'],
-        allow_headers=['Content-Type', 'Authorization'],
+        allow_headers=['Content-Type', 'Authorization', _models_routes.MODEL_DISCOVERY_INTENT_HEADER],
     )
     ACK_DIR.mkdir(parents=True, exist_ok=True)
     app.mount('/Ack', StaticFiles(directory=str(ACK_DIR)), name='ack')
