@@ -112,3 +112,24 @@ test('the actual same-origin picker sends intent and retains credentialed respon
     expect(requests[0].method).toBe('GET');
   } finally { await server.close(); await provider.close(); }
 });
+
+test('an untyped browser body cannot change saved settings', async ({ page, request }) => {
+  const foreign = await webOrigin();
+  const server = await backend('http://trusted.test');
+  try {
+    const before = await (await request.get(`${server.base}/api/config`)).json();
+    await page.goto(foreign.base);
+    expect(await page.evaluate(async url => {
+      const response = await fetch(url, {
+        method: 'POST', mode: 'no-cors', credentials: 'omit',
+        body: new Blob([JSON.stringify({ speed: 1.75 })]),
+      });
+      return response.type;
+    }, `${server.base}/api/config`)).toBe('opaque');
+    const after = await (await request.get(`${server.base}/api/config`)).json();
+    expect(after).toEqual(before);
+    const rejected = await request.post(`${server.base}/api/config`, { data: Buffer.from('{"speed":1.75}') });
+    expect(rejected.status()).toBe(415);
+    expect(foreign.calls).toEqual([]);
+  } finally { await server.close(); await foreign.close(); }
+});

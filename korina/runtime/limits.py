@@ -41,6 +41,8 @@ class RequestSizeLimit:
 
     Chunks are replayed only after validation, so endpoints cannot turn a
     partially consumed oversized upload into a different error or side effect.
+    Nonempty JSON bodies require an explicit JSON media type on every supported
+    framework version. Multipart transcription keeps its separate parser.
     """
 
     def __init__(self, app: ASGIApp, *, json_bytes: int = MAX_JSON_BODY_BYTES,
@@ -58,7 +60,8 @@ class RequestSizeLimit:
             )
         if scope['type'] != 'http' or scope['method'] not in {'POST', 'PUT', 'PATCH'}:
             return await self.app(scope, receive, send)
-        limit = self.audio_bytes if scope['path'].startswith('/api/transcribe') else self.json_bytes
+        audio_upload = scope['path'].rstrip('/') in {'/api/transcribe', '/api/transcribe/partial', '/api/transcribe/stream'}
+        limit = self.audio_bytes if audio_upload else self.json_bytes
         headers = dict(scope.get('headers', []))
         try:
             length = int(headers.get(b'content-length', b'0'))
@@ -80,6 +83,13 @@ class RequestSizeLimit:
             body.extend(chunk)
             if not message.get('more_body', False):
                 break
+        if body and not audio_upload:
+            content_types = [value for name, value in scope.get('headers', []) if name.lower() == b'content-type']
+            media_type = content_types[0].split(b';', 1)[0].strip().lower() if len(content_types) == 1 else b''
+            if not (media_type == b'application/json' or (media_type.startswith(b'application/') and media_type.endswith(b'+json'))):
+                return await JSONResponse(
+                    {'detail': 'JSON request bodies require Content-Type: application/json'}, status_code=415,
+                )(scope, receive, send)
         offset = 0
         complete = False
 

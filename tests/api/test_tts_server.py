@@ -47,6 +47,17 @@ def test_text_alias_and_invalid_inputs():
             assert client.post('/stream/speech', json=body).status_code == 422
 
 
+@pytest.mark.parametrize('endpoint', ['/stream/speech', '/stream/wav', '/v1/audio/speech'])
+def test_speech_json_requires_a_media_type_before_loading_a_model(endpoint):
+    def unexpected_load(device):
+        pytest.fail('An untyped body must not load a speech model')
+
+    with TestClient(create_app(SynthesisRuntime(unexpected_load))) as client:
+        response = client.post(endpoint, content=b'{"input":"hello","device":"cpu"}')
+        assert response.status_code == 415
+        assert response.json() == {'detail': 'JSON request bodies require Content-Type: application/json'}
+
+
 @pytest.mark.parametrize('endpoint', ['/stream/speech', '/stream/wav'])
 @pytest.mark.parametrize('failure', ['empty_input', 'load', 'prime', 'busy'])
 def test_stream_preparation_errors_preserve_json_status_before_headers(endpoint, failure):

@@ -30,6 +30,8 @@ The built-in Meta/OpenAI-compatible agent reports the same empty-budget conditio
 
 `POST /api/config` validates and atomically saves settings. It does not activate providers. Independent STT and agent endpoints stay independent; settings saves cannot replace the server-owned audio-probe cache.
 
+Nonempty JSON request bodies require one explicit JSON Content-Type (`application/json`, optionally with a charset, or an `application/*+json` type). Missing, ambiguous or non-JSON types return HTTP 415 before endpoint work on every supported dependency version. The bundled speech service shares this policy. Multipart transcription and existing bodyless actions retain their own contracts; oversized bodies still return HTTP 413.
+
 During provider activation or refresh, changed effective response/STT/agent settings return HTTP 409 before any save or reset. This closes the gap between checking role ownership and restarting a service. Unrelated settings and identical full-form role values remain saveable. The browser keeps a failed explicit agent transition queued ahead of later saves until retried; its error leaves agent delivery paused.
 
 `POST /api/llm/provider/activate` accepts `{provider, model}`. Unsupported response providers are rejected before saving. It saves the response selection before activation; failures explicitly report that the selection remains saved without automatic rollback. A conflict with another active role returns HTTP 409. Other startup failures return HTTP 500.
