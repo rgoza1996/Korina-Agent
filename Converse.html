@@ -31,8 +31,9 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <strong>Runtime choice:</strong> Whisper and Kokoro can run locally, while response and agent models use their configured endpoints. A remote endpoint receives the transcript and context Korina supplies; the focused Meta rehearsal explicitly used Meta Model API. Korina does not automatically choose a cloud response provider when a local model fails to fit.
 </div>
 
+<p><strong>Last response usage</strong> shows provider-reported input, output, reasoning and cached-input tokens separately from speech/history. Labels describe the original completed request. Zero remains zero; missing counts remain unavailable. Clear resets the panel and playback Stop retains completed counts. <a href="Providers.html#response-usage">Usage contract</a>.</p>
 <h2>Measured preparation environment</h2>
-<p style="color:var(--ink-soft);margin-bottom:1rem">The accepted <a href="Verification.html#meta-voice"><code>637e43c</code> rehearsal</a> is a single Linux aarch64 observation with synthetic input. It does not establish minimum RAM, VRAM, storage, or performance tiers.</p>
+<p style="color:var(--ink-soft);margin-bottom:1rem">The accepted <a href="Verification.html#meta-effort-voice"><code>bc7c8c5</code> rehearsal</a> is a single Linux aarch64 observation with synthetic input. It does not establish minimum RAM, VRAM, storage, or performance tiers.</p>
 <table class="req-table">
 <thead>
 <tr><th>Component</th><th>Observed configuration and result</th></tr>
@@ -40,9 +41,9 @@ interrupts, and permission prompts. Converse is designed to be a channel that ho
 <tbody>
 <tr><td>API and browser</td><td>Python 3.12.3, Node 22.23.4, Playwright 1.64.1, Chromium 156.0.8078.4</td></tr>
 <tr><td>Capture and STT</td><td>Generated fake microphone through native MediaRecorder/VAD; faster-whisper 1.2.1 <code>base.en</code>, CPU/int8, recognized the project/practice question correctly</td></tr>
-<tr><td>Response model</td><td>Actual <code>muse-spark-1.3-contributor</code> through Meta Model API, 2048-token budget and model-default reasoning; recalled Cedar and Friday at ten from prior history</td></tr>
-<tr><td>Speech output</td><td>Kokoro 0.9.4, Torch 2.14.1+cpu with four threads, <code>af_heart</code>; two native PCM buffers totaling 124,800 samples at 24 kHz reached ended</td></tr>
-<tr><td>Complete turn</td><td>37.654 seconds from Live click to all native audio ended; Stop released capture and disposable services closed</td></tr>
+<tr><td>Response model</td><td>Actual <code>muse-spark-1.3-contributor</code> through Meta Model API, 2048-token budget and deliberate minimal response effort; recalled Cedar and Friday at ten from prior history</td></tr>
+<tr><td>Speech output</td><td>Kokoro 0.9.4, Torch 2.14.1+cpu with four threads, <code>af_heart</code>; two native PCM buffers totaling 128,400 samples at 24 kHz reached ended</td></tr>
+<tr><td>Complete turn</td><td>30.999 seconds from Live click to all native audio ended; Stop released capture and disposable services closed</td></tr>
 </tbody>
 </table>
 <p>These results include recording, endpoint silence, conversion, model requests, synthesis, and playback. They are not neural-only measurements or a GPU benchmark. Physical headset capture, speaker audibility, echo cancellation, human interruption, and presentation-machine performance still require rehearsal. See <a href="Hackathon.html">setup and remaining acceptance checks</a>.</p>
