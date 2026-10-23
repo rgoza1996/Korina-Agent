@@ -524,15 +524,24 @@ def _require_executable(path: Path, label: str) -> None:
         raise RuntimeError(f'{label} executable not found or not executable: {path}')
 
 
+def _llama_selection(model: Optional[str], config: dict) -> str:
+    """Resolve the effective selection and reject an ambiguous projector early."""
+    selected = _resolve_llama_cpp_model_id(str(model or config.get('lm_model') or '').strip())
+    if not selected:
+        discovered = discover_local_gguf_models()
+        selected = discovered[0] if discovered else ''
+    selected_path = _local_model_file(selected) if selected else None
+    if selected_path is not None:
+        find_mmproj_for_model(str(selected_path))
+    return selected
+
+
 def _activation_model(provider: str, model: Optional[str], config: dict) -> str:
     if provider not in capabilities_for_section('response_llm'):
         raise ValueError(f'Unsupported response provider: {provider}')
     selected = str(model or config.get('lm_model') or '').strip()
     if provider == 'llama.cpp':
-        selected = _resolve_llama_cpp_model_id(selected)
-        if not selected:
-            discovered = discover_local_gguf_models()
-            selected = discovered[0] if discovered else ''
+        selected = _llama_selection(model, config)
         selected_path = _local_model_file(selected) if selected else None
         if selected_path is None:
             raise RuntimeError(f'Requested llama.cpp model not found: {model or config.get("lm_model") or "no local GGUF models"}')

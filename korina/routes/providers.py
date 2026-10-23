@@ -16,10 +16,12 @@ from korina.runtime.json_http import RequestCancelledError
 from korina.runtime.request_owner import RequestOwner, check_current
 from korina.services.provider_manager import (
     ProviderRoleConflict,
+    _llama_selection,
     activate_llm_provider,
     provider_activation_lock,
 )
 from korina.services.active_probe import probe_audio_support
+from korina.services.model_catalog import AmbiguousProjectorError
 from korina.util.presets import capabilities_for_section
 
 router = APIRouter()
@@ -55,6 +57,13 @@ def _activate_provider(req: ProviderActivateRequest):
                     "reason": reason,
                 },
             )
+    if provider == 'llama.cpp':
+        # Resolve saved/default selections too, before selection/cache writes.
+        # Keep projector scans out of the shared per-option display validator.
+        try:
+            _llama_selection(req.model, config)
+        except AmbiguousProjectorError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     saved = select_response_provider(provider, req.model)
     try:
         result = activate_llm_provider(provider, saved, model=req.model)

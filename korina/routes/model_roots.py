@@ -25,7 +25,7 @@ from korina.config import (
 from korina.model_roots import ModelRootList, MAX_MODEL_ROOT_PATH_CHARS, validate_model_root_paths
 from korina.routes.validation import SanitizedValidationRoute
 from korina.schemas import ModelName
-from korina.services.model_catalog import discover_local_gguf_models
+from korina.services.model_catalog import AmbiguousProjectorError, discover_local_gguf_models
 from korina.services.provider_manager import (
     ProviderRoleConflict,
     InvalidLocalModelPath,
@@ -122,7 +122,7 @@ def _refresh_llama(req: LlamaRefreshRequest):
     if provider == 'llama.cpp' and resolved:
         try:
             resolved, _, _ = prepare_provider(provider, cfg, resolved, restart=True)
-        except InvalidLocalModelPath as exc:
+        except (InvalidLocalModelPath, AmbiguousProjectorError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ProviderRoleConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

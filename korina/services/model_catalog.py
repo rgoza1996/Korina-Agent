@@ -241,13 +241,26 @@ def discover_lmstudio_catalog_models(*, pinned: Iterable[object] = ()) -> list[s
     local = discover_lmstudio_local_models(pinned=pinned)
     return limit_model_ids([*hub, *local], pinned=pinned, sources=[hub, local])
 
+class AmbiguousProjectorError(ValueError):
+    """More than one real projector file requires an operator's choice."""
+
+
 def find_mmproj_for_model(model_path: str) -> str:
+    """Use the sole real sidecar; never guess between different projectors."""
     path = Path(str(model_path or '').strip())
     if not path.exists():
         return ''
-    matches = sorted(candidate for candidate in path.parent.glob('*')
-                     if 'mmproj' in candidate.name.lower() and candidate.suffix.lower() == '.gguf')
-    return str(matches[0]) if matches else ''
+    selected = None
+    for candidate in path.parent.glob('*'):
+        if 'mmproj' not in candidate.name.lower() or candidate.suffix.lower() != '.gguf' or not candidate.is_file():
+            continue
+        if selected is not None:
+            raise AmbiguousProjectorError(
+                'Multiple mmproj files found beside the selected model. '
+                'Put each model and its matching mmproj file in a separate folder, then try again.'
+            )
+        selected = candidate
+    return str(selected) if selected is not None else ''
 
 
 
