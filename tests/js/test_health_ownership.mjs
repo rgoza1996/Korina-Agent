@@ -116,6 +116,8 @@ test('retired network failures do not count against a newer successful health re
 for (const [label, invalidate] of [
   ['provider form selection', () => { el('lmModel').value = 'replacement-model'; }],
   ['saved endpoint', () => { state.appConfig.llm_base_url = 'http://replacement.fixture/v1'; }],
+  ['response effort draft', () => { el('llmReasoningEffort').value = 'minimal'; }],
+  ['confirmed agent effort', () => { state.appConfig.agent_reasoning_effort = 'high'; }],
   ['Clear Session', () => { state.agentSession++; }],
   ['Stop Live', () => { state.liveSession++; }],
 ]) {

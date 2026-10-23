@@ -28,6 +28,20 @@ test('Meta health reports provider-default reasoning instead of the ignored loca
   assert.doesNotMatch(el('pageHealth').textContent, /response meta demo \(reasoning off\)/);
 });
 
+test('Meta health uses effective server effort independently for response and agent, not unsaved form drafts', async () => {
+  el('llmReasoningEffort').value = 'xhigh';
+  el('agentReasoningEffort').value = 'minimal';
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ ...healthy,
+    response_llm_provider: 'meta', response_llm_reasoning_effort: 'low',
+    agent_provider: 'meta', agent_reasoning_effort: 'high',
+  }) });
+  await health();
+  assert.match(el('pageHealth').textContent, /response meta demo \(reasoning effort low\)/);
+  assert.match(el('settingsLiveStatus').textContent, /Agent configured with reasoning effort high/);
+  assert.doesNotMatch(el('pageHealth').textContent, /effort xhigh/);
+  assert.doesNotMatch(el('settingsLiveStatus').textContent, /effort minimal/);
+});
+
 test('health reflects server truth and survives network loss while switching provider', async () => {
   state.providerPending = true;
   globalThis.fetch = async () => ({ ok: true, json: async () => structuredClone(healthy) });

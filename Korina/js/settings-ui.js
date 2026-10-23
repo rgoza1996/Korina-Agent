@@ -18,6 +18,9 @@ export function ttsModel() { return $('ttsModel')?.value || 'kokoro' }
 export function llmProvider() { return $('llmProvider')?.value || 'llama.cpp' }
 export function llmBaseUrl() { return $('llmBaseUrl')?.value || 'http://127.0.0.1:8080/v1' }
 export function llmMaxTokens() { return Number($('llmMaxTokens')?.value || '180') }
+export function llmReasoningEffort() { return String($('llmReasoningEffort')?.value || '').trim() }
+export function agentReasoningEffort() { return String($('agentReasoningEffort')?.value || '').trim() }
+export function metaReasoningSummary(effort) { return effort ? `reasoning effort ${effort}` : 'provider-default reasoning' }
 const apiBase = value => String(value).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/, '');
 export function effectiveLlmApiKeyEnv() {
   const explicit = String($('llmApiKeyEnv')?.value || '').trim();
@@ -86,9 +89,11 @@ export function collectConfig() {
     llm_base_url: llmBaseUrl(),
     llm_api_key_env: String($('llmApiKeyEnv')?.value || '').trim(),
     llm_reasoning: llmReasoningEnabled(),
+    llm_reasoning_effort: llmReasoningEffort(),
     llm_max_tokens: llmMaxTokens(),
     agent_enabled: agentEnabled(),
     agent_provider: $('agentProvider')?.value || 'openai-compatible',
+    agent_reasoning_effort: agentReasoningEffort(),
     agent_base_url: String($('agentBaseUrl')?.value || '').trim(),
     agent_api_key: String($('agentApiKey')?.value || '').trim(),
     agent_model: String($('agentModel')?.value || '').trim(),
@@ -161,9 +166,11 @@ export function applyConfig(c = {}, { preserveKeys = [], updateSnapshot = true, 
   if (c.llm_base_url && $('llmBaseUrl')) $('llmBaseUrl').value = c.llm_base_url;
   if (c.llm_api_key_env !== undefined && $('llmApiKeyEnv')) $('llmApiKeyEnv').value = c.llm_api_key_env || '';
   if (c.llm_reasoning !== undefined && $('llmReasoningEnabled')) $('llmReasoningEnabled').checked = String(c.llm_reasoning || 'off') === 'on';
+  if (c.llm_reasoning_effort !== undefined && $('llmReasoningEffort')) $('llmReasoningEffort').value = c.llm_reasoning_effort;
   if (c.llm_max_tokens !== undefined && $('llmMaxTokens')) $('llmMaxTokens').value = c.llm_max_tokens;
   if (c.agent_enabled && $('agentEnabled')) $('agentEnabled').checked = c.agent_enabled !== 'off';
   if (c.agent_provider && $('agentProvider')) $('agentProvider').value = c.agent_provider;
+  if (c.agent_reasoning_effort !== undefined && $('agentReasoningEffort')) $('agentReasoningEffort').value = c.agent_reasoning_effort;
   if (c.agent_base_url !== undefined && $('agentBaseUrl')) $('agentBaseUrl').value = c.agent_base_url || '';
   if (c.agent_api_key !== undefined && $('agentApiKey')) $('agentApiKey').value = c.agent_api_key || '';
   if (c.agent_model !== undefined && $('agentModel')) {
@@ -241,9 +248,15 @@ export { populateChannelTab, saveChannelSelection } from './channel-ui.js';
 // Reasoning/converse sync helpers
 
 export function syncReasoningHints() {
-  if ($('llmReasoningHint')) $('llmReasoningHint').textContent = llmProvider() === 'meta'
-    ? 'Reasoning: Meta provider default (local toggle is not sent).'
+  const responseMeta = llmProvider() === 'meta';
+  const agentMeta = $('agentProvider')?.value === 'meta';
+  setSectionHidden('llmReasoningEffortWrap', !responseMeta);
+  setSectionHidden('llmReasoningEnabledWrap', responseMeta);
+  setSectionHidden('agentReasoningEffortWrap', !agentMeta);
+  if ($('llmReasoningHint')) $('llmReasoningHint').textContent = responseMeta
+    ? `Reasoning: Meta ${llmReasoningEffort() ? `effort ${llmReasoningEffort()}` : 'provider default'}.`
     : `Reasoning: ${llmReasoningEnabled() === 'on' ? 'on' : 'off'}.`;
+  if ($('agentReasoningHint')) $('agentReasoningHint').textContent = `Reasoning: Meta ${agentReasoningEffort() ? `effort ${agentReasoningEffort()}` : 'provider default'}. Applies after settings save.`;
   if ($('sttReasoningHint')) $('sttReasoningHint').textContent = sttBackend() === 'llm'
     ? `Reasoning: ${sttLlmReasoningEnabled() === 'on' ? 'on' : 'off'} for multimodal STT.`
     : 'Reasoning: built-in Whisper does not use this toggle.';

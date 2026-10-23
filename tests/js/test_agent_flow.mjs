@@ -60,6 +60,41 @@ test('blank or invalid interrupt padding retains the three-second default', () =
   }
 });
 
+for (const effort of ['', 'minimal', 'xhigh']) {
+  test(`Meta chat sends the current ${effort || 'model-default'} effort draft before an autosave confirms`, async () => {
+    element('llmProvider').value = 'meta';
+    element('llmReasoningEffort').value = effort;
+    element('agentReasoningEffort').value = 'high';
+    const saved = state.appConfig;
+    state.appConfig = { llm_reasoning_effort: 'medium', agent_reasoning_effort: 'high' };
+    let payload;
+    globalThis.fetch = async (_url, options) => {
+      payload = JSON.parse(options.body);
+      return { ok: true, json: async () => ({ reply: 'Fixture response.' }) };
+    };
+    try {
+      await askLM('Use this current effort.');
+      assert.equal(payload.reasoning_effort, effort);
+      assert.equal(Object.hasOwn(payload, 'agent_reasoning_effort'), false);
+      assert.equal(state.appConfig.llm_reasoning_effort, 'medium');
+    } finally { state.appConfig = saved; }
+  });
+}
+
+test('non-Meta chat retains its local reasoning flag without leaking a saved Meta effort', async () => {
+  element('llmProvider').value = 'openai-compatible';
+  element('llmReasoningEffort').value = 'minimal';
+  element('llmReasoningEnabled').checked = true;
+  let payload;
+  globalThis.fetch = async (_url, options) => {
+    payload = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ reply: 'Fixture response.' }) };
+  };
+  await askLM('Use the generic provider.');
+  assert.equal(Object.hasOwn(payload, 'reasoning_effort'), false);
+  assert.equal(payload.reasoning, 'on');
+});
+
 test('active agent delivery sends a bounded sanitized transcript using the current busy mode', async () => {
   state.history = [
     { role: 'user', content: 'Earlier turn.' },

@@ -12,6 +12,7 @@ import {
   sttLlmReasoningEnabled,
   llmReasoningEnabled,
   llmProvider, llmBaseUrl, lmModel,
+  metaReasoningSummary,
   markActivity,
 } from './settings-ui.js';
 import { loadAgentModelOptions, loadCapabilities, setBaseUrlEditability, syncAudioProbeButton } from './providers-ui.js';
@@ -55,6 +56,8 @@ export function refreshProviderCapabilities() {
 
 export async function activateSelectedProvider(provider, model = '') {
   healthPollVersion++;
+  const bootstrap = initializeSettingsForm();
+  const writeRevision = bootstrap.writeRevision;
   try {
     const r = await fetch('/api/llm/provider/activate', {
       method: 'POST',
@@ -63,7 +66,13 @@ export async function activateSelectedProvider(provider, model = '') {
     });
     const j = await r.json();
     if (!r.ok) throw new Error(apiErrorMessage(j, `HTTP ${r.status}`));
-    if (j.saved) state.appConfig = { ...state.appConfig, ...j.saved };
+    if (j.saved) {
+      const saved = { ...j.saved };
+      for (const [key, confirmed] of Object.entries(bootstrap.confirmed)) {
+        if (confirmed.revision > writeRevision) saved[key] = confirmed.value;
+      }
+      state.appConfig = { ...state.appConfig, ...saved };
+    }
     // Signal a pending provider switch so the readiness pill flips to
     // "loading" until /api/health confirms the new model is loaded.
     state.providerPending = true;
@@ -247,11 +256,11 @@ export function saveConfigSoon() {
 // - settingsLiveStatus reads the runtime provider load blocks.
 const HEALTH_FAIL_GRACE = 3; // consecutive misses before flipping pageDot red
 const HEALTH_SETTING_KEYS = [
-  'llm_provider', 'llm_base_url', 'lm_model', 'llm_api_key_env',
+  'llm_provider', 'llm_base_url', 'lm_model', 'llm_api_key_env', 'llm_reasoning_effort',
   'stt_backend', 'stt_device', 'stt_model', 'stt_llm_provider',
   'stt_llm_base_url', 'stt_llm_model', 'stt_llm_api_key_env', 'partial_window_ms',
   'tts_provider', 'tts_base_url', 'tts_port', 'tts_health_url', 'tts_model', 'tts_device',
-  'agent_enabled', 'agent_provider', 'agent_base_url', 'agent_model', 'agent_api_key',
+  'agent_enabled', 'agent_provider', 'agent_base_url', 'agent_model', 'agent_api_key', 'agent_reasoning_effort',
 ];
 
 function healthIdentity() {
@@ -315,7 +324,7 @@ export async function health() {
       ? `multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()} (${sttLlmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`
       : `built-in Whisper ${sttDevice()}/${sttModel()}`;
     const responseProvider = j.response_llm_provider || llmProvider();
-    const responseReasoning = responseProvider === 'meta' ? 'provider-default reasoning'
+    const responseReasoning = responseProvider === 'meta' ? metaReasoningSummary(j.response_llm_reasoning_effort)
       : llmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off';
     const responseSummary = `${responseProvider} ${j.response_llm_model || lmModel()} (${responseReasoning})`;
     $('pageHealth').textContent = `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || state.partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
@@ -333,6 +342,7 @@ export async function health() {
     const parts = [];
     parts.push(`LLM ${llmOk ? 'up' : 'down'}${llmOk ? '' : ' (' + (j.response_llm_load?.error || 'model not loaded') + ')'}`);
     parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + (state.audioLimitsError || j.multimodal_stt_load?.error || 'speech runtime unavailable') + ')'}`);
+    if (j.agent_provider === 'meta') parts.push(`Agent configured with ${metaReasoningSummary(j.agent_reasoning_effort)}`);
     const liveEl = $('settingsLiveStatus');
     if (liveEl) liveEl.textContent = parts.join(' · ');
   } else {

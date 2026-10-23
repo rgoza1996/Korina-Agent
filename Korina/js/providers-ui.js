@@ -101,7 +101,7 @@ export async function setBaseUrlEditability(){
   if($("llmApiKeyEnv")) $("llmApiKeyEnv").placeholder = llmCaps?.default_api_key_env || 'Optional environment variable name';
   if($("llmReasoningEnabled")) {
     $("llmReasoningEnabled").disabled = llmId === 'meta';
-    $("llmReasoningEnabled").title = llmId === 'meta' ? 'Meta Model API uses its provider-default reasoning.' : '';
+    $("llmReasoningEnabled").title = llmId === 'meta' ? 'Meta Model API uses its separate reasoning effort setting.' : '';
   }
   const sttId = String($("sttLlmProvider")?.value || "").trim();
   const sttCaps = getResponseLlmProviderCaps(sttId);

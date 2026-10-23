@@ -60,7 +60,8 @@
             <div><label for="llmBaseUrl">Base URL</label><input id="llmBaseUrl" type="text" value="http://127.0.0.1:8080/v1"></div>
             <div><label for="llmApiKeyEnv">API key env var</label><input id="llmApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
             <div><label for="llmMaxTokens">Response token budget</label><input id="llmMaxTokens" type="number" min="1" max="8192" step="1" value="180"><p class="fieldHint">Meta reasoning and the spoken answer share this budget. A larger budget may use more tokens.</p></div>
-            <div class="secretNote"><label>Advanced</label><div class="toggleLine"><input id="llmReasoningEnabled" type="checkbox"><span>Allow response model reasoning / thinking</span></div></div>
+            <div id="llmReasoningEffortWrap" class="settingsHidden"><label for="llmReasoningEffort">Meta response reasoning effort</label><select id="llmReasoningEffort"><option value="">Model default</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select><p class="fieldHint">Use the model default or request a reasoning level. Reasoning and the answer share the response token budget.</p></div>
+            <div id="llmReasoningEnabledWrap" class="secretNote"><label>Advanced</label><div class="toggleLine"><input id="llmReasoningEnabled" type="checkbox"><span>Allow response model reasoning / thinking</span></div></div>
           </div>
         </details>
         <details class="settingsGroup" id="localModelsSection" open>
@@ -121,6 +122,7 @@
         <div><label>&nbsp;</label><button id="refreshAgentModelsBtn" class="secondary" type="button">Refresh Agent models</button></div>
         <div><label for="agentMaxTurns">Transcript turns sent to agent</label><input id="agentMaxTurns" type="number" min="2" max="40" value="16"></div>
         <div><label for="agentMaxTokens">State report max tokens</label><input id="agentMaxTokens" type="number" min="64" max="2048" value="512"></div>
+        <div id="agentReasoningEffortWrap" class="settingsHidden"><label for="agentReasoningEffort">Meta agent reasoning effort</label><select id="agentReasoningEffort"><option value="">Model default</option><option value="minimal">Minimal</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="xhigh">Extra high</option></select><p class="fieldHint">Independent of response effort. The saved setting applies to the next report; reasoning and the report share State report max tokens.</p><p id="agentReasoningHint" class="small mono">Reasoning: Meta provider default.</p></div>
         <div class="secretNote"><label>Converse ↔ Agent coordination</label><p class="small mono">Converse stays real-time; Agent receives transcript deltas independently and returns hidden injection or priority interrupts.</p></div>
         <div><label for="agentFirstDeliveryMode">First transcript delivery</label><select id="agentFirstDeliveryMode"><option value="first_turn_or_timer" selected>After first turn or timer</option><option value="first_turn">After first turn</option><option value="timer">After timer only</option></select></div>
         <div><label for="agentFirstDeliverySeconds">First delivery seconds</label><input id="agentFirstDeliverySeconds" type="number" min="1" value="20"></div>

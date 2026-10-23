@@ -1,7 +1,7 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
-import { initializeSettingsForm, loadConfig, saveConfigNow } from '../../Korina/js/api.js';
+import { initializeSettingsForm, loadConfig, saveConfigNow, activateSelectedProvider } from '../../Korina/js/api.js';
 import { applyConfig, collectConfig, effectiveSttLlmModel, llmMaxTokens } from '../../Korina/js/settings-ui.js';
 
 const elements = new Map();
@@ -76,6 +76,85 @@ test('saved response budget loads without becoming an implicit new settings writ
   assert.equal(llmMaxTokens(), 2048);
   assert.equal(collectConfig().llm_max_tokens, 2048);
   await saveConfigNow();
+});
+
+test('saved Meta effort fields load independently and do not enter the activation baseline', async () => {
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options, undefined);
+    return response({ llm_reasoning_effort: 'minimal', agent_reasoning_effort: 'high' });
+  };
+  await loadConfig();
+  assert.equal(element('llmReasoningEffort').value, 'minimal');
+  assert.equal(element('agentReasoningEffort').value, 'high');
+  assert.equal(Object.hasOwn(state.appConfigSnapshot, 'llm_reasoning_effort'), false);
+  assert.equal(Object.hasOwn(state.appConfigSnapshot, 'agent_reasoning_effort'), false);
+  await saveConfigNow();
+  applyConfig({ speed: 1.4 });
+  assert.equal(collectConfig().llm_reasoning_effort, 'minimal');
+  assert.equal(collectConfig().agent_reasoning_effort, 'high');
+});
+
+test('a newer response effort draft survives an older confirmation without changing agent effort', async () => {
+  const pending = deferred(), posts = [];
+  globalThis.fetch = async (_url, options) => {
+    const patch = JSON.parse(options.body); posts.push(patch);
+    return posts.length === 1 ? pending.promise : response(patch);
+  };
+  element('llmReasoningEffort').value = 'minimal';
+  element('agentReasoningEffort').value = 'high';
+  const saving = saveConfigNow();
+  element('llmReasoningEffort').value = 'low';
+  pending.resolve(response({ llm_reasoning_effort: 'minimal', agent_reasoning_effort: 'high' }));
+  await saving;
+  assert.equal(element('llmReasoningEffort').value, 'low');
+  assert.equal(state.appConfig.llm_reasoning_effort, 'minimal');
+  assert.equal(state.appConfig.agent_reasoning_effort, 'high');
+  await saveConfigNow();
+  element('llmReasoningEffort').value = '';
+  await saveConfigNow();
+  assert.deepEqual(posts, [
+    { llm_reasoning_effort: 'minimal', agent_reasoning_effort: 'high' },
+    { llm_reasoning_effort: 'low' }, { llm_reasoning_effort: '' },
+  ]);
+  assert.equal(collectConfig().llm_reasoning_effort, '');
+  assert.equal(collectConfig().agent_reasoning_effort, 'high');
+});
+
+test('late activation preserves newer confirmed settings and drafts so a deliberate revert is not skipped', async () => {
+  const activation = deferred(), posts = [];
+  const server = { llm_provider: 'meta', llm_base_url: 'https://api.meta.ai/v1',
+    lm_model: 'earlier-model', llm_reasoning_effort: 'minimal', agent_reasoning_effort: 'low' };
+  let activationSaved;
+  globalThis.fetch = async (url, options) => {
+    if (url === '/api/llm/provider/activate') {
+      server.lm_model = 'activated-model';
+      activationSaved = { ...server };
+      return activation.promise;
+    }
+    if (!options) return response({ ...server });
+    const patch = JSON.parse(options.body); posts.push(patch);
+    Object.assign(server, patch); return response(patch);
+  };
+  await loadConfig();
+  const activating = activateSelectedProvider('meta', 'activated-model');
+  element('agentReasoningEffort').value = 'high';
+  await saveConfigNow();
+  element('llmReasoningEffort').value = 'xhigh';
+  activation.resolve(response({ ok: true, saved: activationSaved }));
+  await activating;
+  assert.equal(state.appConfig.lm_model, 'activated-model', 'accept the activation-owned selection');
+  assert.equal(state.appConfig.agent_reasoning_effort, 'high', 'keep the newer confirmed baseline');
+  assert.equal(element('agentReasoningEffort').value, 'high');
+  assert.equal(element('llmReasoningEffort').value, 'xhigh', 'preserve the newer unsaved draft');
+  element('agentReasoningEffort').value = 'low';
+  await saveConfigNow();
+  assert.deepEqual(posts, [
+    { agent_reasoning_effort: 'high' },
+    { llm_reasoning_effort: 'xhigh', agent_reasoning_effort: 'low' },
+  ]);
+  assert.equal(server.agent_reasoning_effort, 'low');
+  assert.equal(state.appConfig.agent_reasoning_effort, 'low');
+  assert.equal(server.lm_model, 'activated-model');
 });
 
 test('a newer response-budget draft survives confirmation of an older save', async () => {

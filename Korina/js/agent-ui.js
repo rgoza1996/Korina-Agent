@@ -4,7 +4,7 @@ import { state } from "./state.js";
 import { apiErrorMessage } from './api-errors.js';
 import { $, status, log } from "./dom.js";
 import { stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry } from "./history.js";
-import { agentEnabled, agentInterruptCooldownPaddingMs, lmModel, llmReasoningEnabled, llmMaxTokens } from "./settings-ui.js";
+import { agentEnabled, agentInterruptCooldownPaddingMs, lmModel, llmProvider, llmReasoningEnabled, llmReasoningEffort, llmMaxTokens } from "./settings-ui.js";
 import { speakText, stopTtsNow } from "./speech.js";
 import { saveAgentEnabled } from "./api.js";
 
@@ -431,7 +431,8 @@ export async function askLM(message, priorHistory = cleanHistoryForModel(), { is
         max_tokens: llmMaxTokens(),
         temperature: 0.7,
         model: lmModel(),
-        reasoning: llmReasoningEnabled()
+        reasoning: llmReasoningEnabled(),
+        ...(llmProvider() === 'meta' ? { reasoning_effort: llmReasoningEffort() } : {}),
       }),
       signal: controller.signal,
     });

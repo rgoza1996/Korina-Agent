@@ -9,8 +9,12 @@ const control = id => elements.get(id);
 beforeEach(() => {
   elements.clear();
   for (const id of ['llmProvider', 'llmBaseUrl', 'llmApiKeyEnv', 'llmReasoningEnabled',
-    'sttLlmProvider', 'sttLlmBaseUrl', 'agentProvider', 'agentBaseUrl', 'agentApiKey', 'llmReasoningHint']) {
-    elements.set(id, { value: '', disabled: false, placeholder: '', title: '' });
+    'sttLlmProvider', 'sttLlmBaseUrl', 'agentProvider', 'agentBaseUrl', 'agentApiKey', 'llmReasoningHint',
+    'llmReasoningEffort', 'agentReasoningEffort', 'agentReasoningHint',
+    'llmReasoningEffortWrap', 'agentReasoningEffortWrap', 'llmReasoningEnabledWrap']) {
+    const classes = new Set();
+    elements.set(id, { value: '', disabled: false, placeholder: '', title: '',
+      classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); }, contains: name => classes.has(name) } });
   }
   globalThis.document = { getElementById: control };
   state._capabilitiesCache = {
@@ -36,9 +40,31 @@ test('Meta response preset fixes the base and hints its key without overwriting 
   assert.equal(control('llmApiKeyEnv').value, 'EXPLICIT_KEY_ENV');
   assert.equal(control('llmApiKeyEnv').placeholder, 'MODEL_API_KEY');
   assert.equal(control('llmReasoningEnabled').disabled, true);
-  assert.match(control('llmReasoningEnabled').title, /provider-default reasoning/);
+  assert.match(control('llmReasoningEnabled').title, /separate reasoning effort/);
   syncReasoningHints();
   assert.match(control('llmReasoningHint').textContent, /Meta provider default/);
+});
+
+test('Meta effort controls stay independent and hidden for other provider profiles', () => {
+  control('llmProvider').value = 'meta';
+  control('agentProvider').value = 'meta';
+  control('llmReasoningEffort').value = 'minimal';
+  control('agentReasoningEffort').value = 'high';
+  syncReasoningHints();
+  assert.equal(control('llmReasoningEffortWrap').classList.contains('settingsHidden'), false);
+  assert.equal(control('agentReasoningEffortWrap').classList.contains('settingsHidden'), false);
+  assert.equal(control('llmReasoningEnabledWrap').classList.contains('settingsHidden'), true);
+  assert.match(control('llmReasoningHint').textContent, /Meta effort minimal/);
+  assert.match(control('agentReasoningHint').textContent, /Meta effort high.*after settings save/);
+  control('llmProvider').value = 'openai-compatible';
+  syncReasoningHints();
+  assert.equal(control('llmReasoningEffortWrap').classList.contains('settingsHidden'), true);
+  assert.equal(control('llmReasoningEnabledWrap').classList.contains('settingsHidden'), false);
+  assert.equal(control('agentReasoningEffortWrap').classList.contains('settingsHidden'), false);
+  assert.equal(control('llmReasoningEffort').value, 'minimal', 'profile changes do not erase saved preferences');
+  control('agentProvider').value = 'anthropic';
+  syncReasoningHints();
+  assert.equal(control('agentReasoningEffortWrap').classList.contains('settingsHidden'), true);
 });
 
 test('Meta agent preset uses the same registry and preserves an explicit role key', async () => {
