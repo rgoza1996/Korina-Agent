@@ -4,7 +4,7 @@ import { state } from "./state.js";
 import { apiErrorMessage } from './api-errors.js';
 import { $, status, log } from "./dom.js";
 import { stripTranscriptLabels, cleanHistoryForModel, addTranscriptEntry } from "./history.js";
-import { agentEnabled, lmModel, llmReasoningEnabled, llmMaxTokens } from "./settings-ui.js";
+import { agentEnabled, agentInterruptCooldownPaddingMs, lmModel, llmReasoningEnabled, llmMaxTokens } from "./settings-ui.js";
 import { speakText, stopTtsNow } from "./speech.js";
 import { saveAgentEnabled } from "./api.js";
 
@@ -115,7 +115,7 @@ export function priorityAtLeast(p, min) {
 
 // Interrupt cooldown
 export function agentInterruptPaddingSec() {
-  return (parseInt($('agentInterruptCooldownPaddingMs')?.value || '3000', 10) || 3000) / 1000;
+  return agentInterruptCooldownPaddingMs() / 1000;
 }
 
 export function agentInterruptAllowed() {
@@ -128,7 +128,7 @@ export function setAgentInterruptCooldown() {
   agentDebug('Agent interrupt cooldown set', {
     until_audio_time: state.agentInterruptCooldownUntil,
     current_audio_time: state.audioCtx.currentTime,
-    padding_ms: parseInt($('agentInterruptCooldownPaddingMs')?.value || '3000', 10) || 3000
+    padding_ms: agentInterruptCooldownPaddingMs()
   });
 }
 

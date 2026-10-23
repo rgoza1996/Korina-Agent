@@ -51,6 +51,11 @@ export function minSpeechMs() { return parseInt($('minSpeechMs')?.value || '1200
 export function partialWindowMsSetting() { return parseInt($('partialWindowMs')?.value || String(state.partialWindowMs), 10) || 1800 }
 export function agentEnabled() { return $('agentEnabled')?.checked ? 'on' : 'off' }
 export function agentModel() { return $('agentModel')?.value || lmModel() }
+export function agentInterruptCooldownPaddingMs() {
+  const raw = String($('agentInterruptCooldownPaddingMs')?.value ?? '').trim();
+  const value = parseInt(raw || '3000', 10);
+  return Number.isNaN(value) ? 3000 : value;
+}
 export function finalSttMode() { return $('finalSttMode')?.value || 'chunks' }
 export function endpointMode() { return $('endpointMode')?.value || 'reading' }
 
@@ -82,9 +87,6 @@ export function collectConfig() {
     llm_api_key_env: String($('llmApiKeyEnv')?.value || '').trim(),
     llm_reasoning: llmReasoningEnabled(),
     llm_max_tokens: llmMaxTokens(),
-    stt_cloud_base_url: String($('sttCloudBaseUrl')?.value || '').trim(),
-    stt_cloud_model: String($('sttCloudModel')?.value || '').trim(),
-    stt_api_key_env: String($('sttApiKeyEnv')?.value || '').trim(),
     agent_enabled: agentEnabled(),
     agent_provider: $('agentProvider')?.value || 'openai-compatible',
     agent_base_url: String($('agentBaseUrl')?.value || '').trim(),
@@ -101,7 +103,7 @@ export function collectConfig() {
     agent_interrupts_enabled: $('agentInterruptsEnabled')?.value || 'on',
     agent_interrupt_min_priority: $('agentInterruptMinPriority')?.value || 'important',
     agent_hard_interrupt_min_priority: $('agentHardInterruptMinPriority')?.value || 'critical',
-    agent_interrupt_cooldown_padding_ms: parseInt($('agentInterruptCooldownPaddingMs')?.value || '3000', 10) || 3000,
+    agent_interrupt_cooldown_padding_ms: agentInterruptCooldownPaddingMs(),
     agent_permission_interrupts: $('agentPermissionInterrupts')?.value || 'on',
     agent_report_injection_mode: $('agentReportInjectionMode')?.value || 'next_reply',
     endpoint_mode: endpointMode(),
@@ -160,9 +162,6 @@ export function applyConfig(c = {}, { preserveKeys = [], updateSnapshot = true, 
   if (c.llm_api_key_env !== undefined && $('llmApiKeyEnv')) $('llmApiKeyEnv').value = c.llm_api_key_env || '';
   if (c.llm_reasoning !== undefined && $('llmReasoningEnabled')) $('llmReasoningEnabled').checked = String(c.llm_reasoning || 'off') === 'on';
   if (c.llm_max_tokens !== undefined && $('llmMaxTokens')) $('llmMaxTokens').value = c.llm_max_tokens;
-  if (c.stt_cloud_base_url !== undefined && $('sttCloudBaseUrl')) $('sttCloudBaseUrl').value = c.stt_cloud_base_url || '';
-  if (c.stt_cloud_model !== undefined && $('sttCloudModel')) $('sttCloudModel').value = c.stt_cloud_model || '';
-  if (c.stt_api_key_env !== undefined && $('sttApiKeyEnv')) $('sttApiKeyEnv').value = c.stt_api_key_env || '';
   if (c.agent_enabled && $('agentEnabled')) $('agentEnabled').checked = c.agent_enabled !== 'off';
   if (c.agent_provider && $('agentProvider')) $('agentProvider').value = c.agent_provider;
   if (c.agent_base_url !== undefined && $('agentBaseUrl')) $('agentBaseUrl').value = c.agent_base_url || '';

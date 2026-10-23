@@ -48,9 +48,6 @@
             <div id="sttMultimodalReasoningWrap" class="secretNote settingsHidden"><label>Advanced</label><div class="toggleLine"><input id="sttLlmReasoningEnabled" type="checkbox"><span>Allow multimodal STT model reasoning / thinking</span></div></div>
             <div><label for="finalSttMode">End-of-speech finalization</label><select id="finalSttMode"><option value="chunks" selected>Use live chunks — no full paragraph retranscribe</option><option value="full">Full utterance final pass</option></select></div>
             <div><label for="partialWindowMs">Live partial transcript window</label><input id="partialWindowMs" type="range" min="800" max="3200" step="100" value="1800"><div class="fieldHint"><span id="partialWindowMsDisplay">1.8s</span> audio per rolling partial STT window while you are still speaking.</div></div>
-            <div><label for="sttCloudBaseUrl">Cloud STT base URL</label><input id="sttCloudBaseUrl" type="text" placeholder="optional future STT endpoint"></div>
-            <div><label for="sttCloudModel">Cloud STT model</label><input id="sttCloudModel" type="text" placeholder="e.g. whisper-1"></div>
-            <div><label for="sttApiKeyEnv">STT API key env var</label><input id="sttApiKeyEnv" type="text" placeholder="optional, e.g. OPENAI_API_KEY"></div>
           </div>
         </details>
         <details class="settingsGroup" id="llmResponseSection" open>
@@ -95,7 +92,7 @@
             <div><label for="ttsBaseUrl">Speech service root URL (without /v1)</label><input id="ttsBaseUrl" type="text" placeholder="http://127.0.0.1:8880"></div>
             <p class="fieldHint">Use a Kokoro-compatible service with browser access enabled. Authenticated cloud speech services are not supported.</p>
             <div><label for="ttsHealthUrl">Optional service health URL</label><input id="ttsHealthUrl" type="text" placeholder="blank = /health for Kokoro"><div class="fieldHint">Custom services stay unverified until a working health URL is configured.</div></div>
-            <div><label for="ttsModel">TTS model / engine</label><input id="ttsModel" type="text" value="kokoro" placeholder="kokoro, gpt-4o-mini-tts, etc."></div>
+            <div><label for="ttsModel">TTS model / engine</label><input id="ttsModel" type="text" value="kokoro" placeholder="kokoro"></div>
             <div>
               <label for="minSpeechMs">Minimum continuous speech before accepting voice input</label>
               <input id="minSpeechMs" type="range" min="600" max="3000" step="100" value="1200">
@@ -130,7 +127,7 @@
         <div><label for="agentPeriodicDeliveryTurns">Periodic delivery turns</label><input id="agentPeriodicDeliveryTurns" type="number" min="1" value="2"></div>
         <div><label for="agentPeriodicDeliverySeconds">Periodic delivery seconds</label><input id="agentPeriodicDeliverySeconds" type="number" min="5" value="45"></div>
         <div><label for="agentBusyDeliveryMode">When Agent busy</label><select id="agentBusyDeliveryMode"><option value="injection" selected>Deliver as injection</option><option value="prompt">Deliver as prompt</option></select></div>
-        <div><label for="agentIdleDeliveryMode">When Agent idle</label><select id="agentIdleDeliveryMode"><option value="prompt" selected>Deliver as prompt</option><option value="injection">Deliver as injection</option></select></div>
+        <div><label for="agentIdleDeliveryMode">When Agent idle</label><select id="agentIdleDeliveryMode"><option value="prompt" selected>Deliver as prompt</option><option value="injection">Queue context for next prompt</option></select><div class="fieldHint">Queued context does not start a report while Agent is idle. Choose prompt for automatic reports.</div></div>
         <div><label for="agentInterruptsEnabled">Agent interrupts</label><select id="agentInterruptsEnabled"><option value="on" selected>On</option><option value="off">Off</option></select></div>
         <div><label for="agentInterruptMinPriority">Soft interrupt at</label><select id="agentInterruptMinPriority"><option value="normal">Normal</option><option value="important" selected>Important</option><option value="critical">Critical only</option></select></div>
         <div><label for="agentHardInterruptMinPriority">Hard interrupt at</label><select id="agentHardInterruptMinPriority"><option value="important">Important</option><option value="critical" selected>Critical only</option></select></div>

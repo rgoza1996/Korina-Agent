@@ -28,6 +28,43 @@ test('closing an untouched form before any config read sends no HTML defaults', 
   assert.deepEqual(state.appConfig, {});
 });
 
+test('zero interrupt padding survives a settings save and its confirmed response', async () => {
+  const posts = [];
+  globalThis.fetch = async (_url, options) => {
+    const patch = JSON.parse(options.body); posts.push(patch);
+    return response(patch);
+  };
+  element('agentInterruptCooldownPaddingMs').value = '0';
+  await saveConfigNow();
+  assert.deepEqual(posts, [{ agent_interrupt_cooldown_padding_ms: 0 }]);
+  assert.equal(state.appConfig.agent_interrupt_cooldown_padding_ms, 0);
+  assert.equal(collectConfig().agent_interrupt_cooldown_padding_ms, 0);
+  await saveConfigNow();
+  assert.equal(posts.length, 1, 'confirmation must not restore the old default');
+});
+
+test('unrelated settings saves preserve legacy cloud-STT keys without exposing them as editable settings', async () => {
+  const legacy = {
+    stt_cloud_base_url: 'http://legacy-stt.test/v1',
+    stt_cloud_model: 'legacy-model', stt_api_key_env: 'LEGACY_STT_KEY',
+  };
+  const server = { ...legacy, speed: 1.3, voice: 'af_bella' }, posts = [];
+  globalThis.fetch = async (_url, options) => {
+    if (!options) return response({ ...server });
+    const patch = JSON.parse(options.body); posts.push(patch);
+    Object.assign(server, patch); return response({ ...server });
+  };
+  await loadConfig();
+  element('speed').value = '1.8';
+  await saveConfigNow();
+  assert.deepEqual(posts, [{ speed: 1.8 }]);
+  for (const [key, value] of Object.entries(legacy)) {
+    assert.equal(server[key], value);
+    assert.equal(state.appConfig[key], value);
+    assert.equal(Object.hasOwn(collectConfig(), key), false);
+  }
+});
+
 test('saved response budget loads without becoming an implicit new settings write', async () => {
   globalThis.fetch = async (_url, options) => {
     assert.equal(options, undefined);

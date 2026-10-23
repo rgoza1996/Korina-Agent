@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { state } from '../../Korina/js/state.js';
 import {
   askLM, askAndSpeak, deliverTranscriptToAgent, handleAgentEvent, pollAgentEvents,
-  handlePermissionAnswerIfAny,
+  handlePermissionAnswerIfAny, agentInterruptPaddingSec, setAgentInterruptCooldown,
 } from '../../Korina/js/agent-ui.js';
+import { collectConfig } from '../../Korina/js/settings-ui.js';
 
 const elements = new Map();
 globalThis.document = { getElementById(id) {
@@ -29,6 +30,34 @@ beforeEach(() => {
     pendingAgentReportVersion: 0, agentSession: 0, agentResetBlocked: false,
     awaitingAgentPermission: null, pendingImportantAgentMessage: '', deferredAgentInterrupt: null,
   });
+});
+
+test('zero interrupt padding is shared by settings and the runtime cooldown', () => {
+  const previous = {
+    audioCtx: state.audioCtx,
+    currentTtsEstimatedEnd: state.currentTtsEstimatedEnd,
+    agentInterruptCooldownUntil: state.agentInterruptCooldownUntil,
+  };
+  try {
+    element('agentInterruptCooldownPaddingMs').value = '0';
+    assert.equal(collectConfig().agent_interrupt_cooldown_padding_ms, 0);
+    assert.equal(agentInterruptPaddingSec(), 0);
+    Object.assign(state, {
+      audioCtx: { currentTime: 10 }, currentTtsEstimatedEnd: 12,
+      agentInterruptCooldownUntil: 0,
+    });
+    setAgentInterruptCooldown();
+    assert.equal(state.agentInterruptCooldownUntil, 12);
+    assert.match(element('agentDebug').textContent, /"padding_ms": 0/);
+  } finally { Object.assign(state, previous); }
+});
+
+test('blank or invalid interrupt padding retains the three-second default', () => {
+  for (const value of ['', 'invalid']) {
+    element('agentInterruptCooldownPaddingMs').value = value;
+    assert.equal(collectConfig().agent_interrupt_cooldown_padding_ms, 3000);
+    assert.equal(agentInterruptPaddingSec(), 3);
+  }
 });
 
 test('active agent delivery sends a bounded sanitized transcript using the current busy mode', async () => {
