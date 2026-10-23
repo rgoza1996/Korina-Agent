@@ -32,6 +32,7 @@ dev = ["korina-agent[test]", "ruff>=0.14,<1", "build>=1,<2", "mypy>=1.14,<2"]
 # faster-whisper 1.2.1 passes metadata_errors, removed by PyAV 19.
 # https://github.com/SYSTRAN/faster-whisper/issues/1589
 whisper = ["faster-whisper>=1.1,<2", "av>=11,<19"]
+whistle = ["cactus-needle>=3.2.8,<3.3"]
 tts = ["kokoro>=0.9,<1", "torch>=2.4,<3"]
 
 [project.scripts]

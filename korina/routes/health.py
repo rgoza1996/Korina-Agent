@@ -42,6 +42,7 @@ from korina.runtime.json_http import HTTPStatusError, request_json
 from korina.services.ack_service import ack_files_for, ack_status, load_ack_manifest
 from korina.services.ack_manifest import AckManifestError
 from korina.services.whisper_service import compute_type_for, cuda_available, normalize_device
+from korina.services import whistle_service
 from korina.util.paths import (
     LMSTUDIO_MODEL,
     PARTIAL_MIN_SECONDS,
@@ -357,6 +358,7 @@ async def health(request: Request):
         'whisper_model_choices': WHISPER_MODEL_CHOICES,
         'whisper_loaded': bool(state.asr.models),
         'whisper_available': whisper_available,
+        'whistle': await asyncio.to_thread(whistle_service.status),
         'stt_backend': str(config.get('stt_backend') or 'whisper'),
         'whisper_loaded_devices': sorted(state.asr.models.keys()),
         'whisper_loaded_at_by_device': state.asr.loaded_at_by_device,
@@ -397,7 +399,8 @@ async def health(request: Request):
         'response_llm': bool(loads['response_llm_load']['ok'] and loads['response_llm_load']['loaded']),
         'stt': bool(shutil.which('ffmpeg')) and (
             bool(loads['multimodal_stt_load']['ok'] and loads['multimodal_stt_load']['loaded'])
-            if result['stt_backend'] == 'llm' else whisper_available
+            if result['stt_backend'] == 'llm' else
+            result['whistle']['available'] if result['stt_backend'] == 'whistle' else whisper_available
         ),
         'tts': bool(result['tts']['ok']),  # lazy Kokoro loads on first speech
         'agent': config.get('agent_enabled') != 'on' or bool(loads['agent_load']['ok'] and loads['agent_load']['loaded']),

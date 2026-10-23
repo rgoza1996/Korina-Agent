@@ -20,6 +20,7 @@ from korina.runtime.request_owner import check_current
 
 from korina.services.multimodal_stt import lmstudio_transcribe_wav
 from korina.services.stt_resolution import resolve_multimodal_transcription
+from korina.services import whistle_service
 
 from korina.util.paths import (
     WHISPER_BEAM_SIZE,
@@ -275,6 +276,8 @@ def transcribe_upload_file(audio_file, *, vad_filter: bool = True, device: Optio
         convert_to_16k_wav(src, wav)
         check_current(is_current)
         metadata = audio_metadata(wav)
+        if backend == 'whistle':
+            return whistle_service.transcribe_wav(wav, metadata=metadata, is_current=is_current)
         if backend == 'llm':
             config = load_config()
 

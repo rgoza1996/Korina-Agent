@@ -319,15 +319,18 @@ export async function health() {
       state.ackStatusRevision++;
       status(ack, 'Acknowledgement catalog available; cached clips reload on use.', 'warn');
     }
-    setDot('pageDot', j.whisper_loaded ? 'good' : 'warn');
+    const whistleSelected = sttBackend() === 'whistle';
+    setDot('pageDot', (whistleSelected ? j.whistle?.loaded : j.whisper_loaded) ? 'good' : 'warn');
     const sttSummary = sttBackend() === 'llm'
       ? `multimodal ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()} (${sttLlmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off'})`
-      : `built-in Whisper ${sttDevice()}/${sttModel()}`;
+      : whistleSelected ? 'Whistle CPU' : `built-in Whisper ${sttDevice()}/${sttModel()}`;
     const responseProvider = j.response_llm_provider || llmProvider();
     const responseReasoning = responseProvider === 'meta' ? metaReasoningSummary(j.response_llm_reasoning_effort)
       : llmReasoningEnabled() === 'on' ? 'reasoning on' : 'reasoning off';
     const responseSummary = `${responseProvider} ${j.response_llm_model || lmModel()} (${responseReasoning})`;
-    $('pageHealth').textContent = `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || state.partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
+    $('pageHealth').textContent = whistleSelected
+      ? `Whistle ${j.whistle?.loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · local CPU transcription`
+      : `${j.whisper_backend || 'Whisper'} ${j.whisper_loaded ? 'loaded' : 'lazy'} · selected STT ${sttSummary} · response ${responseSummary} @ ${j.response_llm_base_url || llmBaseUrl()} · partial ${(Number(j.partial_window_ms || state.partialWindowMs) / 1000).toFixed(1)}s · last ${j.whisper_device}/${j.whisper_compute_type} · CUDA ${j.cuda_available ? 'yes' : 'no'}`;
 
     // hostInfo (Bug C / #19): server-resolved URLs only.
     const llmBase = j.response_llm_base_url || '';
@@ -338,10 +341,10 @@ export async function health() {
     const llmOk = !!(j.response_llm_load?.ok && j.response_llm_load?.loaded);
     const sttOk = !state.audioLimitsError && (j.stt_backend === 'llm'
       ? !!(j.multimodal_stt_load?.ok && j.multimodal_stt_load?.loaded)
-      : !!j.whisper_available);
+      : j.stt_backend === 'whistle' ? !!j.whistle?.available : !!j.whisper_available);
     const parts = [];
     parts.push(`LLM ${llmOk ? 'up' : 'down'}${llmOk ? '' : ' (' + (j.response_llm_load?.error || 'model not loaded') + ')'}`);
-    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + (state.audioLimitsError || j.multimodal_stt_load?.error || 'speech runtime unavailable') + ')'}`);
+    parts.push(`STT ${sttOk ? 'up' : 'down'}${sttOk ? '' : ' (' + (state.audioLimitsError || (j.stt_backend === 'whistle' ? j.whistle?.error : j.multimodal_stt_load?.error) || 'speech runtime unavailable') + ')'}`);
     if (j.agent_provider === 'meta') parts.push(`Agent configured with ${metaReasoningSummary(j.agent_reasoning_effort)}`);
     const liveEl = $('settingsLiveStatus');
     if (liveEl) liveEl.textContent = parts.join(' · ');
@@ -422,12 +425,14 @@ export async function health() {
 // audio duration in seconds, the STT latency in seconds, and the
 // resolved model id (last segment only -- long ids truncated).
 const STT_BACKEND_LABELS = {
+  'whistle': 'whistle',
   'multimodal-stt': 'multimodal',
   'faster-whisper': 'whisper',
   'whisper-fallback': 'whisper (fallback)',
   'whisper-llm': 'whisper',
 };
 const STT_BACKEND_DOTS = {
+  'whistle': 'good',
   'multimodal-stt': 'good',
   'faster-whisper': 'good',
   'whisper-fallback': 'warn',

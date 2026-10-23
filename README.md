@@ -40,6 +40,29 @@ Browser speech uses the Kokoro service protocol: PCM SSE at `/stream/speech` and
 
 Compatible services must also obey the browser audio budgets: replies last at most ten minutes, buffered downloads are limited to 32 MiB, and acknowledgement downloads to 2 MiB each. Streaming PCM must use an integer sample rate between 3,000 and 384,000 Hz; the usual 8–48 kHz rates are supported. Oversized or overlong audio stops playback with an error instead of retaining more buffers.
 
+## Local Whistle transcription
+
+Select **Whistle — local CPU** in Settings after installing `.[whistle]` and preparing the [Whistle weights](https://huggingface.co/Cactus-Compute/whistle) and a matching [Needle 3 engine](https://github.com/cactus-compute/needle). Korina's current Whistle path uses English, accepts the same bounded buffered/partial/SSE uploads, and runs one native inference at a time. It does not silently fall back to Whisper or a cloud service.
+
+Prepare assets before presenting. With the supported 3.2 runtime installed, this downloads the weights and Linux/platform engine into a dedicated local directory:
+
+```bash
+python -m pip install -e '.[whistle]'
+NEEDLE_TELEMETRY=0 DO_NOT_TRACK=1 python - <<'PY'
+from pathlib import Path
+from huggingface_hub import hf_hub_download
+from needle.agent import fetch
+directory = Path.home() / '.cache' / 'korina-whistle'
+directory.mkdir(parents=True, exist_ok=True)
+print(hf_hub_download('Cactus-Compute/whistle', 'whistle.cact', local_dir=directory))
+print(fetch.fetch_library(dest_dir=str(directory), generation=3))
+PY
+```
+
+Set `KORINA_WHISTLE_MODEL` to the downloaded `.cact` and `NEEDLE3_LIB_PATH` to the printed engine-library path in the API environment. Both files must already exist; health checks never download or initialize them. The service disables Needle telemetry. Use `HF_HUB_OFFLINE=1` after preparing all other speech assets for an offline session. Changing the native engine library requires restarting Korina.
+
+Whistle's official engine uses the CPU. A fully local stack can pair it with GPU Qwen via llama.cpp and GPU Kokoro using a suitable PyTorch build; PyTorch's `cuda` device also names AMD ROCm devices. Check the actual backend/device in each rehearsal rather than inferring acceleration from a saved setting.
+
 ## Meta Model API rehearsal
 
 Select **Meta Model API** (`meta`) as the response provider. This named profile uses the fixed base `https://api.meta.ai/v1` and defaults to Bearer authentication from `MODEL_API_KEY` in the API process environment. A configured `llm_api_key_env` overrides that default. Keep the key private, using the service environment instructions below when applicable. A generic/custom provider does not gain Meta credentials merely by using the same hostname.

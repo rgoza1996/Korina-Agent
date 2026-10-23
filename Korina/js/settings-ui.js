@@ -250,17 +250,19 @@ export function syncReasoningHints() {
   if ($('agentReasoningHint')) $('agentReasoningHint').textContent = `Reasoning: Meta ${agentReasoningEffort() ? `effort ${agentReasoningEffort()}` : 'provider default'}. Applies after settings save.`;
   if ($('sttReasoningHint')) $('sttReasoningHint').textContent = sttBackend() === 'llm'
     ? `Reasoning: ${sttLlmReasoningEnabled() === 'on' ? 'on' : 'off'} for multimodal STT.`
-    : 'Reasoning: built-in Whisper does not use this toggle.';
+    : `Reasoning: ${sttBackend() === 'whistle' ? 'Whistle' : 'built-in Whisper'} does not use this toggle.`;
 }
 
 export function syncConverseSettingsUI() {
   const multimodal = sttBackend() === 'llm';
-  ['sttWhisperDeviceWrap', 'sttWhisperModelWrap'].forEach(id => setSectionHidden(id, multimodal));
+  ['sttWhisperDeviceWrap', 'sttWhisperModelWrap'].forEach(id => setSectionHidden(id, sttBackend() !== 'whisper'));
   ['sttMultimodalProviderWrap', 'sttMultimodalModelWrap', 'sttMultimodalBaseUrlWrap', 'sttMultimodalApiKeyWrap', 'sttMultimodalReasoningWrap'].forEach(id => setSectionHidden(id, !multimodal));
   $('llmResponseSection')?.classList.toggle('settingsDisabled', multimodal);
   if ($('llmResponseSection')) $('llmResponseSection').open = !multimodal;
   syncReasoningHints();
   $('modelOptionsStatus').textContent = multimodal
     ? `Multimodal STT selected. STT model endpoint resolves to ${effectiveSttLlmBaseUrl() || 'the LLM Response base URL'} and falls back to the LLM Response section when STT-specific fields are blank.`
-    : 'Whisper is built into Korina. Open a model picker to query its current /v1/models endpoint or the local llama.cpp model catalog.';
+    : sttBackend() === 'whistle'
+      ? 'Whistle runs on the local CPU using the configured offline weights and engine. Whisper model/device controls do not apply.'
+      : 'Whisper is built into Korina. Open a model picker to query its current /v1/models endpoint or the local llama.cpp model catalog.';
 }

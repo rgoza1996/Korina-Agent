@@ -360,7 +360,7 @@ function wireSettingsInputs() {
   if (sttBackendEl) sttBackendEl.onchange = () => {
     const msg = sttBackend() === 'llm'
       ? `Multimodal STT selected. Audio transcription now uses ${effectiveSttLlmModel()} @ ${effectiveSttLlmBaseUrl()}. Blank STT fields inherit from LLM Response.`
-      : 'Built-in Whisper selected.';
+      : sttBackend() === 'whistle' ? 'Local Whistle CPU selected.' : 'Built-in Whisper selected.';
     syncConverseSettingsUI();
     status($('sttStatus'), msg, 'warn');
     $('modelOptionsStatus').textContent = msg;

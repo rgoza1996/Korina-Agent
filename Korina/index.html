@@ -28,9 +28,9 @@
         <details class="settingsGroup" id="sttSection" open>
           <summary>Speech to Text</summary>
           <div class="settingsGroupBody">
-            <p class="sectionLead">Whisper is built into Korina. Multimodal STT can borrow the LLM Response settings unless you override them here.</p>
+            <p class="sectionLead">Whisper and optional Whistle run locally. Multimodal STT can borrow the LLM Response settings unless you override them here.</p>
             <p class="small mono" id="sttReasoningHint">Reasoning: built-in Whisper does not use this toggle.</p>
-            <div><label for="sttBackend">Speech-to-text backend</label><select id="sttBackend"><option value="whisper" selected>Built-in Whisper</option><option value="llm">Multimodal model</option></select></div>
+            <div><label for="sttBackend">Speech-to-text backend</label><select id="sttBackend"><option value="whisper" selected>Built-in Whisper</option><option value="whistle">Whistle — local CPU</option><option value="llm">Multimodal model</option></select></div>
             <div><label for="endpointMode">Endpointing mode</label><select id="endpointMode"><option value="reading" selected>Reading/dictation — wait longer</option><option value="conversation">Conversation — quicker turns</option></select></div>
             <div id="sttWhisperDeviceWrap"><label for="sttDevice">Whisper device</label><select id="sttDevice"><option value="cpu" selected>CPU</option><option value="gpu">GPU / CUDA</option><option value="auto">Auto</option></select></div>
             <div id="sttWhisperModelWrap"><label for="sttModel">Whisper model</label><select id="sttModel"><option value="tiny.en">tiny.en — fastest CPU</option><option value="base.en" selected>base.en — CPU balanced</option><option value="small.en">small.en — better, slower</option><option value="turbo">turbo — quality, slow CPU</option><option value="distil-large-v3">distil-large-v3 — faster large English</option></select></div>

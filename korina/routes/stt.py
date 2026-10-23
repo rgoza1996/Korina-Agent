@@ -22,6 +22,7 @@ from korina.runtime.json_http import RequestCancelledError
 from korina.runtime.request_owner import RequestOwner, check_current
 from korina.services.multimodal_stt import lmstudio_transcribe_wav
 from korina.services.stt_resolution import resolve_multimodal_transcription
+from korina.services import whistle_service
 from korina.services.whisper_service import (
     AudioDurationLimitError,
     WhisperBusyError,
@@ -162,7 +163,7 @@ def _stream_events(audio_file, *, device, model, backend, llm_model,
             check_current(is_current)
             with src.open('wb') as target:
                 shutil.copyfileobj(audio_file, target)
-            yield sse_event('status', {'message': 'converting', 'backend': 'faster-whisper'})
+            yield sse_event('status', {'message': 'converting', 'backend': backend})
             check_current(is_current)
             convert_to_16k_wav(src, wav)
             check_current(is_current)
@@ -178,6 +179,8 @@ def _stream_events(audio_file, *, device, model, backend, llm_model,
                     started=started, metadata=metadata,
                     is_current=is_current,
                 )
+            elif backend == 'whistle':
+                payload = whistle_service.transcribe_wav(wav, metadata=metadata, is_current=is_current)
             else:
                 parts, info = transcribe_wav_segments(
                     wav, vad_filter=True, device=device, model_id=model,
@@ -213,7 +216,7 @@ async def transcribe(
         ))
     except AudioDurationLimitError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
-    except WhisperBusyError as exc:
+    except (WhisperBusyError, whistle_service.WhistleBusyError) as exc:
         raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from exc
     except RequestCancelledError as exc:
         raise HTTPException(status_code=499, detail='Transcription request was cancelled') from exc
@@ -242,7 +245,7 @@ async def transcribe_partial(
         return JSONResponse(result)
     except AudioDurationLimitError as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
-    except WhisperBusyError as exc:
+    except (WhisperBusyError, whistle_service.WhistleBusyError) as exc:
         raise HTTPException(status_code=503, detail=str(exc), headers={'Retry-After': '1'}) from exc
     except RequestCancelledError as exc:
         raise HTTPException(status_code=499, detail='Transcription request was cancelled') from exc
