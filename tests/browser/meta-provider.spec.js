@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 test('Meta dropdowns apply registry presets, preserve blank key controls, and save through the real config route', async ({ page, request }) => {
   const original = await (await request.get('/api/config')).json();
   const errors = [], discovery = [], agents = [], activations = [], chats = [], resets = [];
+  let heldConfigSave = null;
   page.on('pageerror', error => errors.push(error.message));
   try {
     expect((await request.post('/api/config', { data: {
@@ -16,6 +17,12 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
     } })).ok()).toBeTruthy();
     await page.route('**/api/**', async route => {
       const req = route.request(), url = new URL(req.url());
+      if (url.pathname === '/api/config' && req.method() === 'POST' && heldConfigSave) {
+        const pending = heldConfigSave;
+        heldConfigSave = null;
+        pending.started();
+        await pending.resume;
+      }
       if (url.pathname === '/api/health') {
         const saved = await (await request.get('/api/config')).json();
         return route.fulfill({ json: { ok: true, whisper_available: true,
@@ -44,9 +51,10 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
         return route.fulfill({ json: { ok: true } });
       }
       if (url.pathname === '/api/llm/provider/activate') {
-        activations.push(req.postDataJSON());
+        const activation = req.postDataJSON();
+        activations.push(activation);
         const saved = await (await request.get('/api/config')).json();
-        return route.fulfill({ json: { ok: true, saved, activation: { started: [], stopped: [] } } });
+        return route.fulfill({ json: { ok: true, saved, activation: { provider: activation.provider, started: [], stopped: [] } } });
       }
       // Capabilities and config use the actual backend; outbound provider
       // discovery, health and activation are completely intercepted above.
@@ -124,8 +132,18 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
     expect(chats).toHaveLength(2);
     expect(chats[1].reasoning_effort).toBe('');
     expect((await (await request.get('/api/config')).json()).llm_reasoning_effort).toBe('minimal');
-    await page.locator('#closeSettingsBtn').click();
-    await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+    // Closing is immediate; activation must wait for the real config save.
+    let saveStarted, releaseSave;
+    const started = new Promise(resolve => { saveStarted = resolve; });
+    const resume = new Promise(resolve => { releaseSave = resolve; });
+    heldConfigSave = { started: saveStarted, resume };
+    try {
+      await page.locator('#closeSettingsBtn').click();
+      await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
+      await started;
+      expect(activations).toEqual([]);
+    } finally { releaseSave(); }
+    await expect(page.locator('#settingsActionStatus')).toContainText('Activated meta.');
     expect(activations).toEqual([{ provider: 'meta', model: 'team-text-fixture' }]);
     await page.locator('#settingsBtn').click();
     await page.locator('[data-settings-tab="converse"]').click();
@@ -134,11 +152,10 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
     await page.locator('#agentReasoningEffort').selectOption('');
     await page.locator('#closeSettingsBtn').click();
     await expect(page.locator('#settingsModal')).not.toHaveClass(/open/);
-    const effortOnly = await (await request.get('/api/config')).json();
-    expect(effortOnly.llm_reasoning_effort).toBe('low');
-    expect(effortOnly.agent_reasoning_effort).toBe('');
-    expect(activations).toHaveLength(1, 'effort-only saves must not activate a provider');
-    expect(resets).toEqual([]);
+    await expect.poll(async () => {
+      const saved = await (await request.get('/api/config')).json();
+      return [saved.llm_reasoning_effort, saved.agent_reasoning_effort];
+    }).toEqual(['low', '']);
     await page.reload();
     await expect(page.locator('#settingsInfo')).toContainText('Loaded saved config');
     await page.locator('#settingsBtn').click();
@@ -146,6 +163,8 @@ test('Meta dropdowns apply registry presets, preserve blank key controls, and sa
     await expect(page.locator('#llmReasoningHint')).toContainText('Meta effort low');
     await page.locator('[data-settings-tab="agent"]').click();
     await expect(page.locator('#agentReasoningEffort')).toHaveValue('');
+    expect(activations).toHaveLength(1, 'effort-only saves must not activate a provider');
+    expect(resets).toEqual([]);
     expect(errors).toEqual([]);
   } finally {
     expect((await request.post('/api/config', { data: original })).ok()).toBeTruthy();
