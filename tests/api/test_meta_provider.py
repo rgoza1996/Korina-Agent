@@ -100,8 +100,9 @@ def test_meta_models_come_from_authenticated_discovery(monkeypatch, client, conf
     assert response.status_code == 200
     result = response.json()
     assert set(result['llm_models']) == {'team-enabled-fixture', 'another-team-fixture'}
-    assert result['llm_error'] is None
-    assert len(calls) == 2  # response and inherited STT discovery share auth, not a model list
+    assert result['stt_llm_models'] == result['llm_models']
+    assert result['llm_error'] is result['stt_llm_error'] is None
+    assert len(calls) == 1  # identical response/STT discovery shares one authenticated request
     assert all(not cap['supports_audio_input'] for cap in result['llm_models_capabilities'].values())
 
 
