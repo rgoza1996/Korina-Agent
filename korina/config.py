@@ -144,15 +144,17 @@ def load_config() -> dict:
         if example.exists():
             try:
                 seed = json.loads(example.read_text())
-                if isinstance(seed, dict):
-                    merged_seed = dict(DEFAULT_CONFIG)
-                    for key, value in seed.items():
-                        if key in CONFIG_KEYS:
-                            merged_seed[key] = _normalize_config_value(key, value)
-                    save_config(merged_seed)
-                    return merged_seed
-            except Exception:
-                pass
+            except (OSError, ValueError, RecursionError):
+                seed = None
+            if isinstance(seed, dict):
+                merged_seed = dict(DEFAULT_CONFIG)
+                for key, value in seed.items():
+                    if key in CONFIG_KEYS:
+                        merged_seed[key] = _normalize_config_value(key, value)
+                # A persistence failure is not an invalid example. Preserve
+                # its error instead of retrying with different defaults.
+                save_config(merged_seed)
+                return merged_seed
         save_config(DEFAULT_CONFIG)
         return dict(DEFAULT_CONFIG)
     try:

@@ -13,16 +13,61 @@ def mode(path):
     return stat.S_IMODE(path.stat().st_mode)
 
 
-@pytest.mark.parametrize('example', [True, False])
+@pytest.mark.parametrize('example', ['valid', 'absent', 'malformed', 'non-object'])
 def test_auto_created_config_is_private_without_changing_seed_behavior(config_module, app_dir, example):
     source = app_dir / 'config/config.example.json'
-    if not example:
+    if example == 'absent':
         source.unlink()
+    elif example == 'malformed':
+        source.write_text('{invalid JSON')
+    elif example == 'non-object':
+        source.write_text('[]')
     saved = config_module.load_config()
     assert mode(config_module.CONFIG_PATH) == 0o600
     assert saved['voice'] == 'af_heart'
-    assert saved['llm_provider'] == ('openai-compatible' if example else config_module.DEFAULT_CONFIG['llm_provider'])
+    assert saved['llm_provider'] == ('openai-compatible' if example == 'valid' else config_module.DEFAULT_CONFIG['llm_provider'])
     assert json.loads(config_module.CONFIG_PATH.read_text()) == saved
+
+
+def test_first_launch_seed_save_error_propagates_without_retrying_defaults(config_module, app_dir, monkeypatch):
+    seed = {
+        'voice': 'af_bella', 'ack_enabled': 'off', 'agent_enabled': 'off',
+        'final_stt_mode': 'full', 'endpoint_mode': 'conversation',
+        'agent_busy_delivery_mode': config_module.LEGACY_DELIVERY_VALUE,
+    }
+    source = app_dir / 'config/config.example.json'
+    source.write_text(json.dumps(seed))
+    before = set(app_dir.iterdir())
+    failure = OSError(errno.EIO, 'controlled first commit failure')
+    original_replace = Path.replace
+    attempts = []
+
+    def replace(temporary, destination):
+        if destination == config_module.CONFIG_PATH:
+            attempts.append(json.loads(temporary.read_text()))
+            if len(attempts) == 1:
+                raise failure
+        return original_replace(temporary, destination)
+
+    monkeypatch.setattr(Path, 'replace', replace)
+    with pytest.raises(OSError) as caught:
+        config_module.load_config()
+    assert caught.value is failure
+    assert len(attempts) == 1
+    assert attempts[0]['voice'] == seed['voice']
+    assert attempts[0]['agent_busy_delivery_mode'] == 'injection'
+    assert not config_module.CONFIG_PATH.exists()
+    assert set(app_dir.iterdir()) == before
+    assert json.loads(source.read_text()) == seed
+    # A deliberate later attempt succeeds with the intended normalized seed.
+    saved = config_module.load_config()
+    assert len(attempts) == 2
+    assert saved == attempts[0] == attempts[1]
+    assert saved['ack_enabled'] == saved['agent_enabled'] == 'off'
+    assert saved['final_stt_mode'] == 'full'
+    assert saved['endpoint_mode'] == 'conversation'
+    assert json.loads(config_module.CONFIG_PATH.read_text()) == saved
+    assert mode(config_module.CONFIG_PATH) == 0o600
 
 
 @pytest.mark.parametrize('operation', ['settings', 'model_roots'])
