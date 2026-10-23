@@ -1,0 +1,45 @@
+{
+  "kind": "controlled-native-vad-reproduction",
+  "verified_on": "2026-10-23",
+  "pre_event_preparation": true,
+  "fixed_source_commit": "4158cd2e811ea6d8869e5687204f264ea8ac2caf",
+  "base_assets_commit": "5ef3c9d2352dd56744fc8d4e414d5cd7c1643894",
+  "overlay_sha256": {
+    "js/live.js": "14e24c728f6f48bb96deff9416f9a2bad2f230725e377c51d5ebbbaa01e826bb",
+    "js/vad.js": "706f5ccf80cc14238df78d5ecb9cea651dc181278a4506c1e1857172a0fade1d",
+    "js/state.js": "fb2008e0a5240271ab618281f750ee450bb880df6e81763305387dcde9173b13"
+  },
+  "other_27_assets_identical_to_base": true,
+  "imposed_live_callback_minimum_ms": 50,
+  "old_source": {
+    "exact_max_consecutive_speech_frames": 5,
+    "above_threshold_observations": 25,
+    "median_live_callback_gap_ms": 53,
+    "final_stt_requests": 0,
+    "native_input_above_threshold": true
+  },
+  "candidate": {
+    "speech_confirmation_ms": 120,
+    "quiet_confirmation_ms": 150,
+    "expire_candidates_after_observation_gap_ms": 250,
+    "observed_confirmation_wait_ms": 125.6,
+    "partial_stt_requests": 4,
+    "final_stt_requests": 1,
+    "local_chat_requests": 2,
+    "native_main_recording_bytes": 65338,
+    "native_playback_ended": true,
+    "stop_released_tracks_and_meter": true,
+    "active_sources_after_stop": 0
+  },
+  "page_errors": 0,
+  "external_requests": 0,
+  "all_owned_resources_closed": true,
+  "scope": [
+    "The same actual archived full UI and generated WAV were used; only Live callback delivery was capped to the observed slow cadence.",
+    "The fixed candidate overlaid the three stated VAD modules on 27 immutable base assets. The final integrated app additionally includes the separate ACK status fix.",
+    "MediaRecorder capture, WebM/Opus, browser microphone input and WebAudio playback were native; STT, chat and TTS response data were local deterministic fixtures.",
+    "Natural uncapped runs had both pass and failure outcomes; the controlled comparison isolates cadence without claiming every recording fails.",
+    "Observed timestamps reproduce admission behavior, not product/model latency or physical-headset performance.",
+    "Long-stall spike and quiet-candidate regressions, ordinary minimum speech/endpoint settings and lifecycle cleanup are covered separately by executable Node tests."
+  ]
+}

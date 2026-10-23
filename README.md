@@ -4,7 +4,7 @@ Korina is a local voice workspace: speak in the browser, transcribe with Whisper
 
 **Hackathon work:** [`codex/hackathon-refactor`](https://github.com/rgoza1996/Korina-Agent/tree/codex/hackathon-refactor), based on `alpha`. Track verification in [#23](https://github.com/rgoza1996/Korina-Agent/issues/23). `master` remains the v0.0.1 release snapshot. See the [demo guide](docs/hackathon.md) and [current architecture](docs/wiki/Architecture.md).
 
-**Documentation:** [Public Pages site](https://rgoza1996.github.io/Korina-Agent/), published from `gh-pages`, describes the refactor preview and its verification evidence.
+**Documentation:** [Public Pages site](https://rgoza1996.github.io/Korina-Agent/), published from `gh-pages`, describes the refactor preview. [Watch the pre-event voice demo](https://rgoza1996.github.io/Korina-Agent/Demo.html): silent screen video and separate actual speech replay, using a generated microphone.
 
 ## Run from a checkout
 
@@ -61,7 +61,7 @@ Set **Response token budget** in response settings for the selected model (1–8
 
 The **Last response usage** panel shows provider-reported input, output, reasoning and cached-input tokens for the latest dispatched request. Its model, budget and reasoning labels come from that request’s server snapshot. Missing counts remain unavailable; zero remains zero. These observations stay out of speech/history and do not estimate spending or guarantee cache reuse.
 
-The focused hackathon goal is one useful voice interaction using conversational context and a fact retained in the current session. An [authenticated synthetic rehearsal](docs/verification.md#authenticated-meta-effort-rehearsal-at-bc7c8c5) recalled the earlier Cedar/Friday fact through real Whisper, Meta, Kokoro and native browser playback. The latest run selected minimal response effort and low agent effort, completed native playback in 30.999 seconds, and reported 113 cached input tokens on the voice request. It used a generated fake microphone; physical headset and human interruption checks remain. This is one observation, without a general speed or cache-hit guarantee. The API receives the relevant context; this is not durable memory across restarts. All work before kickoff is preparation. Record the actual event starting SHA and later additions in the [demo guide's ledger](docs/hackathon.md).
+The focused hackathon goal is one useful voice interaction using conversational context and a fact retained in the current session. The [recorded pre-event rehearsal at `4158cd2`](docs/verification.md#accepted-meta-voice-recording-at-4158cd2) recalled Cedar and Friday at ten through actual Whisper, Meta and Kokoro with native browser playback. It used a typed seed, a generated microphone question, minimal response effort and a 2048-token budget; Agent and ACKs were off. The voice request reported 113 cached input tokens. The [public recording](https://rgoza1996.github.io/Korina-Agent/Demo.html) preserves waiting in its silent video and the pause between actual speech chunks in a separate replay. Physical headset and human interruption checks remain. This observation establishes neither a general speed nor cache-hit guarantee. The API receives supplied conversation context; this is not durable memory across restarts. All work before kickoff is preparation. Record the actual event starting SHA and later additions in the [demo guide's ledger](docs/hackathon.md).
 
 ## Install a built wheel
 

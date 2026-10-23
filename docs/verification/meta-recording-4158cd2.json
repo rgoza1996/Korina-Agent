@@ -1,0 +1,314 @@
+{
+  "kind": "pre-event-screen-recorded-voice-rehearsal",
+  "observed_on": "2026-10-23",
+  "source_commit": "4158cd2e811ea6d8869e5687204f264ea8ac2caf",
+  "pre_event_preparation": true,
+  "accepted_as_generated_microphone_voice_rehearsal": true,
+  "complete": true,
+  "source_verification": {
+    "tracked_git_blobs_matched": 359,
+    "installed_frontend_assets_matched": 30,
+    "instrumentation": "Private observers recorded native audio buffer scheduling, ended events and browser video; product handlers and tracked sources were unchanged."
+  },
+  "input": {
+    "seed": "For this demonstration, remember that my project is called Cedar and its rehearsal is Friday at ten in the morning. Acknowledge in one short sentence.",
+    "question": "What is my project called and when is our practice?",
+    "microphone": "Generated mono 16 kHz PCM WAV; no physical microphone.",
+    "agent": "off",
+    "acknowledgements": "off",
+    "context": "Seed user turn and its assistant response each appeared once in supplied history; the question appeared once without restating the facts."
+  },
+  "services": {
+    "transcription": {
+      "engine": "faster-whisper",
+      "model": "base.en",
+      "device": "cpu",
+      "compute_type": "int8",
+      "language": "en",
+      "reported_seconds": 8.240926504,
+      "sample_rate": 16000,
+      "samples": 102720,
+      "duration_seconds": 6.42
+    },
+    "response": {
+      "provider": "Direct Meta Model API",
+      "model": "muse-spark-1.3-contributor",
+      "reasoning_effort": "minimal",
+      "max_tokens": 2048,
+      "temperature": 0.7
+    },
+    "speech": {
+      "engine": "Kokoro",
+      "voice": "af_heart",
+      "device": "cpu"
+    }
+  },
+  "actual_outputs": {
+    "seed_reply": "Got it, Cedar rehearsal is Friday at ten in the morning.",
+    "final_transcript": "What is my project called and when is our practice?",
+    "voice_reply": "Your project is Cedar.\nYour rehearsal is Friday at ten in the morning."
+  },
+  "usage": {
+    "seed": {
+      "prompt_tokens": 211,
+      "completion_tokens": 73,
+      "reasoning_tokens": 50,
+      "cached_tokens": 0,
+      "finish_reason": "stop",
+      "service_seconds": 2.689227581,
+      "estimated_usd": "0.0000357"
+    },
+    "voice": {
+      "prompt_tokens": 246,
+      "completion_tokens": 86,
+      "reasoning_tokens": 61,
+      "cached_tokens": 113,
+      "finish_reason": "stop",
+      "service_seconds": 1.433641195,
+      "estimated_usd": "0.000030726"
+    },
+    "visible_panel_matched_voice_request": true,
+    "reasoning_already_in_completion_tokens": true,
+    "cached_already_in_prompt_tokens": true
+  },
+  "observed_timing": {
+    "origin": "Browser orchestrator start; includes instrumentation and recording overhead.",
+    "seed_native_ended_seconds": 18.407,
+    "live_clicked_seconds": 18.524,
+    "voice_native_ended_seconds": 52.168,
+    "stop_clicked_seconds": 52.192,
+    "live_to_observed_native_ended_seconds": 33.644,
+    "scope": "Includes question capture, transcription, response, CPU synthesis and observation overhead. Not a controlled latency benchmark or a comparison with earlier runs.",
+    "final_transcription_http_seconds": 8.273,
+    "voice_speech_http_seconds": 13.302
+  },
+  "verification": {
+    "browser_checks": {
+      "selected_settings": true,
+      "not_interrupted_before_seed": true,
+      "seed_http": true,
+      "not_interrupted_before_live": true,
+      "voice_http": true,
+      "exactly_two_chats": true,
+      "one_real_full_transcription": true,
+      "context_path": true,
+      "remembered_fact": true,
+      "two_actual_speech_responses": true,
+      "no_agent_submission": true,
+      "request_settings": true,
+      "usage_panel_exact": true,
+      "native_pcm_complete": true,
+      "capture_stopped": true,
+      "no_page_errors": true,
+      "not_interrupted": true
+    },
+    "readiness_checks_before": 6,
+    "readiness_checks_after": 6,
+    "all_readiness_checks_passed": true,
+    "page_errors": 0,
+    "actual_meta_generation_calls": 2,
+    "actual_full_transcription_requests": 1,
+    "native_playback_ended_for_seed_and_both_voice_chunks": true,
+    "voice_pcm_frames": 119400,
+    "voice_pcm_seconds": 4.975,
+    "capture_released_after_stop": true,
+    "partial_request_before_final": "One partial request was observed failed/cancelled before the successful full SSE transcription; full transcription and voice completion passed."
+  },
+  "cost_accounting": {
+    "task_generation_calls_before": 39,
+    "task_generation_calls_after": 41,
+    "prior_estimated_usd": "0.005633806",
+    "new_estimated_usd": "0.000066426",
+    "task_estimated_usd_after": "0.005700232",
+    "authorized_cap_usd": "3.00",
+    "all_prior_records_unchanged": true,
+    "failed_recording_call_39_retained": true,
+    "paid_openrouter_generations": 0,
+    "scope": "Returned-token estimate including all priming and stopped attempts; not an invoice or account-enforced spending cap. Reasoning is included in output, not charged twice.",
+    "pricing_source": "https://dev.meta.ai/docs/pricing-rate-limits",
+    "pricing_verified_on": "2026-10-23"
+  },
+  "cleanup": {
+    "browser_closed": true,
+    "backend_graceful_shutdown_logged": true,
+    "tts_graceful_shutdown_logged": true,
+    "owned_ports_closed": true,
+    "stop_button_observed": true
+  },
+  "media": {
+    "page": "https://rgoza1996.github.io/Korina-Agent/Demo.html",
+    "files": {
+      "ui-silent.webm": {
+        "sha256": "be632f8698e343e179444faf455c9e94c9a07998ab0e423969c4eb8c99a9d21a",
+        "bytes": 8774240,
+        "unchanged_copy": true,
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2/ui-silent.webm"
+      },
+      "ui-silent.mp4": {
+        "sha256": "da5db70fb9c042ab47c699478de6b0ae885612e9b2f4788d38e8d1d6618640d7",
+        "bytes": 1382170,
+        "derived": true,
+        "conversion": "Lossy H264 video transcode of unchanged raw WebM; no audio or mux.",
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2/ui-silent.mp4"
+      },
+      "poster.png": {
+        "sha256": "0b9de1e870198c25caabbcc70b455fc64ca280d68293628da1b3ced18809cdba",
+        "bytes": 451703,
+        "unchanged_copy": true,
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2/poster.png"
+      },
+      "01-seed.wav": {
+        "sha256": "9a4bbf55d0a1c0c54d97f89c7296e8d30e3e51289d492a8c6d0ac51774d05eb0",
+        "bytes": 178844,
+        "unchanged_copy": true,
+        "sample_frames": 89400,
+        "sample_rate": 24000,
+        "channels": 1,
+        "sample_width_bytes": 2,
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2/01-seed.wav"
+      },
+      "02-voice.wav": {
+        "sha256": "6e80294780a9297d388494be76294d85fa07b7e41607e0cb907acff9756ccfeb",
+        "bytes": 92444,
+        "unchanged_copy": true,
+        "sample_frames": 46200,
+        "sample_rate": 24000,
+        "channels": 1,
+        "sample_width_bytes": 2,
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2/02-voice.wav"
+      },
+      "03-voice.wav": {
+        "sha256": "b5c492d12dc4e2c3aaa4409fa2c12c9e22e4ea6f04f82d19c55781444ddb22bb",
+        "bytes": 146444,
+        "unchanged_copy": true,
+        "sample_frames": 73200,
+        "sample_rate": 24000,
+        "channels": 1,
+        "sample_width_bytes": 2,
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2/03-voice.wav"
+      },
+      "voice-answer-replay.wav": {
+        "sha256": "6d4c552d7f13636bbcdcad8c3f0108631cb29b5065059d5769828b3f43cf645d",
+        "bytes": 523722,
+        "derived": true,
+        "sample_frames": 261839,
+        "sample_rate": 24000,
+        "channels": 1,
+        "sample_width_bytes": 2,
+        "duration_seconds": 10.909958333333334,
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2/voice-answer-replay.wav"
+      },
+      "schedule.json": {
+        "sha256": "3ed3aa32daafa0e03b766e18bcb285ec0f850f26e51c29eece0bdb46a8d60880",
+        "bytes": 4183,
+        "allowlisted_projection": true,
+        "url": "https://rgoza1996.github.io/Korina-Agent/demo/4158cd2/schedule.json"
+      }
+    },
+    "video": {
+      "raw": {
+        "codec_name": "vp9",
+        "pix_fmt": "yuv420p",
+        "width": 1440,
+        "height": 1200,
+        "avg_frame_rate": "25/1",
+        "nb_read_frames": "1366",
+        "start_time": "0.000000",
+        "duration_seconds": "54.640000",
+        "video_streams": 1,
+        "audio_streams": 0
+      },
+      "derived": {
+        "codec_name": "h264",
+        "pix_fmt": "yuv420p",
+        "width": 1440,
+        "height": 1200,
+        "avg_frame_rate": "25/1",
+        "nb_read_frames": "1366",
+        "start_time": "0.000000",
+        "duration_seconds": "54.640000",
+        "video_streams": 1,
+        "audio_streams": 0
+      },
+      "all_1366_presentation_times_and_frame_durations_match": true,
+      "moov_precedes_mdat": true,
+      "mp4_top_level_atoms": [
+        {
+          "type": "ftyp",
+          "offset": 0,
+          "bytes": 32
+        },
+        {
+          "type": "moov",
+          "offset": 32,
+          "bytes": 17224
+        },
+        {
+          "type": "free",
+          "offset": 17256,
+          "bytes": 8
+        },
+        {
+          "type": "mdat",
+          "offset": 17264,
+          "bytes": 1364906
+        }
+      ],
+      "command_working_directory": ".",
+      "conversion_command": "ffmpeg -nostdin -hide_banner -loglevel warning -n -threads 2 -i ui-silent.webm -map 0:v:0 -an -c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -threads 2 -fps_mode passthrough -movflags +faststart -map_metadata -1 ui-silent.mp4",
+      "ffmpeg_version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+    },
+    "voice_replay": {
+      "file": "voice-answer-replay.wav",
+      "kind": "DERIVED schedule-based replay from actual native PCM",
+      "source_files": [
+        "02-voice.wav",
+        "03-voice.wav"
+      ],
+      "context_id": 0,
+      "origin_context_seconds": 33.81115646258503,
+      "sample_rate": 24000,
+      "channels": 1,
+      "sample_width_bytes": 2,
+      "source_start_sample_frames": [
+        0,
+        188639
+      ],
+      "source_sample_frames": [
+        46200,
+        73200
+      ],
+      "gap_sample_frames": 142439,
+      "recorded_gap_seconds": 5.934954648526078,
+      "represented_gap_seconds": 5.934958333333333,
+      "total_sample_frames": 261839,
+      "duration_seconds": 10.909958333333334,
+      "start_rounding_error_sample_frames": [
+        0.0,
+        0.08843537414213642
+      ],
+      "sha256": "6d4c552d7f13636bbcdcad8c3f0108631cb29b5065059d5769828b3f43cf645d",
+      "method": "Place unchanged signed16LE chunk frames at round((when-first_when)*24000) in zero-initialized mono PCM.",
+      "excludes_latency_before_first_voice_buffer": true,
+      "not_a_speaker_recording": true,
+      "no_video_alignment_claim": true,
+      "no_synthesis_normalization_time_compression_or_mux": true
+    },
+    "scope": "Original screen video is SILENT. WAVs contain actual native digital buffers, not a physical speaker recording. The derived voice replay retains the observed gap and excludes latency before the first voice chunk. No audio/video alignment is claimed."
+  },
+  "history": {
+    "stopped_attempt": "meta-recording-5ef3c9d.json",
+    "earlier_accepted_voice": "meta-bc7c8c5.json",
+    "cadence_fix": "vad-cadence-4158cd2.json",
+    "local_checkpoint": "4158cd2.json",
+    "hosted_checkpoint": "github-4158cd2.json"
+  },
+  "scope": [
+    "Existing MIT project; this source and recording are pre-event preparation, not features claimed as implemented during the event.",
+    "Demonstrates one generated-microphone interaction using supplied current-session conversation context. It does not demonstrate durable memory or tool execution.",
+    "All content is fictional; Contributor content may train Meta models. Credentials stayed outside Git, browser state and published media.",
+    "Observed cache counts do not guarantee future cache hits or establish causal latency/cost improvements.",
+    "Physical presentation headset, audibility, echo, human interruption, actual-machine timing and final event rules remain separate acceptance work.",
+    "No GPU or the offered PC was used for this recording."
+  ]
+}
