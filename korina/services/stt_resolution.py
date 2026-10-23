@@ -1,7 +1,6 @@
 """One multimodal capability-cache and Whisper-fallback policy for STT."""
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -26,12 +25,12 @@ def resolve_multimodal_transcription(
     base = config_stt_llm_base_url(config)
     selected = str(model or config_stt_llm_model(config) or '').strip()
 
-    def probe(status=0, body='', finish_reason=''):
+    def probe(status=0, body=''):
         check_current(is_current)
         return maybe_fallback_to_whisper(
             provider=provider, base_url=base, model=selected,
             stt_status_code=status, stt_response_body=body,
-            whisper_fallback_fn=owned_fallback, finish_reason=finish_reason,
+            whisper_fallback_fn=owned_fallback,
             is_current=is_current,
         )
 
@@ -67,9 +66,7 @@ def resolve_multimodal_transcription(
     selected = str(result.get('model') or selected)
     text = str(result.get('text') or '').strip()
     if not text:
-        reason = str(result.get('finish_reason') or '')
-        body = json.dumps({'choices': [{'finish_reason': reason, 'message': {'content': text}}]})
-        used, payload = probe(200, body, reason)
+        used, payload = probe(200)
         if used:
             return payload
         detail = result.get('error') or 'empty_text'

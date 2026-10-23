@@ -22,7 +22,6 @@ Contract for ``supported``:
 from __future__ import annotations
 
 import io
-import json
 import re
 import time
 import wave
@@ -161,20 +160,14 @@ def probe_audio_support(
         # Match the live STT policy. Empty output can exhaust a reasoning
         # budget without proving audio incompatibility.
         reason_excerpt = str((result or {}).get("error") or "empty_text")
-        finish_reason = str((result or {}).get('finish_reason') or '')
-        body = json.dumps({'choices': [{'message': {'content': text}, 'finish_reason': finish_reason}]})
-        unsupported, reason = classify_failure(200, body, finish_reason=finish_reason)
-        if unsupported:
-            check_current(is_current)
-            set_audio_unsupported(provider_id, base_url_clean, model_id, reason, body, is_current=is_current)
         return ProbeResult(
             model=model_id,
-            supported=False,  # empty 200 is a UI-visible red mark either way
-            reason=reason if unsupported else "transient_empty_text",
+            supported=False,
+            reason="transient_empty_text",
             latency_ms=latency_ms,
             status=200,
             body_excerpt=reason_excerpt[:200],
-            error=reason_excerpt if not unsupported else "",
+            error=reason_excerpt,
         )
     except RequestCancelledError:
         raise
