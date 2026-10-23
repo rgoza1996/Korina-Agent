@@ -76,3 +76,46 @@ def test_agent_state_report_does_not_block_status_route(client, monkeypatch):
         finally:
             release.set()
         assert pending.result(timeout=2).status_code == 200
+
+
+def test_background_transcript_keeps_status_and_events_responsive(client, config_module, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+
+    from korina.agents import gateway
+    from korina.agents.korina_adapter import KorinaAgentAdapter
+    from korina.services import agent_service
+
+    agent_service.shutdown_agent_worker()
+    monkeypatch.setattr(gateway, '_active', KorinaAgentAdapter())
+    config_module.update_config_values({'agent_enabled': 'on'})
+    entered, release = threading.Event(), threading.Event()
+
+    def held_report(req, **kwargs):
+        entered.set()
+        assert release.wait(5), 'test must release the background report worker'
+        return 'Priority: normal\nThe background report completed.'
+
+    monkeypatch.setattr(agent_service, 'generate_agent_state_report', held_report)
+    try:
+        with ThreadPoolExecutor(max_workers=2) as requests:
+            submission = requests.submit(client.post, '/api/agent/transcript', json={
+                'transcript': [{'role': 'user', 'content': 'Remember the appointment.'}],
+                'delivery_mode': 'prompt',
+            }).result(timeout=2)
+            assert submission.status_code == 200 and submission.json()['accepted'] is True
+            assert entered.wait(2), 'the real built-in worker must be running'
+            polls = [requests.submit(client.get, path) for path in (
+                '/api/agent/status', '/api/agent/events?after=0',
+            )]
+            status, events = [pending.result(timeout=2) for pending in polls]
+            assert not release.is_set(), 'both polls must finish before model completion'
+            assert status.status_code == events.status_code == 200
+            assert status.json()['busy'] is True and events.json()['busy'] is True
+            assert any(event.get('status') == 'working' for event in events.json()['events'])
+    finally:
+        release.set()
+        worker = agent_service._executor
+        agent_service.shutdown_agent_worker()
+        if worker is not None:
+            worker.shutdown(wait=True, cancel_futures=True)

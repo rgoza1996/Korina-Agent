@@ -1,3 +1,5 @@
+> Historical record from the July 2026 architecture assessment. The implementation and CI observations below describe that snapshot. For current behavior, use the [architecture](wiki/Architecture.md), [agent/channel protocol](agent-protocol.md), and [verification](verification.md).
+
 # Verdict: Korina Converse vs Korina Agent boundary
 
 **Date:** 2026-07-05
