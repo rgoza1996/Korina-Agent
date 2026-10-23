@@ -158,8 +158,8 @@ def probe_audio_support(
                 body_excerpt=text[:200],
                 error="",
             )
-        # Match the live STT path: non-stop completion with empty content is
-        # structural incompatibility; ordinary silence/unknown remains transient.
+        # Match the live STT policy. Empty output can exhaust a reasoning
+        # budget without proving audio incompatibility.
         reason_excerpt = str((result or {}).get("error") or "empty_text")
         finish_reason = str((result or {}).get('finish_reason') or '')
         body = json.dumps({'choices': [{'message': {'content': text}, 'finish_reason': finish_reason}]})

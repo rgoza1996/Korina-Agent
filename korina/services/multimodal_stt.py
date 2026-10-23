@@ -82,10 +82,10 @@ def lmstudio_transcribe_wav(wav: Path, *, model: Optional[str] = None, base_url:
     for the configured STT endpoint; an empty env name disables auth. timeout
     applies to the HTTP call and is bounded to (0, 120] seconds.
 
-    Phase 5 (2026-06-27): the returned dict now carries ``finish_reason`` from
-    the OpenAI chat-completion response. Callers in the audio-probe / stt route
-    use this to classify silent-empty failures (HTTP 200 + empty content +
-    finish_reason != 'stop') as structurally audio-incompatible.
+    The result carries the provider's ``finish_reason`` for the shared
+    fallback policy. Empty length-limited output can exhaust its reasoning
+    budget without proving audio incompatibility, so it is not cached as
+    unsupported.
     """
     check_current(is_current)
     config = load_config()

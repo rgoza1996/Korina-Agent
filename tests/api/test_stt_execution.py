@@ -68,10 +68,11 @@ def test_stream_preserves_segment_order_and_done_metadata(client, monkeypatch):
     assert done['language_probability'] == 0.99
 
 
-def test_stream_caches_structural_empty_result_and_skips_next_llm_call(
+def test_stream_caches_explicit_audio_rejection_and_skips_next_llm_call(
     client, config_module, monkeypatch,
 ):
     from korina.routes import stt
+    from korina.services.multimodal_stt import MultimodalSttError
 
     config_module.save_config({
         **config_module.load_config(),
@@ -87,7 +88,7 @@ def test_stream_caches_structural_empty_result_and_skips_next_llm_call(
 
     def multimodal(*args, **kwargs):
         calls.append('llm')
-        return {'text': '', 'finish_reason': 'length'}
+        raise MultimodalSttError('audio-model', 415, 'audio input is not supported')
 
     monkeypatch.setattr(stt, 'lmstudio_transcribe_wav', multimodal)
     monkeypatch.setattr(stt, 'transcribe_wav_segments', lambda *args, **kwargs: (
@@ -101,7 +102,7 @@ def test_stream_caches_structural_empty_result_and_skips_next_llm_call(
         done = _events(response)[-1]
         assert done[0] == 'done'
         assert done[1]['text'] == 'Quiet speech.'
-        assert done[1]['fallback_reason'] == 'silent_200_empty_content'
+        assert done[1]['fallback_reason'] == 'http_415_unsupported_media_type'
     assert calls == ['llm']
 
 

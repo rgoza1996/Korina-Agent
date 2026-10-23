@@ -61,8 +61,7 @@ def test_cached_configured_model_skips_provider_without_query_override(client, m
 
 
 @pytest.mark.parametrize('endpoint', ENDPOINTS)
-@pytest.mark.parametrize('failure,cached', [('unsupported-415', True), ('unsupported-400', True),
-                                          ('empty-length', True), ('server-500', False), ('empty-stop', False)])
+@pytest.mark.parametrize('failure,cached', [('unsupported-415', True), ('unsupported-400', True), ('server-500', False)])
 def test_all_paths_cache_only_structural_failures(client, monkeypatch, policy_runtime, endpoint, failure, cached):
     calls = []
 
@@ -72,7 +71,7 @@ def test_all_paths_cache_only_structural_failures(client, monkeypatch, policy_ru
             raise HTTPStatusError(415 if failure.endswith('415') else 400, 'audio input is not supported')
         if failure == 'server-500':
             raise HTTPStatusError(500, 'temporary server error')
-        return {'choices': [{'message': {'content': ''}, 'finish_reason': 'length' if failure == 'empty-length' else 'stop'}]}
+        pytest.fail(f'unexpected provider failure fixture: {failure}')
 
     monkeypatch.setattr(multimodal_stt, 'request_json', request)
     for _ in range(2):
@@ -82,6 +81,36 @@ def test_all_paths_cache_only_structural_failures(client, monkeypatch, policy_ru
     assert calls == ['configured-model'] * (1 if cached else 2)
     assert policy_runtime.vad == [False, False]
     assert bool(policy_runtime.config.config_audio_unsupported()) is cached
+
+
+@pytest.mark.parametrize('endpoint', ENDPOINTS)
+@pytest.mark.parametrize('finish_reason', ['length', 'content_filter', 'tool_calls', 'function_call', 'stop', ''])
+def test_empty_completion_falls_back_once_without_blocking_next_turn(
+    client, monkeypatch, policy_runtime, endpoint, finish_reason,
+):
+    saved_before = policy_runtime.config.CONFIG_PATH.read_bytes()
+    calls = []
+
+    def request(*args, **kwargs):
+        calls.append(kwargs['json_body']['model'])
+        content, reason = ('', finish_reason) if len(calls) == 1 else ('Recovered transcript', 'stop')
+        return {'choices': [{'message': {'content': content}, 'finish_reason': reason}]}
+
+    monkeypatch.setattr(multimodal_stt, 'request_json', request)
+    first = transcribe(client, endpoint)
+    assert first['text'] == 'quiet fallback speech'
+    assert first['backend'] == 'whisper-fallback'
+    assert first['fallback_reason'] == 'empty_text'
+    assert policy_runtime.config.config_audio_unsupported() == {}
+    assert policy_runtime.config.CONFIG_PATH.read_bytes() == saved_before
+
+    second = transcribe(client, endpoint)
+    assert second['text'] == 'Recovered transcript'
+    assert second['backend'] == 'multimodal-stt'
+    assert calls == ['configured-model', 'configured-model']
+    assert policy_runtime.vad == [False]
+    assert policy_runtime.config.config_audio_unsupported() == {}
+    assert policy_runtime.config.CONFIG_PATH.read_bytes() == saved_before
 
 
 @pytest.mark.parametrize('endpoint', ENDPOINTS)

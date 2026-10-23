@@ -46,8 +46,7 @@ def test_probe_audio_support_marks_model_unsupported_on_400_body(monkeypatch, is
 
 
 def test_probe_audio_support_clears_cache_on_success(monkeypatch, isolated_korina_app_dir):
-    """When the probe returns text, any stale audio_unsupported cache entry
-    must be removed."""
+    """A successful explicit probe can clear an ambiguous historical cache entry."""
     from korina.services import active_probe
     from korina.config import (
         audio_unsupported_key,
@@ -59,7 +58,7 @@ def test_probe_audio_support_clears_cache_on_success(monkeypatch, isolated_korin
         "lmstudio",
         "http://127.0.0.1:1234/v1",
         "good-model",
-        "body_match:audio.*invalid",
+        "silent_200_empty_content",
         "stale",
     )
     assert (
@@ -205,22 +204,32 @@ def test_probe_auth_and_full_endpoint_normalization_preserve_legacy_callback(con
     ]
 
 
-@pytest.mark.parametrize('finish_reason,cached', [('length', True), ('content_filter', True), ('stop', False), ('', False)])
-def test_probe_empty_completion_matches_live_finish_reason_classification(config_module, finish_reason, cached):
+@pytest.mark.parametrize('finish_reason', ['length', 'content_filter', 'tool_calls', 'function_call', 'stop', ''])
+def test_probe_empty_completion_preserves_cache_and_can_recover(config_module, finish_reason):
     from korina.services import active_probe
-    from korina.config import audio_unsupported_key
 
-    def empty(wav, *, model, base_url, api_env):
-        return {'text': '', 'finish_reason': finish_reason}
+    provider, base, model = 'openai-compatible', 'https://probe.test/v1', 'reasoning-model'
+    config_module.set_audio_unsupported(provider, base, 'other-model', 'original', 'keep this entry')
+    saved_before = config_module.CONFIG_PATH.read_bytes()
+    cache_before = config_module.config_audio_unsupported()
+    calls = []
 
-    result = active_probe.probe_audio_support('openai-compatible', 'https://probe.test/v1', 'model', transcribe_fn=empty)
-    key = audio_unsupported_key('openai-compatible', 'https://probe.test/v1', 'model')
-    assert (key in config_module.load_config()['audio_unsupported']) is cached
-    assert result.supported is False
-    if cached:
-        assert result.reason == 'silent_200_empty_content'
-    else:
-        assert result.reason == 'transient_empty_text'
+    def transcribe(wav, *, model, base_url, api_env):
+        calls.append(model)
+        if len(calls) == 1:
+            return {'text': '', 'finish_reason': finish_reason}
+        return {'text': 'Recovered transcript', 'finish_reason': 'stop'}
+
+    first = active_probe.probe_audio_support(provider, base, model, transcribe_fn=transcribe)
+    assert first.supported is False
+    assert first.reason == 'transient_empty_text'
+    assert config_module.CONFIG_PATH.read_bytes() == saved_before
+    assert config_module.config_audio_unsupported() == cache_before
+
+    second = active_probe.probe_audio_support(provider, base, model, transcribe_fn=transcribe)
+    assert second.supported is True
+    assert calls == [model, model]
+    assert config_module.config_audio_unsupported() == cache_before
 
 
 def test_retired_probe_does_not_create_audio_or_invoke_legacy_callback(monkeypatch, config_module):
@@ -258,7 +267,7 @@ def test_probe_retirement_skips_cache_publication_and_cleans_audio(config_module
             raise cancelled
         if outcome == 'error':
             raise RuntimeError('HTTP 415: audio input is not supported')
-        return {'text': 'hello' if outcome == 'success' else '', 'finish_reason': 'length'}
+        return {'text': 'hello' if outcome == 'success' else '', 'finish_reason': 'content_filter'}
 
     with pytest.raises(RequestCancelledError) as caught:
         active_probe.probe_audio_support(provider, base, model, transcribe_fn=legacy_callback,
@@ -287,7 +296,7 @@ def test_default_probe_forwards_owner_but_preserves_unowned_calls(monkeypatch, c
     assert calls == [(.25, None), (.25, current)]
 
 
-@pytest.mark.parametrize('outcome', ['success', 'empty', 'error'])
+@pytest.mark.parametrize('outcome', ['success', 'error'])
 def test_probe_waiting_for_config_lock_does_not_publish_after_retirement(monkeypatch, config_module, outcome):
     from korina.runtime.json_http import RequestCancelledError
     from korina.services import active_probe
@@ -323,7 +332,7 @@ def test_probe_waiting_for_config_lock_does_not_publish_after_retirement(monkeyp
         assert return_provider.wait(3)
         if outcome == 'error':
             raise RuntimeError('HTTP 415: audio input is not supported')
-        return {'text': 'hello' if outcome == 'success' else '', 'finish_reason': 'length'}
+        return {'text': 'hello', 'finish_reason': 'stop'}
 
     def run_probe():
         try:

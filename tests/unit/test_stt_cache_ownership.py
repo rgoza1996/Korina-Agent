@@ -31,13 +31,9 @@ class ObservedConfigLock:
         self.actual.release()
 
 
-@pytest.mark.parametrize('stage,outcome', [
-    ('initial_read', 'unsupported'),
-    ('failure_read', 'unsupported'), ('failure_read', 'empty'),
-    ('failure_write', 'unsupported'), ('failure_write', 'empty'),
-])
+@pytest.mark.parametrize('stage', ['initial_read', 'failure_read', 'failure_write'])
 def test_shared_resolution_rechecks_owner_after_cache_transaction_wait(
-    config_module, monkeypatch, stage, outcome,
+    config_module, monkeypatch, stage,
 ):
     config = config_module.update_config_values({
         'stt_llm_provider': 'openai-compatible',
@@ -55,16 +51,14 @@ def test_shared_resolution_rechecks_owner_after_cache_transaction_wait(
         if stage == 'failure_read':
             entered.set()
             assert release.wait(3)
-        if outcome == 'unsupported':
-            raise MultimodalSttError('audio-model', 415, 'audio unsupported')
-        return {'text': '', 'finish_reason': 'length', 'model': 'audio-model'}
+        raise MultimodalSttError('audio-model', 415, 'audio unsupported')
 
     if stage == 'failure_write':
         classify = audio_probe.classify_failure
 
         def paused_classification(status, body, finish_reason=''):
             result = classify(status, body, finish_reason=finish_reason)
-            if status in (200, 415):
+            if status == 415:
                 entered.set()
                 assert release.wait(3)
             return result
