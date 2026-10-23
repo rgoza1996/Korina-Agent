@@ -1,0 +1,28 @@
+{
+  "boundary": "Pure controlled-clock actual liveMonitor callbacks; no browser/server/models.",
+  "sparse_loud_observations": {
+    "wall_age_ms": 480,
+    "observed_voiced_span_ms": 80,
+    "old_predicate": true,
+    "proposed_predicate": false,
+    "complete_capture_stops": 0,
+    "confirmed_silence": true
+  },
+  "observed_loud_continuation": {
+    "wall_age_ms": 480,
+    "observed_voiced_span_ms": 480,
+    "old_predicate": true,
+    "proposed_predicate": true,
+    "complete_capture_stops": 1
+  },
+  "conclusion": "Wall-age readiness can switch to quiet before minSpeechMs is observed; waiting on liveLastVoice-liveSpeechStart establishes the intended fixture precondition.",
+  "kind": "controlled-native-interruption-fixture-precondition",
+  "base_source_commit": "410336cf04a9b97723d949533adcbb71528ee7be",
+  "test_only_fix_commit": "58f50d16d0e089a9ec69e6cc8671c92c7d28a10f",
+  "pre_event_preparation": true,
+  "scope": [
+    "Actual liveMonitor callbacks with controlled synthetic clock/meters; no browser or model calls.",
+    "This proves a wall-time setup predicate defect, not the exact renderer callback history in the saved failed trace.",
+    "Native playback, transcription, barge-in and Stop assertions and timeouts remain unchanged."
+  ]
+}

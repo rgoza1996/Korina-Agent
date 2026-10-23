@@ -1,0 +1,88 @@
+{
+  "kind": "github-actions-checkpoint",
+  "observed_on": "2026-10-23",
+  "pre_event_preparation": true,
+  "head_revision": "1b4094c73e9e608307f0b55ff261a90f0ebadb05",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "checks": [
+    {
+      "id": 120506318947,
+      "name": "minimum-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318947",
+      "annotations_count": 0
+    },
+    {
+      "id": 120506318924,
+      "name": "pytest (3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318924",
+      "annotations_count": 0
+    },
+    {
+      "id": 120506318732,
+      "name": "pytest (3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318732",
+      "annotations_count": 0
+    },
+    {
+      "id": 120506318697,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318697",
+      "annotations_count": 0
+    },
+    {
+      "id": 120506318684,
+      "name": "speech-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318684",
+      "annotations_count": 0
+    },
+    {
+      "id": 120506318679,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318679",
+      "annotations_count": 0
+    },
+    {
+      "id": 120506318660,
+      "name": "pytest (3.10)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318660",
+      "annotations_count": 0
+    },
+    {
+      "id": 120506318616,
+      "name": "pytest (3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318616",
+      "annotations_count": 0
+    },
+    {
+      "id": 120506318319,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39980525893/job/120506318319",
+      "annotations_count": 0
+    }
+  ],
+  "all_nine_passed": true,
+  "scope": [
+    "Observed through the Codex Code Review backend for the exact stated revision; all nine jobs report zero annotations.",
+    "Includes the saved-model invalid-path preflight catch and server-resolved Endpoints diagnostic URLs, preserving authentication and trusted-local behavior.",
+    "Local archive checks retain their actual outcomes, including any failed cases; a hosted pass does not erase a local failure.",
+    "Provider replies in automated suites are fixtures. The public authenticated recording retains its original 4158cd2 source identity; physical audio and final event acceptance remain separate."
+  ]
+}

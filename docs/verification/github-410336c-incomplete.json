@@ -1,0 +1,84 @@
+{
+  "kind": "github-actions-incomplete-checkpoint",
+  "observed_on": "2026-10-23",
+  "observed_at_utc": "2026-10-23 16:37:59 UTC",
+  "pre_event_preparation": true,
+  "head_revision": "410336cf04a9b97723d949533adcbb71528ee7be",
+  "pull_request": "https://github.com/rgoza1996/Korina-Agent/pull/24",
+  "all_nine_passed": false,
+  "checks": [
+    {
+      "id": 120514933439,
+      "name": "pytest (3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514933439",
+      "annotations_count": 0
+    },
+    {
+      "id": 120514933419,
+      "name": "browser",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514933419",
+      "annotations_count": 0
+    },
+    {
+      "id": 120514933354,
+      "name": "frontend",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514933354",
+      "annotations_count": 0
+    },
+    {
+      "id": 120514933353,
+      "name": "pytest (3.12)",
+      "status": "in_progress",
+      "conclusion": null,
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514933353",
+      "annotations_count": 0
+    },
+    {
+      "id": 120514933318,
+      "name": "pytest (3.10)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514933318",
+      "annotations_count": 0
+    },
+    {
+      "id": 120514933268,
+      "name": "speech-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514933268",
+      "annotations_count": 0
+    },
+    {
+      "id": 120514933246,
+      "name": "pytest (3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514933246",
+      "annotations_count": 0
+    },
+    {
+      "id": 120514933186,
+      "name": "lint",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514933186",
+      "annotations_count": 0
+    },
+    {
+      "id": 120514932862,
+      "name": "minimum-dependencies",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/rgoza1996/Korina-Agent/actions/runs/39982926938/job/120514932862",
+      "annotations_count": 0
+    }
+  ],
+  "scope": "Read through Code Review; hosted outcomes are separate from local and actual-model evidence."
+}
