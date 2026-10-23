@@ -28,6 +28,8 @@ Automatic runs cover pushes to `alpha`, `beta` and `master`, plus every pull req
 
 The floor tier installs `.[test]` with `-c tests/constraints/minimum.txt`, runs `pip check`, then the complete Python suite. Use a separate fresh environment for that install. FastAPI 0.118 is required for streamed upload lifetime; Starlette 0.42 is required for the tested streaming cancellation behavior. Boundary tests reproduced failures on their immediate predecessors. Sniffio is deliberately included in test environments so a copied async-context marker cannot hide the worker-entry regression. The HTTP bridge checks the actual asyncio loop rather than mistaking that marker for a running loop. See the [FastAPI release](https://fastapi.tiangolo.com/release-notes/#01180) and [Starlette release](https://www.starlette.io/release-notes/#0420-december-14-2024).
 
+The floor job does not install the FFmpeg CLI. If it is absent, exactly seven CLI integration cases skip: six WAV/WebM upload cases and one compressed-expansion case. Python 3.12 retains its explicit FFmpeg install for that coverage; the separate Python 3.12 speech job exercises the actual PyAV decoder without model weights or a CLI dependency. The local `c430012` floor record had FFmpeg available and retains its original 1430 passes plus one optional Whisper-decoder skip; it is not relabeled as a CLI-free run.
+
 To repeat the installed-wheel check, install the built wheel in a separate environment, change to a directory outside the checkout, then run that environment’s Python with the absolute path to `scripts/check_installed.py --source-assets /absolute/path/to/Korina-Agent/Korina`. The script refuses a source installation and never uses your runtime configuration.
 
 ## Current verification checkpoint

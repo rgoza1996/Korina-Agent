@@ -46,9 +46,8 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.10'
-      - name: Install FFmpeg and declared dependency floors
+      - name: Install declared dependency floors
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
           python -m pip install -e '.[test]' -c tests/constraints/minimum.txt
           python -m pip check
       - name: Run minimum-dependency tests
